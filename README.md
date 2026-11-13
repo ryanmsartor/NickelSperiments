@@ -1,9 +1,16 @@
-# NickelRefresh
+# NickelSperiments
 
-NickelRefresh is an opt-in Kobo Nickel mod for measuring sustained e-paper
-refresh requests. It uses NickelHook to load into Nickel and FBInk to draw a
-small test patch using Kobo's framebuffer update API. NickelTC builds the mod
-for Kobo.
+NickelSperiments is a collection of tools and experiments for Kobo e-readers.
+It is a home for independent projects that explore, test, and extend the same
+hardware rather than a single application. The first included experiment is
+NickelRefresh, an opt-in Kobo Nickel mod for measuring sustained e-paper
+refresh requests.
+
+## NickelRefresh: refresh-rate experiment
+
+NickelRefresh uses NickelHook to load into Nickel and FBInk to draw a small
+test patch using Kobo's framebuffer update API. NickelTC builds the mod for
+Kobo.
 
 The test sweeps `A2`, `DU`, and `GC16` waveform modes at target request rates of
 1, 2, 4, 8, 12, 16, and 20 updates per second. Each step lasts three seconds.
@@ -16,8 +23,8 @@ measure when the panel visibly changes.
 Clone with its submodules and build with the NickelTC Docker image:
 
 ```sh
-git clone https://github.com/ryanmsartor/NickelRefresh.git
-cd NickelRefresh
+git clone https://github.com/ryanmsartor/NickelRefresh.git NickelSperiments
+cd NickelSperiments
 docker run --rm -v "$PWD:/src" -w /src ghcr.io/pgaskin/nickeltc:1.0 \
   bash -lc 'git submodule update --init; export PATH="/tc/arm-nickel-linux-gnueabihf/bin:$PATH"; make clean all koboroot'
 ```
