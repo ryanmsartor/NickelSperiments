@@ -25,8 +25,8 @@ docker run --rm -v "$PWD:/src" -w /src ghcr.io/pgaskin/nickeltc:1.0 \
 The build produces `KoboRoot.tgz`. It builds FBInk as a small static library
 with framebuffer drawing and region-dump support, then links it into the
 NickelHook plugin. FBInk's i2c-tools dependency is pinned to a GitHub mirror
-revision because the upstream git.kernel.org host is not reachable in all
-build environments.
+of the same upstream repository, at FBInk's pinned commit, because
+git.kernel.org is not reachable in all build environments.
 
 ## Install and run
 
