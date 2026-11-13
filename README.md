@@ -6,6 +6,9 @@ hardware rather than a single application. The first included experiment is
 NickelRefresh, an opt-in Kobo Nickel mod for measuring sustained e-paper
 refresh requests.
 
+For the separate USB ADB investigation, see
+[Kobo USB ADB investigation](docs/kobo-adb-investigation.md).
+
 ## NickelRefresh: refresh-rate experiment
 
 NickelRefresh uses NickelHook to load into Nickel and FBInk to draw a small
