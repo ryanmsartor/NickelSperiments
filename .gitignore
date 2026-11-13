@@ -1,0 +1,10 @@
+/KoboRoot.tgz
+/libnickelrefresh.so
+/deps/FBInk/Debug/
+/deps/FBInk/libi2c-staged/
+/deps/FBInk/libi2c.built
+/deps/NickelHook/*.o
+/deps/NickelHook/nhplugin.json
+/deps/NickelHook/nhplugin.moc
+/deps/NickelHook/nhplugin.moc.o
+/src/*.o
