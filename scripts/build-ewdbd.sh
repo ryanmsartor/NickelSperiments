@@ -2,7 +2,7 @@
 set -eu
 
 EWDB_URL=https://github.com/BrandonKowalski/ewdb.git
-EWDB_REV=3218c4eac664de5443e561f32ee9acf6e0ca0c17
+EWDB_REV=9ae15fa774ca584dafd6bdb57a2dec906c157442
 
 repo_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 source_dir=${EWDB_SOURCE_DIR:-"$repo_root/build/ewdb-src"}
