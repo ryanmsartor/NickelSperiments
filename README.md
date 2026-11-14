@@ -46,10 +46,24 @@ Run `make help` to list the public targets.
 - `make nickelrefresh-package` builds its `KoboRoot.tgz` with NickelTC.
 - `make ewdb-binary` builds the pinned static ARMv7 daemon.
 - `make ewdb-package` builds `build/EWDB-KoboRoot.tgz`.
+- `make gambatte-bench` cross-compiles the headless Gambatte feasibility
+  benchmark to `build/kobo-gambatte-bench` using NickelTC.
 
 NickelRefresh and EWDB have separate GitHub Actions workflows, toolchains, and
 named artifacts. The older `ewdbd` and `ewdb-koboroot` targets remain as
 compatibility aliases.
+
+The Gambatte benchmark accepts a user-supplied GB or GBC ROM and emulates
+3,600 frames by default without accessing the display, audio hardware, or
+input devices:
+
+```sh
+build/kobo-gambatte-bench game.gb --frames 3600
+```
+
+It reports emulated frames per second, the real-time performance multiple,
+maximum resident memory, and save-state and save-RAM checks. No ROMs are
+included in the repository or build artifacts.
 
 ### Installing release packages
 

@@ -14,6 +14,10 @@ permissions:
   contents: read
 
 jobs:
+  gambatte:
+    name: Build Gambatte benchmark
+    uses: ./.github/workflows/build-gambatte.yml
+
   nickelrefresh:
     name: Build NickelRefresh
     permissions:

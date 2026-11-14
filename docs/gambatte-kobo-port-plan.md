@@ -155,6 +155,11 @@ A formal license review is still appropriate before publishing binaries.
 
 ### 1. Feasibility probe
 
+Implementation has begun with the `gambatte-bench` Make target and
+`build/kobo-gambatte-bench` headless runner. The runner measures emulation
+throughput and memory use and validates an in-memory save-state round trip.
+Real-device ARMv7 results are still required before this phase is complete.
+
 - Pin a Gambatte revision.
 - Cross-compile `libgambatte` for Kobo ARMv7.
 - Build a headless runner that loads a freely distributable test ROM.

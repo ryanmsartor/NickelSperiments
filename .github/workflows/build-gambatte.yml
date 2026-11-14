@@ -1,0 +1,38 @@
+name: Build Gambatte feasibility benchmark
+
+on:
+  push:
+  pull_request:
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  gambatte-benchmark:
+    name: Gambatte ARMv7 headless benchmark
+    runs-on: ubuntu-latest
+    container: ghcr.io/pgaskin/nickeltc:1.0
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Initialize Gambatte source
+        run: git submodule update --init deps/gambatte
+
+      - name: Add NickelTC cross-toolchain to PATH
+        run: echo "/tc/arm-nickel-linux-gnueabihf/bin" >> "$GITHUB_PATH"
+
+      - name: Build headless Gambatte benchmark
+        run: make gambatte-bench
+
+      - name: Verify ARMv7 output
+        run: file build/kobo-gambatte-bench | grep -q 'ELF 32-bit.*ARM'
+
+      - name: Upload Gambatte benchmark
+        uses: actions/upload-artifact@v4
+        with:
+          name: Gambatte-Kobo-Benchmark
+          path: build/kobo-gambatte-bench
+          if-no-files-found: error

@@ -1,0 +1,72 @@
+GAMBATTE_ROOT := deps/gambatte
+GAMBATTE_CORE := $(GAMBATTE_ROOT)/libgambatte
+GAMBATTE_BUILD_DIR := build/gambatte
+GAMBATTE_OUTPUT := build/kobo-gambatte-bench
+GAMBATTE_CROSS_COMPILE ?= arm-nickel-linux-gnueabihf-
+GAMBATTE_CXX ?= $(GAMBATTE_CROSS_COMPILE)g++
+
+GAMBATTE_CPPFLAGS := \
+	-D__LIBRETRO__ \
+	-DHAVE_STDINT_H \
+	-I$(GAMBATTE_CORE)/include \
+	-I$(GAMBATTE_CORE)/src \
+	-I$(GAMBATTE_CORE)/libretro \
+	-I$(GAMBATTE_CORE)/libretro-common/include \
+	-I$(GAMBATTE_ROOT)/common
+GAMBATTE_CXXFLAGS := -O3 -std=c++11 -Wall -Wextra -fomit-frame-pointer
+GAMBATTE_LDFLAGS := -static-libgcc -static-libstdc++
+
+GAMBATTE_CORE_SOURCES := \
+	libgambatte/src/bootloader.cpp \
+	libgambatte/src/cpu.cpp \
+	libgambatte/src/gambatte.cpp \
+	libgambatte/src/gambatte-memory.cpp \
+	libgambatte/src/initstate.cpp \
+	libgambatte/src/interrupter.cpp \
+	libgambatte/src/interruptrequester.cpp \
+	libgambatte/src/mem/cartridge.cpp \
+	libgambatte/src/mem/cartridge_libretro.cpp \
+	libgambatte/src/mem/huc3.cpp \
+	libgambatte/src/mem/memptrs.cpp \
+	libgambatte/src/mem/rtc.cpp \
+	libgambatte/src/sound.cpp \
+	libgambatte/src/sound/channel1.cpp \
+	libgambatte/src/sound/channel2.cpp \
+	libgambatte/src/sound/channel3.cpp \
+	libgambatte/src/sound/channel4.cpp \
+	libgambatte/src/sound/duty_unit.cpp \
+	libgambatte/src/sound/envelope_unit.cpp \
+	libgambatte/src/sound/length_counter.cpp \
+	libgambatte/src/statesaver.cpp \
+	libgambatte/src/tima.cpp \
+	libgambatte/src/video.cpp \
+	libgambatte/src/video/ly_counter.cpp \
+	libgambatte/src/video/lyc_irq.cpp \
+	libgambatte/src/video/next_m0_time.cpp \
+	libgambatte/src/video/ppu.cpp \
+	libgambatte/src/video/sprite_mapper.cpp \
+	libgambatte/src/video_libretro.cpp
+
+GAMBATTE_CORE_OBJECTS := $(patsubst %.cpp,$(GAMBATTE_BUILD_DIR)/%.o,$(GAMBATTE_CORE_SOURCES))
+GAMBATTE_FRONTEND_OBJECTS := \
+	$(GAMBATTE_BUILD_DIR)/frontend/gambatte-bench.o \
+	$(GAMBATTE_BUILD_DIR)/frontend/gambatte-platform.o
+
+.PHONY: gambatte-bench gambatte-clean
+
+gambatte-bench: $(GAMBATTE_OUTPUT)
+
+$(GAMBATTE_OUTPUT): $(GAMBATTE_CORE_OBJECTS) $(GAMBATTE_FRONTEND_OBJECTS)
+	@mkdir -p $(@D)
+	$(GAMBATTE_CXX) $(GAMBATTE_LDFLAGS) -o $@ $^
+
+$(GAMBATTE_BUILD_DIR)/%.o: $(GAMBATTE_ROOT)/%.cpp
+	@mkdir -p $(@D)
+	$(GAMBATTE_CXX) $(GAMBATTE_CPPFLAGS) $(GAMBATTE_CXXFLAGS) -c -o $@ $<
+
+$(GAMBATTE_BUILD_DIR)/frontend/%.o: src/%.cpp
+	@mkdir -p $(@D)
+	$(GAMBATTE_CXX) $(GAMBATTE_CPPFLAGS) $(GAMBATTE_CXXFLAGS) -c -o $@ $<
+
+gambatte-clean:
+	rm -rf $(GAMBATTE_BUILD_DIR) $(GAMBATTE_OUTPUT)
