@@ -25,13 +25,14 @@ jobs:
         run: echo "/tc/arm-nickel-linux-gnueabihf/bin" >> "$GITHUB_PATH"
 
       - name: Build Gambatte prototypes
-        run: make gambatte-bench gambatte-display-test gambatte-display
+        run: make gambatte-bench gambatte-display-test gambatte-display gambatte-supervisor
 
       - name: Verify ARMv7 outputs
         run: |
           file build/kobo-gambatte-bench | grep -q 'ELF 32-bit.*ARM'
           file build/kobo-gambatte-display-test | grep -q 'ELF 32-bit.*ARM'
           file build/kobo-gambatte-display | grep -q 'ELF 32-bit.*ARM'
+          file build/kobo-gambatte-supervisor | grep -q 'ELF 32-bit.*ARM'
 
       - name: Upload Gambatte prototypes
         uses: actions/upload-artifact@v4
@@ -41,4 +42,5 @@ jobs:
             build/kobo-gambatte-bench
             build/kobo-gambatte-display-test
             build/kobo-gambatte-display
+            build/kobo-gambatte-supervisor
           if-no-files-found: error

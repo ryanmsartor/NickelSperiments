@@ -42,6 +42,10 @@ To remove the experiment and restore Kobo's backed-up stock USB handler:
 The top-level makefile dispatches to project-specific definitions under `mk/`.
 Run `make help` to list the public targets.
 
+The Gambatte-based player is named **Ko Boy**. Its user library is rooted at
+`/mnt/onboard/KoBoy/`: ROMs belong in `Roms/` and per-game save states in
+`States/`.
+
 - `make nickelrefresh` builds the NickelRefresh plugin.
 - `make nickelrefresh-package` builds its `KoboRoot.tgz` with NickelTC.
 - `make ewdb-binary` builds the pinned static ARMv7 daemon.
@@ -52,6 +56,8 @@ Run `make help` to list the public targets.
   display prototype to `build/kobo-gambatte-display-test` using NickelTC.
 - `make gambatte-display` cross-compiles the ROM-driven display prototype to
   `build/kobo-gambatte-display` using NickelTC.
+- `make gambatte-supervisor` cross-compiles the crash-recovery parent process
+  to `build/kobo-gambatte-supervisor` using NickelTC.
 
 NickelRefresh and EWDB have separate GitHub Actions workflows, toolchains, and
 named artifacts. The older `ewdbd` and `ewdb-koboroot` targets remain as
@@ -96,13 +102,26 @@ build/kobo-gambatte-display game.gb \
   --rate 8 --scale 5 --seconds 30 --cleanup-seconds 10
 ```
 
+For device testing, place `kobo-gambatte-supervisor` beside
+`kobo-gambatte-display` and launch the supervisor instead:
+
+```sh
+build/kobo-gambatte-supervisor game.gb \
+  --rate 8 --scale 5 --seconds 30 --cleanup-seconds 10
+```
+
+The supervisor owns Nickel suspension and the full framebuffer backup. It
+launches the display process as a managed child, forwards SIGINT, SIGTERM, and
+SIGHUP, and restores the screen and resumes Nickel after any child exit,
+including a crash or `SIGKILL`.
+
 Like the synthetic test, this is an ADB-only developer diagnostic. It is
 uploaded only as a workflow artifact and is not a release asset. On the Clara
 BW it exclusively grabs the `cyttsp5_mt` touchscreen, suspends Nickel, saves
 and clears the entire framebuffer, and draws the controls below the game. On
 exit it restores the full framebuffer, releases the touchscreen, and resumes
 Nickel in that order. SIGINT, SIGTERM, and SIGHUP use the same cleanup path;
-SIGKILL and sudden power loss cannot run in-process cleanup.
+the supervisor covers child `SIGKILL`. Sudden power loss cannot run cleanup.
 
 ### Installing release packages
 

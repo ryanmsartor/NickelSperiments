@@ -20,6 +20,7 @@ help:
 	@echo "  gambatte-bench         Build the headless ARMv7 Gambatte benchmark"
 	@echo "  gambatte-display-test  Build the synthetic Kobo display prototype"
 	@echo "  gambatte-display       Build the ROM-driven Kobo display prototype"
+	@echo "  gambatte-supervisor    Build the crash-recovery supervisor"
 
 nickelrefresh:
 	$(MAKE) all

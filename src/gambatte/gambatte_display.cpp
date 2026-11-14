@@ -13,12 +13,14 @@
 #include <cerrno>
 #include <climits>
 #include <csignal>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
 #include <iostream>
 #include <stdexcept>
 #include <string>
+#include <sys/stat.h>
 #include <time.h>
 #include <vector>
 
@@ -27,6 +29,9 @@ namespace {
 const unsigned kSamplesPerCall = 2064U;
 const unsigned kSoundBufferSamples = kSamplesPerCall + 2064U;
 const double kGameBoyFrameRate = 59.727500569606;
+const char *const kKoBoyRoot = "/mnt/onboard/KoBoy";
+const char *const kKoBoyRomDirectory = "/mnt/onboard/KoBoy/Roms";
+const char *const kKoBoyStateDirectory = "/mnt/onboard/KoBoy/States";
 volatile sig_atomic_t interrupted = 0;
 
 void handle_signal(int) { interrupted = 1; }
@@ -76,6 +81,74 @@ std::vector<unsigned char> read_file(const char *path) {
     if (!input)
         throw std::runtime_error("failed to read complete ROM");
     return data;
+}
+
+bool ensure_directory(const char *path) {
+    if (mkdir(path, 0755) == 0 || errno == EEXIST)
+        return true;
+    std::cerr << "warning: cannot create " << path << ": "
+              << std::strerror(errno) << '\n';
+    return false;
+}
+
+std::string state_path(const char *rom_path, unsigned slot) {
+    std::string name(rom_path);
+    const std::string::size_type slash = name.rfind('/');
+    if (slash != std::string::npos)
+        name.erase(0, slash + 1U);
+    for (std::string::size_type index = 0; index < name.size(); ++index) {
+        const unsigned char character = static_cast<unsigned char>(name[index]);
+        if (!((character >= 'a' && character <= 'z') ||
+              (character >= 'A' && character <= 'Z') ||
+              (character >= '0' && character <= '9') ||
+              character == '.' || character == '-' || character == '_'))
+            name[index] = '_';
+    }
+    return std::string(kKoBoyStateDirectory) + "/" + name + ".state" +
+           static_cast<char>('0' + slot);
+}
+
+bool load_state(gambatte::GB &gb, const std::string &path) {
+    std::ifstream input(path.c_str(), std::ios::binary | std::ios::ate);
+    if (!input)
+        return false;
+    const std::ifstream::pos_type end = input.tellg();
+    if (end <= 0)
+        return false;
+    std::vector<unsigned char> state(static_cast<std::size_t>(end));
+    input.seekg(0, std::ios::beg);
+    input.read(reinterpret_cast<char *>(&state[0]), state.size());
+    if (!input || !gb.loadState(&state[0], state.size())) {
+        std::cerr << "warning: rejected save state " << path << '\n';
+        return false;
+    }
+    return true;
+}
+
+bool save_state(gambatte::GB &gb, const std::string &path) {
+    if (!ensure_directory(kKoBoyRoot) ||
+        !ensure_directory(kKoBoyStateDirectory))
+        return false;
+    const std::size_t size = gb.stateSize();
+    if (!size)
+        return false;
+    std::vector<unsigned char> state(size);
+    gb.saveState(&state[0]);
+    const std::string temporary = path + ".tmp";
+    std::ofstream output(temporary.c_str(),
+                         std::ios::binary | std::ios::trunc);
+    output.write(reinterpret_cast<const char *>(&state[0]), state.size());
+    output.close();
+    if (!output) {
+        std::cerr << "warning: cannot write save state " << temporary << '\n';
+        return false;
+    }
+    if (rename(temporary.c_str(), path.c_str()) != 0) {
+        std::cerr << "warning: cannot install save state " << path << ": "
+                  << std::strerror(errno) << '\n';
+        return false;
+    }
+    return true;
 }
 
 void run_frame(gambatte::GB &gb,
@@ -241,10 +314,13 @@ void draw_controls(std::vector<uint32_t> &screen, unsigned width,
 int main(int argc, char **argv) {
     try {
         const Options options = parse_options(argc, argv);
+        const bool supervised = std::getenv("GAMBATTE_SUPERVISED") != 0;
         const std::vector<unsigned char> rom = read_file(options.rom);
         gambatte::GB gb;
         if (gb.load(&rom[0], rom.size()) != 0)
             throw std::runtime_error("Gambatte rejected the ROM image");
+        const std::string automatic_state = state_path(options.rom, 0U);
+        const bool automatic_state_loaded = load_state(gb, automatic_state);
 
         std::signal(SIGINT, handle_signal);
         std::signal(SIGTERM, handle_signal);
@@ -253,14 +329,16 @@ int main(int argc, char **argv) {
         gambatte_kobo::NickelSession nickel;
         gambatte_kobo::TouchInput input(1072U, 1448U);
         input.open_device();
-        nickel.suspend();
+        if (!supervised)
+            nickel.suspend();
         gb.setInputGetter(&input);
 
         gambatte_kobo::FramebufferBackend framebuffer;
         framebuffer.open_device("/dev/fb0");
         framebuffer.configure_viewport(gambatte_kobo::kGameBoyWidth * options.scale,
                                        gambatte_kobo::kGameBoyHeight * options.scale);
-        framebuffer.save_screen();
+        if (!supervised)
+            framebuffer.save_screen();
 
         std::vector<gambatte::video_pixel_t> video(
             gambatte_kobo::kGameBoyWidth * gambatte_kobo::kGameBoyHeight);
@@ -328,7 +406,15 @@ int main(int argc, char **argv) {
         }
 
         const double elapsed = monotonic_seconds() - started;
-        framebuffer.restore(marker++);
+        const bool automatic_state_saved = save_state(gb, automatic_state);
+        if (!supervised)
+            framebuffer.restore(marker++);
+        std::cout << "name=Ko Boy\n";
+        std::cout << "rom_directory=" << kKoBoyRomDirectory << '\n';
+        std::cout << "state0_loaded="
+                  << (automatic_state_loaded ? "yes" : "no") << '\n';
+        std::cout << "state0_saved="
+                  << (automatic_state_saved ? "yes" : "no") << '\n';
         std::cout << "rom_bytes=" << rom.size() << '\n';
         std::cout << "elapsed_seconds=" << elapsed << '\n';
         std::cout << "emulated_frames=" << emulated_frames << '\n';

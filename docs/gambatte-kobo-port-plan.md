@@ -245,10 +245,23 @@ touch; the run completed 160 presentations and restored Nickel successfully.
 The A and B controls use literal bitmap `A` and `B` glyphs rather than
 approximate hand-drawn marks.
 
-This runner still has no audio or save-file persistence. In-process cleanup
-covers normal exit, exceptions, SIGINT, SIGTERM, and SIGHUP; a future external
-supervisor is still required to recover automatically from SIGKILL or a hard
-crash. It remains a developer diagnostic rather than an installable emulator.
+`make gambatte-supervisor` now builds an external lifecycle owner. The parent
+suspends Nickel and retains the complete framebuffer backup in its own memory,
+then launches `kobo-gambatte-display` as a managed child. It forwards SIGINT,
+SIGTERM, and SIGHUP, waits for any child exit, restores the screen, and resumes
+Nickel before returning the child's status. The managed child still owns the
+exclusive touchscreen grab, which the kernel releases automatically if that
+process dies.
+
+Both recovery paths passed on the Clara BW. A normal five-second supervised
+run returned child status 0 and restored Nickel. In the hard-crash test, the
+emulator child was sent SIGKILL while Nickel was confirmed stopped; the parent
+observed status 137, restored the framebuffer, and Nickel returned to its
+sleeping state. Killing the supervisor itself or sudden power loss remain
+outside this guarantee and require a later system-level recovery policy.
+
+The runner still has no audio or save-file persistence. It remains a developer
+diagnostic rather than an installable emulator.
 
 - Take exclusive ownership of the framebuffer.
 - Render a synthetic 160-by-144 animated test pattern.
@@ -262,6 +275,25 @@ Go/no-go criterion: a stable 6-10 Hz presentation path without display-driver
 errors or an unacceptable buildup of latency.
 
 ### 3. Playable vertical slice
+
+The frontend and eventual package are named **Ko Boy**. User games live in
+`/mnt/onboard/KoBoy/Roms/`; Ko Boy never bundles ROMs. A new on-screen Menu
+button will pause emulation and open a small text menu with these entries, in
+this order:
+
+1. Resume Game
+2. Save State
+3. Load State
+4. Reset Game
+5. Select Game
+6. Return to Nickel
+
+Select Game opens a scrollable list populated from the ROM directory. The
+initial state model has exactly two per-game slots. `state0` is automatic: Ko
+Boy saves it when returning to Nickel and loads it when that game is selected.
+`state1` is manual and is used exclusively by the menu's Save State and Load
+State entries. State files live under `/mnt/onboard/KoBoy/States/`; they are
+kept separate from ROMs and keyed by the ROM filename.
 
 - Connect Gambatte video to the display backend.
 - Add touch D-pad, A, B, Start, and Select controls.
