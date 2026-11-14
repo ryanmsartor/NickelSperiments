@@ -10,18 +10,23 @@
 
 #include <gambatte.h>
 
+#include <algorithm>
 #include <cerrno>
+#include <cctype>
 #include <climits>
 #include <csignal>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <dirent.h>
+#include <fcntl.h>
 #include <fstream>
 #include <iostream>
 #include <stdexcept>
 #include <string>
 #include <sys/stat.h>
 #include <time.h>
+#include <unistd.h>
 #include <vector>
 
 namespace {
@@ -32,7 +37,30 @@ const double kGameBoyFrameRate = 59.727500569606;
 const char *const kKoBoyRoot = "/mnt/onboard/KoBoy";
 const char *const kKoBoyRomDirectory = "/mnt/onboard/KoBoy/Roms";
 const char *const kKoBoyStateDirectory = "/mnt/onboard/KoBoy/States";
+const char *const kDeveloperFlag = "/mnt/onboard/KoBoy/developer";
+const char *const kRefreshConfig = "/mnt/onboard/KoBoy/refresh.conf";
+const char *const kRefreshBreadcrumb =
+    "/mnt/onboard/KoBoy/refresh-active.log";
 volatile sig_atomic_t interrupted = 0;
+
+enum RefreshType {
+    REFRESH_A2,
+    REFRESH_DU,
+    REFRESH_GL16,
+    REFRESH_GC16_PARTIAL,
+    REFRESH_GC16_FULL,
+    REFRESH_TYPE_COUNT
+};
+
+struct RefreshSettings {
+    RefreshType fast_type;
+    RefreshType slow_type;
+    unsigned fast_hz;
+    unsigned slow_tenths_hz;
+    RefreshSettings()
+        : fast_type(REFRESH_A2), slow_type(REFRESH_GC16_PARTIAL),
+          fast_hz(8U), slow_tenths_hz(10U) {}
+};
 
 void handle_signal(int) { interrupted = 1; }
 
@@ -89,6 +117,222 @@ bool ensure_directory(const char *path) {
     std::cerr << "warning: cannot create " << path << ": "
               << std::strerror(errno) << '\n';
     return false;
+}
+
+bool file_exists(const char *path) {
+    struct stat info;
+    return stat(path, &info) == 0;
+}
+
+const char *refresh_type_name(RefreshType type) {
+    switch (type) {
+        case REFRESH_A2: return "A2";
+        case REFRESH_DU: return "DU";
+        case REFRESH_GL16: return "GL16";
+        case REFRESH_GC16_PARTIAL: return "GC16 PARTIAL";
+        case REFRESH_GC16_FULL: return "GC16 FULL FLASH";
+        default: return "UNKNOWN";
+    }
+}
+
+bool load_refresh_settings_file(const char *path, RefreshSettings &settings) {
+    std::ifstream input(path);
+    if (!input)
+        return false;
+    std::string line;
+    unsigned recognized = 0U;
+    while (std::getline(input, line)) {
+        const std::string::size_type equals = line.find('=');
+        if (equals == std::string::npos)
+            continue;
+        const std::string key = line.substr(0, equals);
+        const std::string encoded = line.substr(equals + 1U);
+        char *end = 0;
+        errno = 0;
+        const unsigned long parsed = std::strtoul(encoded.c_str(), &end, 10);
+        if (errno || !end || *end != '\0' || parsed > UINT_MAX)
+            continue;
+        const unsigned value = static_cast<unsigned>(parsed);
+        if (key == "fast_type" && value < REFRESH_TYPE_COUNT) {
+            settings.fast_type = static_cast<RefreshType>(value);
+            recognized |= 1U;
+        } else if (key == "slow_type" && value < REFRESH_TYPE_COUNT) {
+            settings.slow_type = static_cast<RefreshType>(value);
+            recognized |= 2U;
+        } else if (key == "fast_hz" &&
+                 (value == 2U || value == 4U || value == 6U ||
+                  value == 8U || value == 10U)) {
+            settings.fast_hz = value;
+            recognized |= 4U;
+        } else if (key == "slow_tenths_hz" &&
+                 (value == 0U || value == 1U || value == 2U ||
+                  value == 5U || value == 10U || value == 20U)) {
+            settings.slow_tenths_hz = value;
+            recognized |= 8U;
+        }
+    }
+    return recognized == 15U;
+}
+
+void load_refresh_settings(RefreshSettings &settings) {
+    const std::string temporary = std::string(kRefreshConfig) + ".tmp";
+    const std::string backup = std::string(kRefreshConfig) + ".bak";
+    RefreshSettings candidate;
+    if (load_refresh_settings_file(kRefreshConfig, candidate) ||
+        load_refresh_settings_file(temporary.c_str(), candidate) ||
+        load_refresh_settings_file(backup.c_str(), candidate))
+        settings = candidate;
+}
+
+bool write_all(int descriptor, const std::string &contents) {
+    std::string::size_type offset = 0U;
+    while (offset < contents.size()) {
+        const ssize_t count = write(descriptor, contents.data() + offset,
+                                    contents.size() - offset);
+        if (count < 0) {
+            if (errno == EINTR)
+                continue;
+            return false;
+        }
+        offset += static_cast<std::string::size_type>(count);
+    }
+    return true;
+}
+
+std::string serialize_refresh_settings(const RefreshSettings &settings) {
+    char contents[128];
+    const int length = std::snprintf(
+        contents, sizeof(contents),
+        "fast_type=%u\nslow_type=%u\nfast_hz=%u\nslow_tenths_hz=%u\n",
+        static_cast<unsigned>(settings.fast_type),
+        static_cast<unsigned>(settings.slow_type), settings.fast_hz,
+        settings.slow_tenths_hz);
+    return length > 0 ? std::string(contents, static_cast<std::size_t>(length))
+                      : std::string();
+}
+
+void sync_koboy_directory() {
+    const int directory = open(kKoBoyRoot, O_RDONLY | O_DIRECTORY);
+    if (directory >= 0) {
+        fsync(directory);
+        close(directory);
+    }
+}
+
+void save_refresh_settings(const RefreshSettings &settings) {
+    if (!ensure_directory(kKoBoyRoot))
+        return;
+    const std::string temporary = std::string(kRefreshConfig) + ".tmp";
+    const std::string backup = std::string(kRefreshConfig) + ".bak";
+    const std::string contents = serialize_refresh_settings(settings);
+    const int output = open(temporary.c_str(), O_WRONLY | O_CREAT | O_TRUNC,
+                            0644);
+    bool durable = output >= 0 && write_all(output, contents) &&
+                   fsync(output) == 0;
+    if (output >= 0 && close(output) != 0)
+        durable = false;
+    if (!durable) {
+        std::cerr << "warning: cannot durably write refresh settings\n";
+        return;
+    }
+    unlink(backup.c_str());
+    if (rename(kRefreshConfig, backup.c_str()) != 0 && errno != ENOENT) {
+        std::cerr << "warning: cannot back up refresh settings: "
+                  << std::strerror(errno) << '\n';
+        return;
+    }
+    if (rename(temporary.c_str(), kRefreshConfig) != 0) {
+        std::cerr << "warning: cannot install refresh settings: "
+                  << std::strerror(errno) << '\n';
+        rename(backup.c_str(), kRefreshConfig);
+        return;
+    }
+    sync_koboy_directory();
+}
+
+void record_active_refresh_settings(const RefreshSettings &settings) {
+    if (!ensure_directory(kKoBoyRoot))
+        return;
+    char entry[256];
+    const int length = std::snprintf(
+        entry, sizeof(entry),
+        "active pid=%ld uptime=%.3f fast=%s fast_hz=%u slow=%s "
+        "slow_hz=%.1f\n",
+        static_cast<long>(getpid()), monotonic_seconds(),
+        refresh_type_name(settings.fast_type), settings.fast_hz,
+        refresh_type_name(settings.slow_type),
+        static_cast<double>(settings.slow_tenths_hz) / 10.0);
+    const int output = open(kRefreshBreadcrumb,
+                            O_WRONLY | O_CREAT | O_APPEND, 0644);
+    if (output < 0 || length <= 0 ||
+        !write_all(output, std::string(entry, static_cast<std::size_t>(length))) ||
+        fsync(output) != 0)
+        std::cerr << "warning: cannot record active refresh settings\n";
+    if (output >= 0)
+        close(output);
+}
+
+void cycle_fast_frequency(RefreshSettings &settings) {
+    const unsigned values[] = {2U, 4U, 6U, 8U, 10U};
+    for (unsigned i = 0; i < 5U; ++i)
+        if (settings.fast_hz == values[i]) {
+            settings.fast_hz = values[(i + 1U) % 5U];
+            return;
+        }
+    settings.fast_hz = 8U;
+}
+
+void cycle_slow_frequency(RefreshSettings &settings) {
+    const unsigned values[] = {0U, 1U, 2U, 5U, 10U, 20U};
+    for (unsigned i = 0; i < 6U; ++i)
+        if (settings.slow_tenths_hz == values[i]) {
+            settings.slow_tenths_hz = values[(i + 1U) % 6U];
+            return;
+        }
+    settings.slow_tenths_hz = 10U;
+}
+
+std::string lowercase(std::string value) {
+    for (std::string::size_type i = 0; i < value.size(); ++i)
+        value[i] = static_cast<char>(std::tolower(
+            static_cast<unsigned char>(value[i])));
+    return value;
+}
+
+std::vector<std::string> list_roms() {
+    std::vector<std::string> roms;
+    DIR *directory = opendir(kKoBoyRomDirectory);
+    if (!directory)
+        return roms;
+    for (dirent *entry = readdir(directory); entry; entry = readdir(directory)) {
+        const std::string name(entry->d_name);
+        const std::string folded = lowercase(name);
+        if (folded.size() < 3U ||
+            (folded.substr(folded.size() - 3U) != ".gb" &&
+             (folded.size() < 4U ||
+              folded.substr(folded.size() - 4U) != ".gbc")))
+            continue;
+        roms.push_back(std::string(kKoBoyRomDirectory) + "/" + name);
+    }
+    closedir(directory);
+    std::sort(roms.begin(), roms.end(),
+              [](const std::string &left, const std::string &right) {
+                  return lowercase(left) < lowercase(right);
+              });
+    return roms;
+}
+
+std::string rom_title(const std::string &path) {
+    std::string title(path);
+    const std::string::size_type slash = title.rfind('/');
+    if (slash != std::string::npos)
+        title.erase(0, slash + 1U);
+    const std::string folded = lowercase(title);
+    if (folded.size() >= 4U && folded.substr(folded.size() - 4U) == ".gbc")
+        title.erase(title.size() - 4U);
+    else if (folded.size() >= 3U && folded.substr(folded.size() - 3U) == ".gb")
+        title.erase(title.size() - 3U);
+    return title;
 }
 
 std::string state_path(const char *rom_path, unsigned slot) {
@@ -163,31 +407,38 @@ void run_frame(gambatte::GB &gb,
 }
 
 struct Options {
-    const char *rom;
+    std::string rom;
     unsigned rate;
     unsigned scale;
     unsigned seconds;
     unsigned cleanup_seconds;
-    Options() : rom(0), rate(8), scale(5), seconds(30), cleanup_seconds(10) {}
+    bool rate_set;
+    bool cleanup_set;
+    Options() : rate(8), scale(6), seconds(0), cleanup_seconds(1),
+                rate_set(false), cleanup_set(false) {}
 };
 
 Options parse_options(int argc, char **argv) {
-    if (argc < 2)
-        throw std::runtime_error("usage: kobo-gambatte-display ROM [--rate N] [--scale N] [--seconds N] [--cleanup-seconds N]");
     Options options;
-    options.rom = argv[1];
-    for (int i = 2; i < argc; i += 2) {
+    int first_option = 1;
+    if (argc > 1 && std::strncmp(argv[1], "--", 2) != 0) {
+        options.rom = argv[1];
+        first_option = 2;
+    }
+    for (int i = first_option; i < argc; i += 2) {
         if (i + 1 >= argc)
             throw std::runtime_error("every option requires a value");
-        if (std::strcmp(argv[i], "--rate") == 0)
+        if (std::strcmp(argv[i], "--rate") == 0) {
             options.rate = parse_unsigned(argv[i + 1], "--rate");
-        else if (std::strcmp(argv[i], "--scale") == 0)
+            options.rate_set = true;
+        } else if (std::strcmp(argv[i], "--scale") == 0)
             options.scale = parse_unsigned(argv[i + 1], "--scale");
         else if (std::strcmp(argv[i], "--seconds") == 0)
             options.seconds = parse_unsigned(argv[i + 1], "--seconds");
-        else if (std::strcmp(argv[i], "--cleanup-seconds") == 0)
+        else if (std::strcmp(argv[i], "--cleanup-seconds") == 0) {
             options.cleanup_seconds = parse_unsigned(argv[i + 1], "--cleanup-seconds");
-        else
+            options.cleanup_set = true;
+        } else
             throw std::runtime_error(std::string("unknown option: ") + argv[i]);
     }
     if (options.rate > 30U)
@@ -228,21 +479,81 @@ void fill_circle(std::vector<uint32_t> &screen, unsigned width,
 const unsigned char *glyph(char character) {
     static const unsigned char a[7] = {14, 17, 17, 31, 17, 17, 17};
     static const unsigned char b[7] = {30, 17, 17, 30, 17, 17, 30};
+    static const unsigned char d[7] = {30, 17, 17, 17, 17, 17, 30};
     static const unsigned char e[7] = {31, 16, 16, 30, 16, 16, 31};
+    static const unsigned char f[7] = {31, 16, 16, 30, 16, 16, 16};
+    static const unsigned char g[7] = {15, 16, 16, 23, 17, 17, 15};
+    static const unsigned char h[7] = {17, 17, 17, 31, 17, 17, 17};
+    static const unsigned char i[7] = {31, 4, 4, 4, 4, 4, 31};
+    static const unsigned char j[7] = {7, 2, 2, 2, 18, 18, 12};
+    static const unsigned char k[7] = {17, 18, 20, 24, 20, 18, 17};
     static const unsigned char l[7] = {16, 16, 16, 16, 16, 16, 31};
+    static const unsigned char m[7] = {17, 27, 21, 21, 17, 17, 17};
+    static const unsigned char n[7] = {17, 25, 21, 19, 17, 17, 17};
+    static const unsigned char o[7] = {14, 17, 17, 17, 17, 17, 14};
+    static const unsigned char p[7] = {30, 17, 17, 30, 16, 16, 16};
+    static const unsigned char q[7] = {14, 17, 17, 17, 21, 18, 13};
     static const unsigned char r[7] = {30, 17, 17, 30, 20, 18, 17};
     static const unsigned char s[7] = {15, 16, 16, 14, 1, 1, 30};
     static const unsigned char t[7] = {31, 4, 4, 4, 4, 4, 4};
+    static const unsigned char u[7] = {17, 17, 17, 17, 17, 17, 14};
+    static const unsigned char x[7] = {17, 17, 10, 4, 10, 17, 17};
+    static const unsigned char v[7] = {17, 17, 17, 17, 17, 10, 4};
+    static const unsigned char w[7] = {17, 17, 17, 21, 21, 21, 10};
+    static const unsigned char y[7] = {17, 17, 10, 4, 4, 4, 4};
+    static const unsigned char z[7] = {31, 1, 2, 4, 8, 16, 31};
     static const unsigned char c[7] = {15, 16, 16, 16, 16, 16, 15};
-    switch (character) {
+    static const unsigned char zero[7] = {14, 17, 19, 21, 25, 17, 14};
+    static const unsigned char one[7] = {4, 12, 4, 4, 4, 4, 14};
+    static const unsigned char two[7] = {14, 17, 1, 2, 4, 8, 31};
+    static const unsigned char three[7] = {30, 1, 1, 14, 1, 1, 30};
+    static const unsigned char four[7] = {2, 6, 10, 18, 31, 2, 2};
+    static const unsigned char five[7] = {31, 16, 16, 30, 1, 1, 30};
+    static const unsigned char six[7] = {14, 16, 16, 30, 17, 17, 14};
+    static const unsigned char seven[7] = {31, 1, 2, 4, 8, 8, 8};
+    static const unsigned char eight[7] = {14, 17, 17, 14, 17, 17, 14};
+    static const unsigned char nine[7] = {14, 17, 17, 15, 1, 1, 14};
+    static const unsigned char hyphen[7] = {0, 0, 0, 31, 0, 0, 0};
+    static const unsigned char dot[7] = {0, 0, 0, 0, 0, 12, 12};
+    switch (std::toupper(static_cast<unsigned char>(character))) {
         case 'A': return a;
         case 'B': return b;
         case 'C': return c;
+        case 'D': return d;
         case 'E': return e;
+        case 'F': return f;
+        case 'G': return g;
+        case 'H': return h;
+        case 'I': return i;
+        case 'J': return j;
+        case 'K': return k;
         case 'L': return l;
+        case 'M': return m;
+        case 'N': return n;
+        case 'O': return o;
+        case 'P': return p;
+        case 'Q': return q;
         case 'R': return r;
         case 'S': return s;
         case 'T': return t;
+        case 'U': return u;
+        case 'V': return v;
+        case 'W': return w;
+        case 'X': return x;
+        case 'Y': return y;
+        case 'Z': return z;
+        case '0': return zero;
+        case '1': return one;
+        case '2': return two;
+        case '3': return three;
+        case '4': return four;
+        case '5': return five;
+        case '6': return six;
+        case '7': return seven;
+        case '8': return eight;
+        case '9': return nine;
+        case '-': return hyphen;
+        case '.': return dot;
         default: return 0;
     }
 }
@@ -307,6 +618,220 @@ void draw_controls(std::vector<uint32_t> &screen, unsigned width,
                    menu_y + menu_half_height, dark);
     draw_label(screen, width, height, select_x, menu_y, "SELECT", 3, light);
     draw_label(screen, width, height, start_x, menu_y, "START", 3, light);
+
+    const int system_x = width * 52 / 100;
+    const int system_y = height * 75 / 100;
+    const int system_half_width = width * 12 / 100;
+    const int system_half_height = height * 3 / 100;
+    fill_rectangle(screen, width, height, system_x - system_half_width,
+                   system_y - system_half_height, system_x + system_half_width,
+                   system_y + system_half_height, dark);
+    draw_label(screen, width, height, system_x, system_y, "MENU", 4, light);
+}
+
+void draw_menu(std::vector<uint32_t> &screen, unsigned width,
+               unsigned height, bool developer) {
+    const uint32_t dark = 0xFF202020U;
+    const uint32_t light = 0xFFFFFFFFU;
+    screen.assign(static_cast<size_t>(width) * height, light);
+    draw_label(screen, width, height, width / 2, height * 28 / 100,
+               "MENU", 10, dark);
+
+    const int left = width * 18 / 100;
+    const int right = width * 82 / 100;
+    const int half_height = height * 4 / 100;
+    const int resume_y = height * (developer ? 34 : 40) / 100;
+    const int select_y = height * (developer ? 45 : 52) / 100;
+    const int settings_y = height * 56 / 100;
+    const int exit_y = height * (developer ? 67 : 64) / 100;
+    fill_rectangle(screen, width, height, left, resume_y - half_height,
+                   right, resume_y + half_height, dark);
+    fill_rectangle(screen, width, height, left, select_y - half_height,
+                   right, select_y + half_height, dark);
+    if (developer)
+        fill_rectangle(screen, width, height, left, settings_y - half_height,
+                       right, settings_y + half_height, dark);
+    fill_rectangle(screen, width, height, left, exit_y - half_height,
+                   right, exit_y + half_height, dark);
+    draw_label(screen, width, height, width / 2, resume_y,
+               "RESUME GAME", 6, light);
+    draw_label(screen, width, height, width / 2, select_y,
+               "SELECT GAME", 6, light);
+    if (developer)
+        draw_label(screen, width, height, width / 2, settings_y,
+                   "REFRESH SETTINGS", 5, light);
+    draw_label(screen, width, height, width / 2, exit_y,
+               "EXIT TO NICKEL", 5, light);
+}
+
+std::string slow_frequency_name(unsigned tenths_hz) {
+    if (!tenths_hz)
+        return "OFF";
+    char text[32];
+    if (tenths_hz < 10U)
+        std::snprintf(text, sizeof(text), "0.%u HZ", tenths_hz);
+    else
+        std::snprintf(text, sizeof(text), "%u HZ", tenths_hz / 10U);
+    return text;
+}
+
+void draw_refresh_settings(std::vector<uint32_t> &screen, unsigned width,
+                           unsigned height,
+                           const RefreshSettings &settings) {
+    const uint32_t dark = 0xFF202020U;
+    const uint32_t light = 0xFFFFFFFFU;
+    screen.assign(static_cast<size_t>(width) * height, light);
+    draw_label(screen, width, height, width / 2, height * 10 / 100,
+               "REFRESH SETTINGS", 6, dark);
+    const int left = width * 8 / 100;
+    const int right = width * 92 / 100;
+    const int half_height = height * 5 / 100;
+    const unsigned centers[] = {28U, 42U, 56U, 70U};
+    const std::string rows[] = {
+        std::string("FAST TYPE  ") + refresh_type_name(settings.fast_type),
+        std::string("SLOW TYPE  ") + refresh_type_name(settings.slow_type),
+        std::string("FAST FREQUENCY  ") +
+            std::to_string(settings.fast_hz) + " HZ",
+        std::string("SLOW FREQUENCY  ") +
+            slow_frequency_name(settings.slow_tenths_hz)
+    };
+    for (unsigned i = 0; i < 4U; ++i) {
+        const int center = height * centers[i] / 100;
+        fill_rectangle(screen, width, height, left, center - half_height,
+                       right, center + half_height, dark);
+        draw_label(screen, width, height, width / 2, center,
+                   rows[i].c_str(), 4, light);
+    }
+    draw_label(screen, width, height, width / 2, height * 91 / 100,
+               "BACK", 5, dark);
+}
+
+void draw_game_list(std::vector<uint32_t> &screen, unsigned width,
+                    unsigned height, const std::vector<std::string> &roms,
+                    std::size_t page, bool allow_cancel) {
+    const uint32_t dark = 0xFF202020U;
+    const uint32_t light = 0xFFFFFFFFU;
+    const std::size_t page_size = 7U;
+    screen.assign(static_cast<size_t>(width) * height, light);
+    draw_label(screen, width, height, width / 2, height * 8 / 100,
+               "SELECT GAME", 7, dark);
+
+    const int left = width * 6 / 100;
+    const int right = width * 94 / 100;
+    const int row_top = height * 16 / 100;
+    const int row_height = height * 9 / 100;
+    const std::size_t first = page * page_size;
+    if (roms.empty()) {
+        draw_label(screen, width, height, width / 2, height * 48 / 100,
+                   "NO GAMES FOUND", 6, dark);
+    } else {
+        for (std::size_t row = 0; row < page_size && first + row < roms.size();
+             ++row) {
+            const int top = row_top + static_cast<int>(row) * row_height;
+            const int bottom = top + row_height - height / 100;
+            fill_rectangle(screen, width, height, left, top, right, bottom,
+                           dark);
+            std::string title = rom_title(roms[first + row]);
+            const std::size_t maximum = 48U;
+            if (title.size() > maximum)
+                title = title.substr(0, maximum - 3U) + "...";
+            draw_label(screen, width, height, width / 2,
+                       top + (bottom - top) / 2, title.c_str(), 3, light);
+        }
+    }
+
+    const int footer_y = height * 91 / 100;
+    draw_label(screen, width, height, width / 6, footer_y,
+               "PREVIOUS", 4, dark);
+    draw_label(screen, width, height, width / 2, footer_y,
+               allow_cancel ? "BACK" : "EXIT", 4, dark);
+    draw_label(screen, width, height, width * 5 / 6, footer_y,
+               "NEXT", 4, dark);
+}
+
+void draw_loading_screen(std::vector<uint32_t> &screen, unsigned width,
+                         unsigned height, const std::string &rom_path) {
+    const uint32_t dark = 0xFF202020U;
+    const uint32_t light = 0xFFFFFFFFU;
+    screen.assign(static_cast<size_t>(width) * height, light);
+    draw_label(screen, width, height, width / 2, height * 42 / 100,
+               "LOADING", 9, dark);
+    std::string title = rom_title(rom_path);
+    const std::size_t maximum = 48U;
+    if (title.size() > maximum)
+        title = title.substr(0, maximum - 3U) + "...";
+    draw_label(screen, width, height, width / 2, height * 54 / 100,
+               title.c_str(), 3, dark);
+}
+
+std::string choose_game(gambatte_kobo::FramebufferBackend &framebuffer,
+                        gambatte_kobo::TouchInput &input,
+                        std::vector<uint32_t> &screen, uint32_t &marker,
+                        bool allow_cancel) {
+    const std::vector<std::string> roms = list_roms();
+    const std::size_t page_size = 7U;
+    const std::size_t page_count = roms.empty()
+        ? 1U : (roms.size() + page_size - 1U) / page_size;
+    std::size_t page = 0U;
+    for (;;) {
+        draw_game_list(screen, framebuffer.variable_info().xres,
+                       framebuffer.variable_info().yres, roms, page,
+                       allow_cancel);
+        framebuffer.draw_screen(screen);
+        framebuffer.refresh_screen_gc16(marker++, true);
+        for (;;) {
+            if (interrupted)
+                return std::string();
+            const gambatte_kobo::UiAction action =
+                input.take_ui_action(gambatte_kobo::UI_SCREEN_GAME_LIST);
+            if (action == gambatte_kobo::UI_LIST_PREVIOUS) {
+                if (page > 0U)
+                    --page;
+                break;
+            }
+            if (action == gambatte_kobo::UI_LIST_NEXT) {
+                if (page + 1U < page_count)
+                    ++page;
+                break;
+            }
+            if (action == gambatte_kobo::UI_LIST_CANCEL)
+                return std::string();
+            if (action >= gambatte_kobo::UI_GAME_0 &&
+                action <= gambatte_kobo::UI_GAME_6) {
+                const std::size_t row = static_cast<std::size_t>(
+                    action - gambatte_kobo::UI_GAME_0);
+                const std::size_t index = page * page_size + row;
+                if (index < roms.size())
+                    return roms[index];
+            }
+            usleep(20000);
+        }
+    }
+}
+
+void refresh_viewport(gambatte_kobo::FramebufferBackend &framebuffer,
+                      RefreshType type, uint32_t marker,
+                      bool wait_for_completion) {
+    switch (type) {
+        case REFRESH_A2:
+            framebuffer.refresh_a2(marker, wait_for_completion);
+            break;
+        case REFRESH_DU:
+            framebuffer.refresh_du(marker, wait_for_completion);
+            break;
+        case REFRESH_GL16:
+            framebuffer.refresh_gl16(marker, wait_for_completion);
+            break;
+        case REFRESH_GC16_PARTIAL:
+            framebuffer.refresh_gc16_partial(marker, wait_for_completion);
+            break;
+        case REFRESH_GC16_FULL:
+            framebuffer.refresh_gc16(marker, wait_for_completion);
+            break;
+        default:
+            framebuffer.refresh_a2(marker, wait_for_completion);
+            break;
+    }
 }
 
 } // namespace
@@ -315,12 +840,12 @@ int main(int argc, char **argv) {
     try {
         const Options options = parse_options(argc, argv);
         const bool supervised = std::getenv("GAMBATTE_SUPERVISED") != 0;
-        const std::vector<unsigned char> rom = read_file(options.rom);
+        const bool developer = file_exists(kDeveloperFlag);
+        RefreshSettings refresh_settings;
+        load_refresh_settings(refresh_settings);
+        if (options.rate_set)
+            refresh_settings.fast_hz = options.rate;
         gambatte::GB gb;
-        if (gb.load(&rom[0], rom.size()) != 0)
-            throw std::runtime_error("Gambatte rejected the ROM image");
-        const std::string automatic_state = state_path(options.rom, 0U);
-        const bool automatic_state_loaded = load_state(gb, automatic_state);
 
         std::signal(SIGINT, handle_signal);
         std::signal(SIGTERM, handle_signal);
@@ -331,8 +856,6 @@ int main(int argc, char **argv) {
         input.open_device();
         if (!supervised)
             nickel.suspend();
-        gb.setInputGetter(&input);
-
         gambatte_kobo::FramebufferBackend framebuffer;
         framebuffer.open_device("/dev/fb0");
         framebuffer.configure_viewport(gambatte_kobo::kGameBoyWidth * options.scale,
@@ -350,6 +873,28 @@ int main(int argc, char **argv) {
         const unsigned screen_height = framebuffer.variable_info().yres;
         std::vector<uint32_t> screen(
             static_cast<size_t>(screen_width) * screen_height, 0xFFFFFFFFU);
+
+        std::string rom_path = options.rom;
+        if (rom_path.empty())
+            rom_path = choose_game(framebuffer, input, screen, marker, false);
+        if (rom_path.empty()) {
+            if (!supervised)
+                framebuffer.restore(marker++);
+            return interrupted ? 130 : 0;
+        }
+        if (options.rom.empty()) {
+            draw_loading_screen(screen, screen_width, screen_height, rom_path);
+            framebuffer.draw_screen(screen);
+            framebuffer.refresh_screen_gc16(marker++, true);
+        }
+        std::vector<unsigned char> rom = read_file(rom_path.c_str());
+        if (gb.load(&rom[0], rom.size()) != 0)
+            throw std::runtime_error("Gambatte rejected the ROM image");
+        gb.setInputGetter(&input);
+        std::string automatic_state = state_path(rom_path.c_str(), 0U);
+        bool automatic_state_loaded = load_state(gb, automatic_state);
+        bool automatic_state_saved = false;
+
         draw_controls(screen, screen_width, screen_height);
         framebuffer.draw_screen(screen);
         framebuffer.refresh_screen_gc16(marker++, true);
@@ -358,11 +903,16 @@ int main(int argc, char **argv) {
         std::cout << "touch_x_range=" << input.x_min() << ',' << input.x_max() << '\n';
         std::cout << "touch_y_range=" << input.y_min() << ',' << input.y_max() << '\n';
 
-        const double display_interval = 1.0 / options.rate;
+        double display_interval = 1.0 / refresh_settings.fast_hz;
+        double slow_interval = options.cleanup_set
+            ? static_cast<double>(options.cleanup_seconds)
+            : (refresh_settings.slow_tenths_hz
+                ? 10.0 / refresh_settings.slow_tenths_hz : 0.0);
+        record_active_refresh_settings(refresh_settings);
         const double started = monotonic_seconds();
-        const double deadline = started + options.seconds;
+        double deadline = options.seconds ? started + options.seconds : 0.0;
         double next_display = started;
-        double next_cleanup = started + options.cleanup_seconds;
+        double next_cleanup = slow_interval ? started + slow_interval : 0.0;
         double emulation_accumulator = 0.0;
         unsigned emulated_frames = 0U;
         unsigned displayed_frames = 0U;
@@ -370,13 +920,127 @@ int main(int argc, char **argv) {
         unsigned last_buttons = 0U;
         unsigned input_transitions = 0U;
         unsigned input_nonzero_polls = 0U;
+        bool exit_to_nickel = false;
+        bool force_first_frame_gc16 = true;
 
-        while (!interrupted && monotonic_seconds() < deadline) {
-            emulation_accumulator += kGameBoyFrameRate / options.rate;
+        while (!interrupted &&
+               (!options.seconds || monotonic_seconds() < deadline)) {
+            emulation_accumulator += kGameBoyFrameRate /
+                                    refresh_settings.fast_hz;
             unsigned frames_this_update = static_cast<unsigned>(emulation_accumulator);
             emulation_accumulator -= frames_this_update;
             while (frames_this_update-- != 0U) {
                 input.advance_frame();
+                if (input.take_ui_action(gambatte_kobo::UI_SCREEN_GAME) ==
+                    gambatte_kobo::UI_OPEN_MENU) {
+                    const double menu_started = monotonic_seconds();
+                    draw_menu(screen, screen_width, screen_height, developer);
+                    framebuffer.draw_screen(screen);
+                    framebuffer.refresh_screen_gc16(marker++, true);
+
+                    gambatte_kobo::UiAction menu_action =
+                        gambatte_kobo::UI_NONE;
+                    while (!interrupted && menu_action == gambatte_kobo::UI_NONE) {
+                        menu_action = input.take_ui_action(developer
+                            ? gambatte_kobo::UI_SCREEN_MENU_DEVELOPER
+                            : gambatte_kobo::UI_SCREEN_MENU);
+                        if (menu_action == gambatte_kobo::UI_NONE)
+                            usleep(20000);
+                    }
+                    if (menu_action == gambatte_kobo::UI_EXIT_TO_NICKEL) {
+                        exit_to_nickel = true;
+                        break;
+                    }
+                    if (interrupted)
+                        break;
+                    if (menu_action == gambatte_kobo::UI_SELECT_GAME) {
+                        automatic_state_saved = save_state(gb, automatic_state);
+                        const std::string selected = choose_game(
+                            framebuffer, input, screen, marker, true);
+                        if (!selected.empty()) {
+                            draw_loading_screen(screen, screen_width,
+                                                screen_height, selected);
+                            framebuffer.draw_screen(screen);
+                            framebuffer.refresh_screen_gc16(marker++, true);
+                            std::vector<unsigned char> selected_rom =
+                                read_file(selected.c_str());
+                            if (gb.load(&selected_rom[0], selected_rom.size()) != 0)
+                                throw std::runtime_error(
+                                    "Gambatte rejected the selected ROM image");
+                            rom.swap(selected_rom);
+                            rom_path = selected;
+                            automatic_state = state_path(rom_path.c_str(), 0U);
+                            automatic_state_loaded =
+                                load_state(gb, automatic_state);
+                            automatic_state_saved = false;
+                            gb.setInputGetter(&input);
+                            scaled.clear();
+                            force_first_frame_gc16 = true;
+                        }
+                    }
+                    if (menu_action == gambatte_kobo::UI_REFRESH_SETTINGS &&
+                        developer) {
+                        for (;;) {
+                            draw_refresh_settings(screen, screen_width,
+                                                  screen_height,
+                                                  refresh_settings);
+                            framebuffer.draw_screen(screen);
+                            framebuffer.refresh_screen_gc16(marker++, true);
+                            gambatte_kobo::UiAction setting_action =
+                                gambatte_kobo::UI_NONE;
+                            while (!interrupted &&
+                                   setting_action == gambatte_kobo::UI_NONE) {
+                                setting_action = input.take_ui_action(
+                                    gambatte_kobo::UI_SCREEN_REFRESH_SETTINGS);
+                                if (setting_action == gambatte_kobo::UI_NONE)
+                                    usleep(20000);
+                            }
+                            if (interrupted ||
+                                setting_action == gambatte_kobo::UI_LIST_CANCEL)
+                                break;
+                            if (setting_action ==
+                                gambatte_kobo::UI_SETTING_FAST_TYPE)
+                                refresh_settings.fast_type =
+                                    static_cast<RefreshType>(
+                                        (refresh_settings.fast_type + 1) %
+                                        REFRESH_TYPE_COUNT);
+                            else if (setting_action ==
+                                     gambatte_kobo::UI_SETTING_SLOW_TYPE)
+                                refresh_settings.slow_type =
+                                    static_cast<RefreshType>(
+                                        (refresh_settings.slow_type + 1) %
+                                        REFRESH_TYPE_COUNT);
+                            else if (setting_action ==
+                                     gambatte_kobo::UI_SETTING_FAST_FREQUENCY)
+                                cycle_fast_frequency(refresh_settings);
+                            else if (setting_action ==
+                                     gambatte_kobo::UI_SETTING_SLOW_FREQUENCY)
+                                cycle_slow_frequency(refresh_settings);
+                            save_refresh_settings(refresh_settings);
+                        }
+                        display_interval = 1.0 / refresh_settings.fast_hz;
+                        slow_interval = refresh_settings.slow_tenths_hz
+                            ? 10.0 / refresh_settings.slow_tenths_hz : 0.0;
+                        record_active_refresh_settings(refresh_settings);
+                        next_cleanup = slow_interval
+                            ? monotonic_seconds() + slow_interval : 0.0;
+                        emulation_accumulator = 0.0;
+                    }
+
+                    const double paused_for = monotonic_seconds() - menu_started;
+                    if (options.seconds)
+                        deadline += paused_for;
+                    next_cleanup += paused_for;
+
+                    screen.assign(static_cast<size_t>(screen_width) *
+                                  screen_height, 0xFFFFFFFFU);
+                    draw_controls(screen, screen_width, screen_height);
+                    framebuffer.draw_screen(screen);
+                    if (!scaled.empty())
+                        framebuffer.draw(scaled);
+                    framebuffer.refresh_screen_gc16(marker++, true);
+                    next_display = monotonic_seconds();
+                }
                 const unsigned current_buttons = input();
                 if (current_buttons != last_buttons) {
                     ++input_transitions;
@@ -387,18 +1051,29 @@ int main(int argc, char **argv) {
                 run_frame(gb, video, sound);
                 ++emulated_frames;
             }
+            if (exit_to_nickel || interrupted)
+                break;
             for (std::size_t i = 0; i < video.size(); ++i)
                 rgb[i] = static_cast<uint32_t>(video[i]);
             gambatte_kobo::scale_rgb32_grayscale(rgb, options.scale, scaled);
             framebuffer.draw(scaled);
 
             const double now = monotonic_seconds();
-            if (now >= next_cleanup) {
+            if (force_first_frame_gc16) {
                 framebuffer.refresh_gc16(marker++, true);
-                next_cleanup += options.cleanup_seconds;
+                force_first_frame_gc16 = false;
+            } else if (slow_interval && now >= next_cleanup) {
+                refresh_viewport(framebuffer, refresh_settings.slow_type,
+                                 marker++, true);
+                next_cleanup += slow_interval;
                 ++cleanups;
             } else {
-                framebuffer.refresh_a2(marker++);
+                const bool fast_wait =
+                    refresh_settings.fast_type == REFRESH_GL16 ||
+                    refresh_settings.fast_type == REFRESH_GC16_PARTIAL ||
+                    refresh_settings.fast_type == REFRESH_GC16_FULL;
+                refresh_viewport(framebuffer, refresh_settings.fast_type,
+                                 marker++, fast_wait);
             }
             ++displayed_frames;
             next_display += display_interval;
@@ -406,7 +1081,7 @@ int main(int argc, char **argv) {
         }
 
         const double elapsed = monotonic_seconds() - started;
-        const bool automatic_state_saved = save_state(gb, automatic_state);
+        automatic_state_saved = save_state(gb, automatic_state);
         if (!supervised)
             framebuffer.restore(marker++);
         std::cout << "name=Ko Boy\n";
@@ -419,10 +1094,12 @@ int main(int argc, char **argv) {
         std::cout << "elapsed_seconds=" << elapsed << '\n';
         std::cout << "emulated_frames=" << emulated_frames << '\n';
         std::cout << "displayed_frames=" << displayed_frames << '\n';
-        std::cout << "gc16_cleanups=" << cleanups << '\n';
+        std::cout << "cleanup_refreshes=" << cleanups << '\n';
         std::cout << "input_transitions=" << input_transitions << '\n';
         std::cout << "input_nonzero_polls=" << input_nonzero_polls << '\n';
-        std::cout << "result=" << (interrupted ? "interrupted" : "pass") << '\n';
+        std::cout << "result="
+                  << (interrupted ? "interrupted" :
+                      (exit_to_nickel ? "exit_to_nickel" : "pass")) << '\n';
         return interrupted ? 130 : 0;
     } catch (const std::exception &error) {
         std::cerr << "error: " << error.what() << '\n';

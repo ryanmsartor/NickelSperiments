@@ -27,7 +27,8 @@ bool inside_circle(int x, int y, int center_x, int center_y, int radius) {
 
 TouchInput::TouchInput(unsigned screen_width, unsigned screen_height)
     : fd_(-1), screen_width_(screen_width), screen_height_(screen_height),
-      current_slot_(0U), physical_buttons_(0U), buttons_(0U) {
+      current_slot_(0U), physical_buttons_(0U), buttons_(0U),
+      ui_touch_active_(false) {
     std::memset(&x_info_, 0, sizeof(x_info_));
     std::memset(&y_info_, 0, sizeof(y_info_));
     std::memset(contacts_, 0, sizeof(contacts_));
@@ -78,9 +79,7 @@ int TouchInput::normalize(int value, const input_absinfo &axis,
                             (axis.maximum - axis.minimum));
 }
 
-unsigned TouchInput::hit_test(int raw_x, int raw_y) const {
-    int x;
-    int y;
+void TouchInput::screen_position(int raw_x, int raw_y, int &x, int &y) const {
     const int raw_x_extent = x_info_.maximum - x_info_.minimum + 1;
     const int raw_y_extent = y_info_.maximum - y_info_.minimum + 1;
     if (raw_x_extent == static_cast<int>(screen_height_) &&
@@ -93,6 +92,12 @@ unsigned TouchInput::hit_test(int raw_x, int raw_y) const {
         x = normalize(raw_x, x_info_, screen_width_);
         y = normalize(raw_y, y_info_, screen_height_);
     }
+}
+
+unsigned TouchInput::hit_test(int raw_x, int raw_y) const {
+    int x;
+    int y;
+    screen_position(raw_x, raw_y, x, y);
 
     const int dpad_x = static_cast<int>(screen_width_ * 21U / 100U);
     const int dpad_y = static_cast<int>(screen_height_ * 82U / 100U);
@@ -129,6 +134,86 @@ unsigned TouchInput::hit_test(int raw_x, int raw_y) const {
             return START;
     }
     return 0U;
+}
+
+UiAction TouchInput::ui_hit_test(int raw_x, int raw_y,
+                                 UiScreen screen) const {
+    int x;
+    int y;
+    screen_position(raw_x, raw_y, x, y);
+    if (screen == UI_SCREEN_GAME) {
+        const int center_x = static_cast<int>(screen_width_ * 52U / 100U);
+        const int center_y = static_cast<int>(screen_height_ * 75U / 100U);
+        const int half_width = static_cast<int>(screen_width_ * 12U / 100U);
+        const int half_height = static_cast<int>(screen_height_ * 3U / 100U);
+        return std::abs(x - center_x) <= half_width &&
+               std::abs(y - center_y) <= half_height
+            ? UI_OPEN_MENU : UI_NONE;
+    }
+
+    if (screen == UI_SCREEN_MENU || screen == UI_SCREEN_MENU_DEVELOPER) {
+        const int left = static_cast<int>(screen_width_ * 18U / 100U);
+        const int right = static_cast<int>(screen_width_ * 82U / 100U);
+        const int half_height = static_cast<int>(screen_height_ * 4U / 100U);
+        if (x < left || x > right)
+            return UI_NONE;
+        const unsigned resume_y = screen == UI_SCREEN_MENU_DEVELOPER ? 34U : 40U;
+        const unsigned select_y = screen == UI_SCREEN_MENU_DEVELOPER ? 45U : 52U;
+        const unsigned exit_y = screen == UI_SCREEN_MENU_DEVELOPER ? 67U : 64U;
+        if (std::abs(y - static_cast<int>(screen_height_ * resume_y / 100U)) <=
+            half_height)
+            return UI_RESUME_GAME;
+        if (std::abs(y - static_cast<int>(screen_height_ * select_y / 100U)) <=
+            half_height)
+            return UI_SELECT_GAME;
+        if (screen == UI_SCREEN_MENU_DEVELOPER &&
+            std::abs(y - static_cast<int>(screen_height_ * 56U / 100U)) <=
+            half_height)
+            return UI_REFRESH_SETTINGS;
+        if (std::abs(y - static_cast<int>(screen_height_ * exit_y / 100U)) <=
+            half_height)
+            return UI_EXIT_TO_NICKEL;
+        return UI_NONE;
+    }
+
+    if (screen == UI_SCREEN_REFRESH_SETTINGS) {
+        const int left = static_cast<int>(screen_width_ * 8U / 100U);
+        const int right = static_cast<int>(screen_width_ * 92U / 100U);
+        const int half_height = static_cast<int>(screen_height_ * 5U / 100U);
+        if (x < left || x > right)
+            return UI_NONE;
+        const unsigned centers[] = {28U, 42U, 56U, 70U};
+        const UiAction actions[] = {
+            UI_SETTING_FAST_TYPE, UI_SETTING_SLOW_TYPE,
+            UI_SETTING_FAST_FREQUENCY, UI_SETTING_SLOW_FREQUENCY
+        };
+        for (unsigned i = 0; i < 4U; ++i)
+            if (std::abs(y - static_cast<int>(screen_height_ * centers[i] /
+                                              100U)) <= half_height)
+                return actions[i];
+        if (y >= static_cast<int>(screen_height_ * 86U / 100U))
+            return UI_LIST_CANCEL;
+        return UI_NONE;
+    }
+
+    const int list_left = static_cast<int>(screen_width_ * 6U / 100U);
+    const int list_right = static_cast<int>(screen_width_ * 94U / 100U);
+    const int row_top = static_cast<int>(screen_height_ * 16U / 100U);
+    const int row_height = static_cast<int>(screen_height_ * 9U / 100U);
+    if (x >= list_left && x <= list_right && y >= row_top &&
+        y < row_top + 7 * row_height) {
+        return static_cast<UiAction>(UI_GAME_0 + (y - row_top) / row_height);
+    }
+    const int footer_y = static_cast<int>(screen_height_ * 91U / 100U);
+    const int footer_half_height = static_cast<int>(screen_height_ * 5U / 100U);
+    if (std::abs(y - footer_y) <= footer_half_height) {
+        if (x < static_cast<int>(screen_width_ / 3U))
+            return UI_LIST_PREVIOUS;
+        if (x < static_cast<int>(screen_width_ * 2U / 3U))
+            return UI_LIST_CANCEL;
+        return UI_LIST_NEXT;
+    }
+    return UI_NONE;
 }
 
 void TouchInput::handle(const input_event &event) {
@@ -204,6 +289,23 @@ void TouchInput::advance_frame() {
     } else {
         buttons_ = physical_buttons_;
     }
+}
+
+UiAction TouchInput::take_ui_action(UiScreen screen) {
+    poll();
+    bool touching = false;
+    UiAction action = UI_NONE;
+    for (unsigned slot = 0; slot < 16U; ++slot) {
+        if (!contacts_[slot].active)
+            continue;
+        touching = true;
+        if (action == UI_NONE)
+            action = ui_hit_test(contacts_[slot].x, contacts_[slot].y, screen);
+    }
+    if (ui_touch_active_ || !touching)
+        action = UI_NONE;
+    ui_touch_active_ = touching;
+    return action;
 }
 
 } // namespace gambatte_kobo

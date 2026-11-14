@@ -38,10 +38,14 @@ Gambatte. The current work explores emulation performance, MediaTek e-paper
 presentation, touch controls, and recovery from player crashes.
 
 Its components range from a headless feasibility benchmark to a ROM-driven
-display prototype and supervisor. Ko Boy remains a developer prototype rather
-than an installable end-user package; no ROMs are included.
+display prototype and supervisor. The player includes touch controls and an
+on-device game browser available both at startup and from the in-game menu.
+Games can be resumed or switched, and the player can return safely to Nickel.
+Ko Boy remains a developer prototype rather than an installable end-user
+package; no ROMs are included.
 
-[Ko Boy port plan and technical details](docs/gambatte-kobo-port-plan.md)
+- [Ko Boy usage and launcher setup](docs/koboy.md)
+- [Ko Boy port plan and technical details](docs/gambatte-kobo-port-plan.md)
 
 ## Building
 

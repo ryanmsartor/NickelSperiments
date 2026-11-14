@@ -30,7 +30,10 @@ public:
     void clear_screen(uint32_t pixel);
     void draw(const std::vector<uint32_t> &pixels);
     void draw_screen(const std::vector<uint32_t> &pixels);
-    double refresh_a2(uint32_t marker);
+    double refresh_a2(uint32_t marker, bool wait_for_completion = false);
+    double refresh_du(uint32_t marker, bool wait_for_completion);
+    double refresh_gl16(uint32_t marker, bool wait_for_completion);
+    double refresh_gc16_partial(uint32_t marker, bool wait_for_completion);
     double refresh_gc16(uint32_t marker, bool wait_for_completion);
     double refresh_screen_gc16(uint32_t marker, bool wait_for_completion);
     void restore(uint32_t marker);

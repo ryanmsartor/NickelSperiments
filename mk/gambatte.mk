@@ -6,7 +6,12 @@ GAMBATTE_DISPLAY_OUTPUT := build/kobo-gambatte-display-test
 GAMBATTE_PLAYER_OUTPUT := build/kobo-gambatte-display
 GAMBATTE_SUPERVISOR_OUTPUT := build/kobo-gambatte-supervisor
 GAMBATTE_CROSS_COMPILE ?= arm-nickel-linux-gnueabihf-
+GAMBATTE_LOCAL_CXX := $(CURDIR)/.toolchains/bin/arm-nickel-linux-gnueabihf-g++
+ifneq ($(wildcard $(GAMBATTE_LOCAL_CXX)),)
+GAMBATTE_CXX ?= $(GAMBATTE_LOCAL_CXX)
+else
 GAMBATTE_CXX ?= $(GAMBATTE_CROSS_COMPILE)g++
+endif
 
 GAMBATTE_CPPFLAGS := \
 	-D__LIBRETRO__ \

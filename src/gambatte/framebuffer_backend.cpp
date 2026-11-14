@@ -193,9 +193,28 @@ double FramebufferBackend::submit(uint32_t waveform,
     return monotonic_seconds() - started;
 }
 
-double FramebufferBackend::refresh_a2(uint32_t marker) {
-    return submit(HWTCON_WAVEFORM_A2, HWTCON_UPDATE_PARTIAL, marker, false,
-                  viewport_);
+double FramebufferBackend::refresh_a2(uint32_t marker,
+                                      bool wait_for_completion) {
+    return submit(HWTCON_WAVEFORM_A2, HWTCON_UPDATE_PARTIAL, marker,
+                  wait_for_completion, viewport_);
+}
+
+double FramebufferBackend::refresh_du(uint32_t marker,
+                                      bool wait_for_completion) {
+    return submit(HWTCON_WAVEFORM_DU, HWTCON_UPDATE_PARTIAL, marker,
+                  wait_for_completion, viewport_);
+}
+
+double FramebufferBackend::refresh_gl16(uint32_t marker,
+                                        bool wait_for_completion) {
+    return submit(HWTCON_WAVEFORM_GL16, HWTCON_UPDATE_PARTIAL, marker,
+                  wait_for_completion, viewport_);
+}
+
+double FramebufferBackend::refresh_gc16_partial(uint32_t marker,
+                                                bool wait_for_completion) {
+    return submit(HWTCON_WAVEFORM_GC16, HWTCON_UPDATE_PARTIAL, marker,
+                  wait_for_completion, viewport_);
 }
 
 double FramebufferBackend::refresh_gc16(uint32_t marker,

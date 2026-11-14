@@ -216,7 +216,7 @@ at 8 Hz, performed two GC16 cleanups, restored the viewport, and passed without
 display errors. The binary and ROM matched their workstation SHA-256 hashes on
 the reader before execution.
 
-The runner now uses 5x integer scaling (up from the initial 4x test), draws a
+The runner now uses 6x integer scaling (up from the initial 4x and 5x tests), draws a
 conventional D-pad at the lower left, A and B at the lower right, and labeled
 Start and Select controls along the bottom. It reads the Clara BW's
 `cyttsp5_mt` Type-B multitouch stream directly, handles simultaneous contacts,
@@ -245,6 +245,52 @@ touch; the run completed 160 presentations and restored Nickel successfully.
 The A and B controls use literal bitmap `A` and `B` glyphs rather than
 approximate hand-drawn marks.
 
+The control surface now also includes a dedicated Menu button. Opening it
+pauses emulation and performs a full-screen GC16 refresh before presenting
+Resume Game, Select Game, and Exit to Nickel. Menu choices are edge triggered
+and require the opening touch to be released, preventing the same contact from
+immediately activating an option. Resume Game redraws the controls and most
+recent game frame, performs another GC16 refresh, and continues without
+consuming a configured play-time limit. Exit to Nickel passes through the
+existing automatic state save and normal cleanup path; in supervised runs,
+the parent restores the framebuffer and resumes Nickel.
+
+Launching the supervisor without a ROM now opens the same game browser used by
+Select Game. It scans `/mnt/onboard/KoBoy/Roms/` for `.gb` and `.gbc` files,
+sorts them case-insensitively, and displays seven games per page with Previous,
+Next, and Exit or Back controls. Selecting another game saves the current
+game's automatic slot 0, immediately replaces the browser with a full-quality
+loading screen, loads the chosen ROM and its slot 0, and presents the first
+actual game frame with waited full GC16 before resuming the configured refresh
+policy. This prevents loading text from bleeding into the title screen.
+An explicit ROM argument still bypasses the startup browser for development.
+Normal no-argument launches run until the player exits rather than using the
+prototype's former 30-second default.
+
+The default periodic cleanup interval is one second. An initial partial GL16
+implementation avoided the full-screen inversion but performed poorly after a
+sequence of A2 updates: GL16 assumes a white source state, so visible artifacts
+accumulated instead of clearing. Periodic cleanup now uses waited GC16 with
+`HWTCON_UPDATE_PARTIAL`. This requests GC16's higher-fidelity transition
+without the inversion-producing full-update flag. `--cleanup-seconds` can
+still override the interval. Ko Boy retains full-update GC16 for menus,
+loading screens, and final restoration, where a deliberate transition is
+appropriate.
+
+For rapid device-side experimentation, creating
+`/mnt/onboard/KoBoy/developer` exposes a developer-only Refresh Settings menu.
+It independently selects the fast and slow waveform/update combinations and
+their cadences, persists changes in `KoBoy/refresh.conf`, and applies them
+without rebuilding or restarting the player. Available types are A2, DU,
+GL16, partial GC16, and full/flashing GC16. Fast presets span 2-10 Hz; slow
+presets span off through 2 Hz. Long GL16/GC16 requests are completion-waited to
+prevent unsafe request overlap.
+
+At 6x scale, the 160-by-144 Game Boy image occupies 960 by 864 pixels. On the
+Clara BW's 1072-by-1448 panel, the configured y=96 viewport ends at y=960 and
+remains above the lower control surface. `--scale 5` remains available for
+comparison.
+
 `make gambatte-supervisor` now builds an external lifecycle owner. The parent
 suspends Nickel and retains the complete framebuffer backup in its own memory,
 then launches `kobo-gambatte-display` as a managed child. It forwards SIGINT,
@@ -260,8 +306,9 @@ observed status 137, restored the framebuffer, and Nickel returned to its
 sleeping state. Killing the supervisor itself or sudden power loss remain
 outside this guarantee and require a later system-level recovery policy.
 
-The runner still has no audio or save-file persistence. It remains a developer
-diagnostic rather than an installable emulator.
+The runner still has no audio or cartridge save-RAM persistence. Automatic
+save state slot 0 is loaded at startup and saved on every normal exit. It
+remains a developer diagnostic rather than an installable emulator.
 
 - Take exclusive ownership of the framebuffer.
 - Render a synthetic 160-by-144 animated test pattern.
@@ -277,16 +324,16 @@ errors or an unacceptable buildup of latency.
 ### 3. Playable vertical slice
 
 The frontend and eventual package are named **Ko Boy**. User games live in
-`/mnt/onboard/KoBoy/Roms/`; Ko Boy never bundles ROMs. A new on-screen Menu
-button will pause emulation and open a small text menu with these entries, in
-this order:
+`/mnt/onboard/KoBoy/Roms/`; Ko Boy never bundles ROMs. Resume Game, Select
+Game, and Exit to Nickel are implemented. The remaining planned menu entries
+will be added around them:
 
 1. Resume Game
 2. Save State
 3. Load State
 4. Reset Game
 5. Select Game
-6. Return to Nickel
+6. Exit to Nickel
 
 Select Game opens a scrollable list populated from the ROM directory. The
 initial state model has exactly two per-game slots. `state0` is automatic: Ko
@@ -296,7 +343,7 @@ State entries. State files live under `/mnt/onboard/KoBoy/States/`; they are
 kept separate from ROMs and keyed by the ROM filename.
 
 - Connect Gambatte video to the display backend.
-- Add touch D-pad, A, B, Start, and Select controls.
+- Add touch D-pad, A, B, Start, Select, and Menu controls.
 - Use a freely distributable test ROM; do not bundle commercial ROMs.
 - Add pause, exit, reset, and save-state controls.
 - Test turn-based RPG and puzzle-game workloads first.

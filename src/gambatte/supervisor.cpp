@@ -54,12 +54,6 @@ int child_exit_code(int status) {
 } // namespace
 
 int main(int argc, char **argv) {
-    if (argc < 2) {
-        std::cerr << "usage: " << argv[0]
-                  << " ROM [gambatte display options]\n";
-        return 2;
-    }
-
     try {
         const std::string player = player_path();
         gambatte_kobo::NickelSession nickel;
