@@ -227,6 +227,22 @@ Accepting Nickel's real prompt disconnected ADB and enumerated the stock
 removal, `/mnt/onboard` remounted, EWDB stopped, the UDC was unbound, the
 storage-active marker was absent, and the reader had not rebooted.
 
+### Interactive shell PTY requirement
+
+After updating EWDB and testing a bare interactive `adb shell`, EWDB reported
+`open /dev/ptmx: no such file or directory`. Command-form shells had worked
+because they use pipes unless the host explicitly requests a PTY. The Kobo had
+a valid-looking `/dev/ptmx` character node (major 5, minor 2) and
+`CONFIG_UNIX98_PTYS=y`, but no `/dev/pts` directory or devpts mount. In that
+state, opening the multiplexor returns `ENOENT` despite the visible node.
+
+Mounting devpts at `/dev/pts` with tty group and PTY permissions immediately
+fixed a real interactive root shell. `ewdb-usb start` now performs this mount
+idempotently before starting EWDB, using
+`gid=5,mode=620,ptmxmode=666` with a fallback for kernels that reject the
+`ptmxmode` option. A failure prevents ADB startup and leaves Nickel's storage
+prompt path available.
+
 ### ADB transfer-size failure
 
 Follow-up testing on 2026-11-14 found that the earlier 3,810-byte transfer was
@@ -270,6 +286,39 @@ xHCI controller becoming unresponsive. The Linux host logged `xHCI host
 controller not responding, assume dead`; the Kobo and a USB mouse disappeared
 until the workstation was rebooted. Treat repeated failing-transfer tests as a
 host-stability risk and keep future sweeps bounded.
+
+The test was repeated after updating EWDB to
+`9ae15fa774ca584dafd6bdb57a2dec906c157442` and setting
+`maxdata = 1048576`. The upload boundary did not change:
+
+| Push payload | Result |
+| ---: | --- |
+| 4 KiB | Passed; destination SHA-256 matched |
+| 32 KiB | Passed; destination SHA-256 matched |
+| 48 KiB | Passed; destination SHA-256 matched |
+| 64 KiB | Failed with `failed to read copy response`; no destination file |
+
+The sweep stopped after that single failure. EWDB again logged `session ended:
+input/output error`, reconnected the UDC, and recovered normally. The host USB
+controller remained healthy.
+
+Downloads are not subject to the same boundary. Files created locally on the
+Kobo were pulled and checksum-verified successfully at 4, 48, 64, 128, 256,
+and 512 KiB, plus 1 and 2 MiB. This confirms that the advertised `maxdata`
+change did not fix the upload problem and that the failure is asymmetric.
+
+Live kernel diagnostics subsequently identified the local cause. The MTK
+`mtu3` UDC rejected the full-size host request with
+`req length > supported MAX:65532 requested:66048`. A 64 KiB ADB payload
+becomes a 66,048-byte FunctionFS request on this high-speed controller, which
+exceeds its request-size ceiling. The package's 1 MiB override had replaced
+EWDB's conservative 32 KiB default and allowed the host to send that invalid
+request size.
+
+With `maxdata = 32768`, checksum-verified pushes passed at 64 and 128 KiB,
+plus 1 and 4 MiB, without a new UDC rejection or EWDB reconnect. The setting
+limits individual ADB transport messages rather than total file size. The
+package therefore uses 32 KiB for compatibility with the tested Kobo UDC.
 
 ## Future hardening plan
 

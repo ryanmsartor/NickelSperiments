@@ -26,6 +26,17 @@ mounted()
 	mountpoint -q "$1"
 }
 
+ensure_devpts()
+{
+	mkdir -p /dev/pts
+	mounted /dev/pts && return 0
+
+	# Kobo creates /dev/ptmx but does not mount devpts. The node then exists
+	# while open(2) returns ENOENT, breaking interactive (PTY) ADB shells.
+	mount -t devpts -o gid=5,mode=620,ptmxmode=666 devpts /dev/pts || \
+		mount -t devpts -o gid=5,mode=620 devpts /dev/pts
+}
+
 daemon_running()
 {
 	test -s "$PID" && kill -0 "$(cat "$PID")" 2>/dev/null
@@ -80,6 +91,7 @@ start_locked()
 	test -x "$DAEMON" || { log "missing daemon: $DAEMON"; return 1; }
 	test -d /sys/class/udc/$UDC || { log "unsupported UDC: $UDC"; return 1; }
 	mounted /mnt/onboard || { log "refusing ADB: /mnt/onboard is not mounted"; return 1; }
+	ensure_devpts || { log "failed to mount devpts for interactive shells"; return 1; }
 
 	mkdir -p "$G"
 	if test -s "$G/UDC" && test -n "$(cat "$G/UDC")"; then
