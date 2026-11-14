@@ -1,0 +1,31 @@
+name: Build all packages
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Tag to create or update
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  nickelrefresh:
+    name: Build NickelRefresh
+    permissions:
+      contents: write
+    uses: ./.github/workflows/build-nickelrefresh.yml
+    with:
+      release_tag: ${{ inputs.release_tag }}
+
+  ewdb:
+    name: Build EWDB
+    permissions:
+      contents: write
+    uses: ./.github/workflows/build-ewdb.yml
+    with:
+      release_tag: ${{ inputs.release_tag }}

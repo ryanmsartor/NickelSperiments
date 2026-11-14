@@ -51,6 +51,15 @@ NickelRefresh and EWDB have separate GitHub Actions workflows, toolchains, and
 named artifacts. The older `ewdbd` and `ewdb-koboroot` targets remain as
 compatibility aliases.
 
+### Installing release packages
+
+Kobo only recognizes an update archive named `KoboRoot.tgz` at the root of its
+USB storage. Release assets use project-specific names so it is clear which
+package you are downloading. Before installation, rename the selected
+`NickelRefresh-KoboRoot.tgz` or `EWDB-KoboRoot.tgz` asset to `KoboRoot.tgz`.
+Copy it to the root of the Kobo's USB storage, then safely eject the device so
+it can install the update.
+
 ## NickelRefresh: refresh-rate experiment
 
 NickelRefresh uses NickelHook to load into Nickel and FBInk to draw a small

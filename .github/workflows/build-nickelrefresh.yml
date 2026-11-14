@@ -3,6 +3,18 @@ name: Build NickelRefresh package
 on:
   push:
   pull_request:
+  workflow_call:
+    inputs:
+      release_tag:
+        description: Tag to create or update; omit to build without releasing
+        required: false
+        type: string
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Tag to create or update
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -31,3 +43,34 @@ jobs:
           name: NickelRefresh-KoboRoot
           path: KoboRoot.tgz
           if-no-files-found: error
+
+  release:
+    name: Upload NickelRefresh package to release
+    if: inputs.release_tag != ''
+    needs: nickelrefresh-package
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download NickelRefresh package
+        uses: actions/download-artifact@v4
+        with:
+          name: NickelRefresh-KoboRoot
+
+      - name: Create release if needed
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          if ! gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "$RELEASE_TAG" --notes "To install a package, rename NickelRefresh-KoboRoot.tgz or EWDB-KoboRoot.tgz to KoboRoot.tgz, copy it to the root of your Kobo USB storage, and safely eject the Kobo." ||
+              gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null
+          fi
+
+      - name: Upload NickelRefresh package to release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          mv KoboRoot.tgz NickelRefresh-KoboRoot.tgz
+          gh release upload "$RELEASE_TAG" NickelRefresh-KoboRoot.tgz --repo "$GITHUB_REPOSITORY" --clobber
