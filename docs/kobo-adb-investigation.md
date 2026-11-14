@@ -227,6 +227,50 @@ Accepting Nickel's real prompt disconnected ADB and enumerated the stock
 removal, `/mnt/onboard` remounted, EWDB stopped, the UDC was unbound, the
 storage-active marker was absent, and the reader had not rebooted.
 
+### ADB transfer-size failure
+
+Follow-up testing on 2026-11-14 found that the earlier 3,810-byte transfer was
+not representative of larger ADB SYNC transfers. With EWDB still pinned to
+`3218c4eac664de5443e561f32ee9acf6e0ca0c17`, zero-filled `adb push` tests gave
+the following results:
+
+| Payload | Result |
+| ---: | --- |
+| 4 KiB | Passed; destination SHA-256 matched |
+| 16 KiB | Passed; destination SHA-256 matched |
+| 32 KiB | Passed; destination SHA-256 matched |
+| 48 KiB | Passed; destination SHA-256 matched |
+| 64 KiB | Failed with `failed to read copy response`; no destination file |
+| 128 KiB | Failed during a ROM transfer; no destination file |
+| 1.8 MiB | Failed during a benchmark-binary transfer; no destination file |
+
+The 64 KiB test failed identically when the destination was moved from `/tmp`
+to `/mnt/onboard/.kobo`, so this is not specific to the temporary filesystem.
+The reader successfully created and hashed 1 MiB zero-filled files locally in
+both locations. At the time of testing, `/tmp` also reported approximately
+224 MiB free. These checks rule out destination capacity and ordinary file
+writes as the limiting factor.
+
+On every failed transfer, `/tmp/ewdbd.log` reported `session ended:
+input/output error`, followed by EWDB deliberately reconnecting
+`11211000.usb` and logging `DISABLE` and `ENABLE`. The EWDB process remained
+running. Ordinary short `adb shell` commands worked, and shell command payloads
+through 24 KiB were used successfully to stage the Gambatte benchmark in
+chunks. A 90 KiB shell command payload also caused transport errors, while a
+40.9 KiB payload was observed to arrive intact during exploratory testing.
+
+This evidence places the defect in EWDB's ADB transport/framing path, or its
+interaction with FunctionFS, rather than in the Kobo udev/storage-handoff
+wrapper. The wrapper does not inspect ADB commands or SYNC traffic. A precise
+upstream boundary still needs a protocol-level reproduction and EWDB debug
+instrumentation before filing an issue.
+
+Repeated forced gadget reconnects also coincided once with the workstation's
+xHCI controller becoming unresponsive. The Linux host logged `xHCI host
+controller not responding, assume dead`; the Kobo and a USB mouse disappeared
+until the workstation was rebooted. Treat repeated failing-transfer tests as a
+host-stability risk and keep future sweeps bounded.
+
 ## Future hardening plan
 
 Every lifecycle test should preserve the same invariants:

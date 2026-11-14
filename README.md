@@ -48,6 +48,8 @@ Run `make help` to list the public targets.
 - `make ewdb-package` builds `build/EWDB-KoboRoot.tgz`.
 - `make gambatte-bench` cross-compiles the headless Gambatte feasibility
   benchmark to `build/kobo-gambatte-bench` using NickelTC.
+- `make gambatte-display-test` cross-compiles the synthetic MediaTek HWTCON
+  display prototype to `build/kobo-gambatte-display-test` using NickelTC.
 
 NickelRefresh and EWDB have separate GitHub Actions workflows, toolchains, and
 named artifacts. The older `ewdbd` and `ewdb-koboroot` targets remain as
@@ -63,7 +65,23 @@ build/kobo-gambatte-bench game.gb --frames 3600
 
 It reports emulated frames per second, the real-time performance multiple,
 maximum resident memory, and save-state and save-RAM checks. No ROMs are
-included in the repository or build artifacts.
+bundled or uploaded.
+
+The display prototype does not run a ROM. It presents a moving 160-by-144 test
+pattern through A2 updates, performs periodic GC16 cleanup updates, and reports
+frame submission statistics. Its defaults are 8 Hz, 4x integer scaling, a
+60-second run, and GC16 cleanup every 10 seconds:
+
+```sh
+build/kobo-gambatte-display-test \
+  --rate 8 --scale 4 --seconds 60 --cleanup-seconds 10
+```
+
+This is currently an ADB-only developer diagnostic for MediaTek `hwtcon` Kobo
+devices, not a release asset or installable package. Nickel is not suspended
+yet. Keep an ADB recovery session available during initial testing; the program
+saves and restores only its viewport and attempts a GC16 restore on normal exit
+and SIGINT, SIGTERM, or SIGHUP.
 
 ### Installing release packages
 

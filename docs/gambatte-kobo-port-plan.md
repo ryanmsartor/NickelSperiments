@@ -158,7 +158,24 @@ A formal license review is still appropriate before publishing binaries.
 Implementation has begun with the `gambatte-bench` Make target and
 `build/kobo-gambatte-bench` headless runner. The runner measures emulation
 throughput and memory use and validates an in-memory save-state round trip.
-Real-device ARMv7 results are still required before this phase is complete.
+
+The first real-device ARMv7 test passed on a Kobo Clara BW on 2026-11-14 using
+the user-supplied US ROM for *Rolan's Curse II*. The statically linked ARM EABI5
+benchmark and ROM matched their workstation SHA-256 hashes on the reader. All
+three 3,600-frame trials passed save-state replay and the cartridge's 8 KiB
+save-RAM round trip:
+
+| Trial | Emulated FPS | Real-time multiple | Elapsed time |
+| ---: | ---: | ---: | ---: |
+| 1 | 1,615.80 | 27.05x | 2.228 s |
+| 2 | 1,586.58 | 26.56x | 2.269 s |
+| 3 | 1,612.69 | 27.00x | 2.232 s |
+
+The framebuffer checksum was identical in all three trials. Reported maximum
+resident memory remained at or below 8,208 KiB. This comfortably passes the
+full-speed and CPU-headroom feasibility criterion for the tested DMG ROM. The
+core should still be exercised with representative GBC and other mapper types,
+but CPU performance is no longer the primary Step 1 risk.
 
 - Pin a Gambatte revision.
 - Cross-compile `libgambatte` for Kobo ARMv7.
@@ -170,6 +187,19 @@ Real-device ARMv7 results are still required before this phase is complete.
 Go/no-go criterion: stable full-speed emulation with substantial CPU headroom.
 
 ### 2. Framebuffer prototype
+
+Implementation has begun with `make gambatte-display-test`. The current
+prototype is intentionally synthetic: it writes a scaled, animated 160-by-144
+monochrome test pattern into a saved viewport of the Clara BW's 32-bit HWTCON
+framebuffer. It submits partial A2 updates at a configurable rate, periodically
+performs a full GC16 cleanup, reports submission timing and dropped frames, and
+restores the saved viewport with GC16 on normal or handled-signal exit.
+
+This is a developer diagnostic, not an installable package. Run it only from a
+recovery-capable ADB session. It currently targets the MediaTek `hwtcon`
+framebuffer ABI and rejects other framebuffer drivers instead of guessing.
+Nickel is not stopped yet, so the first device test should be brief and should
+verify restoration before longer ghosting and latency measurements.
 
 - Take exclusive ownership of the framebuffer.
 - Render a synthetic 160-by-144 animated test pattern.
