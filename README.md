@@ -125,11 +125,11 @@ the supervisor covers child `SIGKILL`. Sudden power loss cannot run cleanup.
 
 ### Installing release packages
 
-Kobo only recognizes an update archive named `KoboRoot.tgz` at the root of its
+Kobo only recognizes an update archive named `KoboRoot.tgz` in the hidden .Kobo folder at the root of its
 USB storage. Release assets use project-specific names so it is clear which
 package you are downloading. Before installation, rename the selected
 `NickelRefresh-KoboRoot.tgz` or `EWDB-KoboRoot.tgz` asset to `KoboRoot.tgz`.
-Copy it to the root of the Kobo's USB storage, then safely eject the device so
+Copy it to the .Kobo folder at the root of the Kobo's USB storage, then safely eject the device so
 it can install the update.
 
 ## NickelRefresh: refresh-rate experiment

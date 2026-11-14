@@ -63,7 +63,7 @@ jobs:
           RELEASE_TAG: ${{ inputs.release_tag }}
         run: |
           if ! gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release create "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "$RELEASE_TAG" --notes "To install a package, rename NickelRefresh-KoboRoot.tgz or EWDB-KoboRoot.tgz to KoboRoot.tgz, copy it to the root of your Kobo USB storage, and safely eject the Kobo." ||
+            gh release create "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "$RELEASE_TAG" --notes "To install a package, rename its .tgz archive to exactly KoboRoot.tgz, copy it to the hidden .Kobo folder at the root of your Kobo USB storage, and safely eject the Kobo." ||
               gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null
           fi
 
