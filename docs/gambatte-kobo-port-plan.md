@@ -1,0 +1,256 @@
+# Gambatte Kobo port plan
+
+## Summary
+
+Gambatte is a strong emulator core for a lightweight Kobo Game Boy emulator,
+but the Kobo display will define what is playable. The CPU should handle Game
+Boy emulation comfortably; e-ink cannot approach the Game Boy's native refresh
+rate. The initial target should be turn-based RPGs, puzzle games, and slower
+adventures rather than platformers or rhythm games.
+
+Gambatte's core is portable C++, exposes a straightforward 160-by-144-pixel
+framebuffer and input callback, and already has ARMv7 build support. This makes
+it a better foundation than porting a complete RetroArch stack.
+
+References:
+
+- [Gambatte repository](https://github.com/libretro/gambatte-libretro/)
+- [Gambatte core API](https://raw.githubusercontent.com/libretro/gambatte-libretro/master/libgambatte/include/gambatte.h)
+
+## Proposed architecture
+
+Build a small Kobo-specific frontend around `libgambatte`:
+
+```text
+ROM + save data
+      |
+      v
+ libgambatte ------> audio buffer ------> Bluetooth audio, later
+      |
+      v
+160x144 framebuffer
+      |
+grayscale conversion + integer scaling
+      |
+latest-frame presentation at approximately 6-10 Hz
+      |
+Kobo framebuffer + e-ink refresh ioctl
+```
+
+The emulator should continue internally at normal Game Boy speed while the
+display frontend presents only the newest completed frame. This preserves game
+timing, input, saves, and eventually audio without trying to submit 60 e-ink
+updates per second.
+
+The port should use `libgambatte` directly instead of bringing in RetroArch or
+the existing SDL and Qt frontends. The Kobo frontend only needs to provide:
+
+- ROM loading and persistent save paths.
+- Game Boy input state.
+- Video conversion and presentation.
+- Application lifecycle and cleanup.
+- Optional audio output in a later phase.
+
+## Display strategy
+
+For the Kobo Clara BW's 1072-by-1448 display:
+
+- Render the game at 4x or 5x integer scale.
+- Put the game viewport in the upper portion of the display.
+- Reserve the lower portion for large touch controls.
+- Start with monochrome A2 updates for maximum responsiveness.
+- Experiment with four-level grayscale modes for slower games.
+- Perform an occasional full-quality GC16 cleanup on pause, menus, scene
+  transitions, or after a configurable number of frames.
+
+FBInk documents approximately 120 ms for A2 and 450 ms for GC16 as broad
+expectations, so even the fast path is fundamentally single-digit FPS
+territory. See the [FBInk waveform
+documentation](https://github.com/NiLuJe/FBInk/blob/master/fbink.h).
+
+The first prototype should test:
+
+- A2 at 6, 8, and 10 requested updates per second.
+- Full-frame versus game-viewport-only refreshes.
+- One-bit thresholding versus ordered dithering.
+- Ghosting after 30, 60, and 120 seconds.
+- Whether four-level modes are fast enough to be useful.
+
+The existing NickelRefresh work provides a starting point for this
+characterization. Its results should determine the initial presentation rate
+and waveform policy rather than assuming that every requested update becomes a
+visible frame.
+
+The emulation and presentation clocks must remain independent. Input and
+emulation should continue at their normal cadence when the display skips
+frames. The presenter should always select the newest complete frame rather
+than queueing stale frames and accumulating visible latency.
+
+## Controls
+
+On the Clara BW, the initial controller should be a multitouch overlay:
+
+- D-pad on the lower left.
+- A and B buttons on the lower right.
+- Start and Select in the middle.
+- A tap or long-press gesture to open the emulator menu.
+- The power button reserved for suspend or emergency exit.
+
+Input should be read directly from Linux evdev and processed independently of
+screen presentation. Kobo models have different touch protocols and rotation
+quirks, so device detection and coordinate normalization need their own
+abstraction. KOReader's porting documentation confirms that Kobo software
+commonly reads framebuffer and evdev interfaces directly. See the [KOReader
+porting guide](https://github.com/koreader/koreader/blob/master/doc/Porting.md).
+
+The first input test should establish whether the Clara BW reports two
+simultaneous contacts reliably. Gameplay requires holding a direction while
+pressing A or B. If multitouch is unreliable, possible fallbacks include
+sticky directional input, gesture controls, or a later physical-controller
+backend.
+
+Bluetooth controllers can be investigated later, but they should not be an
+MVP dependency.
+
+## Audio
+
+Audio should be deferred until video and lifecycle behavior are stable.
+
+The Clara BW supports Bluetooth audio devices, so sound may ultimately be
+possible through the firmware's audio stack. Access from third-party software
+still needs real-device investigation. See [Kobo's Bluetooth audio
+documentation](https://help.kobo.com/hc/en-us/articles/4406292712471-Listen-to-audiobooks-on-your-Kobo-eReader).
+
+The MVP should run muted. A later phase can identify the active audio
+interfaces and test PCM playback without interfering with Nickel. Audio must
+follow emulation time, not the much slower display presentation rate.
+
+## Licensing constraint
+
+Licensing needs resolution before distributing a combined binary:
+
+- Gambatte identifies itself as GPL version 2.
+- FBInk is GPL version 3.
+
+The Gambatte headers appear to specify GPL-2.0-only rather than "version 2 or
+later," which generally makes direct linking with GPLv3-only FBInk
+problematic.
+
+References:
+
+- [Gambatte license header](https://raw.githubusercontent.com/libretro/gambatte-libretro/master/libgambatte/include/gambatte.h)
+- [FBInk license](https://raw.githubusercontent.com/NiLuJe/FBInk/master/LICENSE)
+
+The safest initial architecture is therefore:
+
+- Build the frontend and Gambatte together under GPL-2.0.
+- Implement the minimal framebuffer mapping and refresh ioctl backend without
+  copying FBInk implementation code.
+- Use Linux evdev directly.
+- Keep FBInk as a development reference, not a linked dependency.
+
+A formal license review is still appropriate before publishing binaries.
+
+## Implementation phases
+
+### 1. Feasibility probe
+
+- Pin a Gambatte revision.
+- Cross-compile `libgambatte` for Kobo ARMv7.
+- Build a headless runner that loads a freely distributable test ROM.
+- Run several emulated minutes and measure CPU and memory use.
+- Verify save RAM and save-state round trips.
+- Confirm that the binary runs against the Kobo firmware's userspace ABI.
+
+Go/no-go criterion: stable full-speed emulation with substantial CPU headroom.
+
+### 2. Framebuffer prototype
+
+- Take exclusive ownership of the framebuffer.
+- Render a synthetic 160-by-144 animated test pattern.
+- Add integer scaling and grayscale conversion.
+- Benchmark A2 and four-level presentation modes.
+- Measure request timing, visible update timing, ghosting, and CPU use.
+- Restore the previous screen, bit depth, rotation, and framebuffer state on
+  exit.
+
+Go/no-go criterion: a stable 6-10 Hz presentation path without display-driver
+errors or an unacceptable buildup of latency.
+
+### 3. Playable vertical slice
+
+- Connect Gambatte video to the display backend.
+- Add touch D-pad, A, B, Start, and Select controls.
+- Use a freely distributable test ROM; do not bundle commercial ROMs.
+- Add pause, exit, reset, and save-state controls.
+- Test turn-based RPG and puzzle-game workloads first.
+- Confirm that save RAM is flushed safely on pause and exit.
+
+### 4. Lifecycle and safety
+
+- Stop or suspend Nickel while the emulator owns the framebuffer and input.
+- Restore Nickel cleanly after normal exit, signals, crashes, suspend, and low
+  battery events.
+- Install signal handlers and a cleanup wrapper that restores display state
+  even when the emulator terminates abnormally.
+- Keep ROMs and saves under `/mnt/onboard/.adds/` in a project-specific
+  directory.
+- Never alter, bundle, or redistribute user ROMs.
+- Ensure firmware upgrades and package removal leave Nickel bootable.
+
+### 5. Packaging
+
+- Produce a project-specific KoboRoot package with an unambiguous release
+  filename.
+- Install the executable and cleanup scripts under `/usr/local`.
+- Keep user content, configuration, and saves on onboard storage.
+- Add a NickelMenu launcher when NickelMenu is present while retaining a shell
+  launcher for development and recovery.
+- Include licenses, source availability information, and exact pinned upstream
+  revisions.
+- Provide an uninstall path that removes system files without deleting ROMs or
+  saves.
+
+### 6. Optional enhancements
+
+- Bluetooth audio.
+- Physical Bluetooth controller support.
+- Per-game display and palette profiles.
+- Automatic GC16 cleanup scheduling.
+- Palette presets optimized for monochrome e-ink.
+- A ROM browser with a lightweight text interface.
+- Rewind only if memory, CPU, and storage behavior prove acceptable.
+
+## Main risks
+
+- E-ink latency makes action games unpleasant regardless of emulator speed.
+- Touch controls may not provide reliable simultaneous directional and button
+  input until protocol quirks are handled.
+- Nickel and the emulator must not compete for framebuffer or input ownership.
+- Display state must be restored reliably after every exit path.
+- Audio integration could be firmware-specific.
+- The Gambatte and FBInk licensing combination rules out the easiest direct
+  reuse path.
+- Device-specific framebuffer, rotation, touch, and waveform behavior may make
+  support beyond the Clara BW substantially more work.
+
+## Recommendation and first milestone
+
+Proceed with Gambatte, but define the result as an e-ink Game Boy player
+optimized for slower games rather than a conventional 60 FPS handheld
+emulator.
+
+The first meaningful milestone should be a freely distributable test ROM or a
+user-supplied turn-based game running on the Clara BW with:
+
+- Reliable multitouch controls.
+- Stable save data.
+- Full-speed internal emulation.
+- A measured 6-10 Hz latest-frame display path.
+- Clean entry from and return to Nickel.
+- No permanent framebuffer, input, or power-management side effects.
+
+If that milestone feels usable for a turn-based game, continue with packaging
+and broader game testing. If it does not, further emulator optimization will
+not solve the primary limitation; effort should instead focus on display
+presentation, interaction design, or a more static class of games.
