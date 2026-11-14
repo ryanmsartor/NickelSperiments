@@ -1,0 +1,34 @@
+name: Build EWDB USB debugging package
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  ewdb-package:
+    name: EWDB ARMv7 binary and KoboRoot package
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install Go 1.26
+        uses: actions/setup-go@v6
+        with:
+          go-version: 1.26.11
+          check-latest: false
+
+      - name: Build pinned EWDB and KoboRoot package
+        run: make ewdb-package
+
+      - name: Upload EWDB artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: EWDB-Kobo
+          path: |
+            build/ewdbd-linux-armv7
+            build/EWDB-KoboRoot.tgz
+          if-no-files-found: error

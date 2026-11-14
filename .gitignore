@@ -8,3 +8,4 @@
 /deps/NickelHook/nhplugin.moc
 /deps/NickelHook/nhplugin.moc.o
 /src/*.o
+/build/

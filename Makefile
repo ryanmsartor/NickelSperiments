@@ -1,33 +1,24 @@
-include deps/NickelHook/NickelHook.mk
+.DEFAULT_GOAL := help
 
-override LIBRARY := libnickelrefresh.so
-override SOURCES += src/nickelrefresh.cpp
-override CPPFLAGS += -Ideps/FBInk
+include mk/ewdb.mk
 
-FBINK_ARCHIVE := deps/FBInk/Debug/libfbink.a
-FBINK_MAKE_FLAGS := \
-	CROSS_COMPILE=$(CROSS_COMPILE) KOBO=true MINIMAL=true DRAW=1 IMAGE=1 PIC=1 \
-	DEBUG=1 'CFLAGS=-O2 -fomit-frame-pointer -pipe'
-	I2C_TOOLS_URL := https://github.com/kernelorg-mirror/utils_i2c-tools_i2c-tools.git
-	I2C_TOOLS_REV := ec1267371e378fc6aaf1cd7686b5b9b31293255a
-override LDFLAGS += $(FBINK_ARCHIVE)
+# NickelHook defines the legacy all/clean/koboroot targets. Load it only for
+# those internal targets so EWDB and help do not require initialized submodules.
+ifneq ($(filter all clean koboroot,$(MAKECMDGOALS)),)
+include mk/nickelrefresh.mk
+endif
 
-# DEBUG avoids FBInk release flags unsupported by GCC 4.9; keep the library optimized.
-$(FBINK_ARCHIVE):
-	if test -e deps/FBInk/i2c-tools/.git; then \
-		git -C deps/FBInk/i2c-tools remote set-url origin $(I2C_TOOLS_URL); \
-		if git -C deps/FBInk/i2c-tools rev-parse --is-shallow-repository | grep -q true; then \
-			git -C deps/FBInk/i2c-tools fetch --unshallow origin master; \
-		else \
-			git -C deps/FBInk/i2c-tools fetch origin master; \
-		fi; \
-	else \
-		git clone --branch master $(I2C_TOOLS_URL) deps/FBInk/i2c-tools; \
-	fi
-	git -C deps/FBInk/i2c-tools checkout --detach $(I2C_TOOLS_REV)
-	git -C deps/FBInk submodule update --init stb
-	$(MAKE) -C deps/FBInk $(FBINK_MAKE_FLAGS) staticlib
+.PHONY: help nickelrefresh nickelrefresh-package
 
-$(LIBRARY): | $(FBINK_ARCHIVE)
+help:
+	@echo "NickelSperiments build targets:"
+	@echo "  nickelrefresh          Build the NickelRefresh plugin"
+	@echo "  nickelrefresh-package  Build NickelRefresh KoboRoot.tgz"
+	@echo "  ewdb-binary            Build the pinned ARMv7 EWDB daemon"
+	@echo "  ewdb-package           Build build/EWDB-KoboRoot.tgz"
 
-include deps/NickelHook/NickelHook.mk
+nickelrefresh:
+	$(MAKE) all
+
+nickelrefresh-package:
+	$(MAKE) clean all koboroot

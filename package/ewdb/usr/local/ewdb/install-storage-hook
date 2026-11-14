@@ -1,0 +1,24 @@
+#!/bin/sh
+
+TARGET=/usr/local/Kobo/udev/usb
+BACKUP=/usr/local/ewdb/kobo-usb-stock
+WRAPPER=/usr/local/ewdb/storage-event
+MARKER='# EWDB-STORAGE-HANDOFF'
+
+test -x "$TARGET" || exit 1
+test -x "$WRAPPER" || exit 1
+
+if test "$(sed -n '2p' "$TARGET")" = "$MARKER"; then
+	test -x "$BACKUP"
+	exit $?
+fi
+
+# Preserve the currently installed firmware script. If a firmware update has
+# replaced our wrapper, this refreshes the backup before restoring the hook.
+cp -p "$TARGET" "$BACKUP.new" || exit 1
+chmod 755 "$BACKUP.new" || exit 1
+mv -f "$BACKUP.new" "$BACKUP" || exit 1
+
+cp "$WRAPPER" "$TARGET.new" || exit 1
+chmod 755 "$TARGET.new" || exit 1
+mv -f "$TARGET.new" "$TARGET"

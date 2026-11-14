@@ -9,6 +9,48 @@ refresh requests.
 For the separate USB ADB investigation, see
 [Kobo USB ADB investigation](docs/kobo-adb-investigation.md).
 
+## EWDB: USB debugging experiment
+
+The repository can build a pinned ARMv7 EWDB daemon and an experimental Kobo
+package:
+
+```sh
+make ewdb-package
+```
+
+This requires Go 1.26 or newer and produces
+`build/EWDB-KoboRoot.tgz`. On the tested Kobo Clara BW firmware, installing the
+package makes ADB available whenever a USB host is connected while preserving
+Nickel's normal USB-storage prompt. If the user accepts that prompt, the
+handoff wrapper fully releases ADB before the stock firmware unmounts and
+exports onboard storage. ADB and storage are never linked into the gadget at
+the same time.
+
+EWDB does not authenticate the host. While ADB is active, physical USB access
+provides a root shell. This package is experimental and currently targets the
+tested MTK UDC `11211000.usb`; unsupported devices fail closed and retain
+Kobo's stock prompt path.
+
+To remove the experiment and restore Kobo's backed-up stock USB handler:
+
+```sh
+/usr/local/ewdb/uninstall
+```
+
+## Project builds
+
+The top-level makefile dispatches to project-specific definitions under `mk/`.
+Run `make help` to list the public targets.
+
+- `make nickelrefresh` builds the NickelRefresh plugin.
+- `make nickelrefresh-package` builds its `KoboRoot.tgz` with NickelTC.
+- `make ewdb-binary` builds the pinned static ARMv7 daemon.
+- `make ewdb-package` builds `build/EWDB-KoboRoot.tgz`.
+
+NickelRefresh and EWDB have separate GitHub Actions workflows, toolchains, and
+named artifacts. The older `ewdbd` and `ewdb-koboroot` targets remain as
+compatibility aliases.
+
 ## NickelRefresh: refresh-rate experiment
 
 NickelRefresh uses NickelHook to load into Nickel and FBInk to draw a small
@@ -29,7 +71,7 @@ Clone with its submodules and build with the NickelTC Docker image:
 git clone https://github.com/ryanmsartor/NickelRefresh.git NickelSperiments
 cd NickelSperiments
 docker run --rm -v "$PWD:/src" -w /src ghcr.io/pgaskin/nickeltc:1.0 \
-  bash -lc 'git submodule update --init; export PATH="/tc/arm-nickel-linux-gnueabihf/bin:$PATH"; make clean all koboroot'
+  bash -lc 'git submodule update --init; export PATH="/tc/arm-nickel-linux-gnueabihf/bin:$PATH"; make nickelrefresh-package'
 ```
 
 The build produces `KoboRoot.tgz`. It builds FBInk as a small static library

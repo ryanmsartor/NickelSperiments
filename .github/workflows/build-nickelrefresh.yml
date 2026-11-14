@@ -1,0 +1,33 @@
+name: Build NickelRefresh package
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  nickelrefresh-package:
+    name: NickelRefresh KoboRoot package
+    runs-on: ubuntu-latest
+    container: ghcr.io/pgaskin/nickeltc:1.0
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Initialize NickelRefresh dependencies
+        run: git submodule update --init deps/NickelHook deps/FBInk
+
+      - name: Add NickelTC cross-toolchain to PATH
+        run: echo "/tc/arm-nickel-linux-gnueabihf/bin" >> "$GITHUB_PATH"
+
+      - name: Build NickelRefresh and KoboRoot.tgz
+        run: make nickelrefresh-package
+
+      - name: Upload NickelRefresh KoboRoot package
+        uses: actions/upload-artifact@v4
+        with:
+          name: NickelRefresh-KoboRoot
+          path: KoboRoot.tgz
+          if-no-files-found: error

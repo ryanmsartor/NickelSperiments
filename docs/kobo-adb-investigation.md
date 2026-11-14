@@ -8,11 +8,10 @@ polling. The initial preference was to preserve USB storage alongside ADB.
 Mutually exclusive ADB and storage modes may be simpler, but have not been
 validated.
 
-**No package or repository implementation has been created.** Hardware testing
-was stopped at the user's request after the reader rebooted unexpectedly
-shortly after an ADB-only gadget was bound. The cause is unknown. Do not
-install an automatic rule or repeat gadget binding without discussing the risk
-with the user.
+**No package or automatic startup plumbing has been created.** A pinned EWDB
+build recipe and successful manual ADB-only test now exist. An earlier SDBD
+test was followed by an unexplained reboot, but the later EWDB test completed
+without a reboot. Continue to treat gadget lifecycle changes cautiously.
 
 ## Device and observed firmware
 
@@ -94,6 +93,9 @@ after testing; future sessions will need to establish their own access.
    precise timing and cause are not known. No `/proc/last_kmsg` or
    `/sys/fs/pstore` was available afterward; the new boot log did not establish
    the cause. The test did not capture live kernel logs.
+8. Built EWDB from pinned source and tested it on the reader with a temporary
+   ADB-only FunctionFS gadget. USB enumeration, root shell commands, push, pull,
+   checksums, disconnect, and cleanup succeeded. See "Real-device result."
 
 The test binary and ADB host key were used only for this investigation. The
 test did not verify that the host cable, USB enumeration, or the daemon's
@@ -107,28 +109,238 @@ daemon, and files under `/tmp`. After reboot, `/mnt/onboard` was mounted and
 retested. The temporary host ADB server and file-transfer server were stopped.
 Temporary SSH and ADB keys and downloaded test files were removed from the
 session, and the temporary SSH authorization was removed from the reader.
-No automatic rules or persistent package were installed.
+No automatic rules or persistent package were installed. A later EWDB test
+also cleaned up its temporary gadget, FunctionFS mount, daemon, binary, and SSH
+key. Its diagnostic logs remain on onboard storage.
 
 ## Next steps
 
-- First investigate the unexpected reboot with explicit user approval and a
-  way to capture live kernel logs across the failure. Confirm the cable and
-  host connection independently. Avoid unattended gadget binding until the
-  failure is understood.
-- Consider mutually exclusive modes: unbind ADB before Nickel exports storage,
-  and only restart ADB after storage is safely detached and remounted. Define
-  how the user selects modes and how boot, suspend, rapid reconnects, and
-  failed handoffs are handled.
-- Verify actual host add/remove events and udev 142's handling of spawned
-  processes on this device. A rule can avoid a polling loop, but event delivery,
-  daemon lifecycle, and startup while already connected must be tested.
-- Choose and build a compatible daemon reproducibly; verify its license,
-  root-access authentication, host key provisioning, and behavior on the
-  reader. Do not assume a mutable nightly binary or the appearance of
-  FunctionFS endpoints is sufficient.
+- Test rapid reconnects, suspend/resume, reboot while connected, and failure
+  paths. Confirm the storage handoff wrapper continues to preserve updated
+  stock scripts across a firmware upgrade.
 - Test repeated connection, disconnection, reboot, mode switching, ADB
-  authentication and transfers, and normal storage mounting and ejection.
+  transfers, and normal storage mounting and ejection.
   Treat support for other firmware versions as unverified until tested.
+
+## Daemon build validation
+
+On 2026-11-13, SDBD was rejected as the reproducible-build candidate. Its
+source at commit `90b543b5a777cf3897260ac1f39b4ac628ae2e02` requires `bfdev`
+and `bfenv`; the public `bfenv` repository was unavailable, and its packaging
+mirror did not provide a fetchable source revision. The published dependency
+packages and daemon nightlies are not a complete source build recipe.
+
+[EWDB](https://github.com/BrandonKowalski/ewdb) was built instead, pinned to
+commit `3218c4eac664de5443e561f32ee9acf6e0ca0c17`. It is a pure-Go daemon
+with vendored dependencies and explicit ARMv7 and FunctionFS support. The
+build used the official Go 1.26.11 Linux ARM64 toolchain, whose archive SHA-256
+was `6c2f29b458b5add0835f18b776f69c8881a6d88428f1484a6da55755e620757e`.
+
+The resulting `build/ewdbd-linux-armv7` was a stripped, statically linked,
+32-bit little-endian ARM EABI5 executable with SHA-256
+`5dbca1067ed094422f85887fc0e41a254bb89f6aa06e02ac563c557fec4447e4`.
+An immediate rebuild was byte-for-byte identical. It ran successfully through
+the host's ARM32 compatibility support: `--version`, `help`, and
+`getprop ro.product.cpu.abi` returned successfully, with the latter reporting
+`armeabi-v7a`. The upstream unit tests passed; three Unix-socket tests initially
+hit the workspace sandbox's `setsockopt` restriction and passed when rerun
+outside that sandbox.
+
+EWDB does not implement ADB RSA authentication at this revision. Its session
+accepts the host's `CNXN` directly, and `AUTH` packets received outside a
+session are ignored. Because the daemon runs as root, any USB host that can
+connect receives root-level ADB access. For this experiment, the user accepted
+physical USB access as the trust boundary. A future package must make this
+automatic behavior explicit: connecting a USB host exposes root ADB unless and
+until the user accepts Nickel's storage prompt.
+
+The initial host-only work validated compilation and ordinary ARMv7 process
+execution without changing Kobo state. The subsequent real-device test below
+validated the FunctionFS and ADB transport. Authentication was intentionally
+not tested because EWDB does not implement it and physical USB access was
+accepted as the trust boundary.
+
+Build the pinned binary with Go 1.26 or newer:
+
+```sh
+make ewdb-binary
+```
+
+### Real-device result
+
+The binary was tested on the Kobo Clara BW on 2026-11-13. Its SHA-256 matched
+the workstation artifact, `--version` ran successfully, and it reported the
+`armeabi-v7a` ABI. A temporary ADB-only `g1` gadget used Google vendor/product
+IDs `18d1:4ee7`; `/mnt/onboard` remained mounted locally and no mass-storage
+function was linked.
+
+EWDB opened the mounted FunctionFS endpoint and created `ep0`, `ep1`, and
+`ep2`. After binding `g1` to `11211000.usb`, the UDC reached `configured`, the
+host enumerated the reader at high speed with the expected vendor-specific ADB
+interface and two bulk endpoints, and EWDB logged `BIND` and `ENABLE`.
+
+The workstation's existing ADB server listed serial `KOBOADBTEST` as `device`.
+The following operations succeeded:
+
+- `adb shell id` returned `uid=0(root) gid=0(root) groups=0(root)`.
+- `adb shell uname -a` reported the expected Kobo 4.9.77 ARMv7 kernel.
+- A shell command returned the expected stdout.
+- `adb push` and `adb pull` transferred a 3,810-byte test file. The original,
+  device copy, and pulled copy had identical SHA-256
+  `ee95b28a7ccc659641631a7a8ab57f5c25e2914fcbc5428302d79c70e3350dea`.
+
+The gadget was then unbound. EWDB logged `DISABLE` and `UNBIND`; the UDC
+returned to `not attached`, the temporary gadget and FunctionFS mount were
+removed, and the host no longer listed the USB or ADB device. The temporary
+binary, processes, transfer file, and SSH key were removed. The reader did not
+reboot. Diagnostic logs were retained on the reader under
+`/mnt/onboard/.kobo/ewdb-usb-test`.
+
+### Mutually exclusive storage handoff
+
+The first package prototype used a marker to select ADB instead of storage.
+That design was replaced at the user's request: ADB now starts automatically
+on every USB-host connection while Nickel still receives its ordinary storage
+prompt. Ignoring or declining the prompt leaves ADB active.
+
+If the prompt is accepted, `/usr/local/Kobo/udev/usb` is an EWDB wrapper that
+stops the daemon, unbinds the UDC, unmounts FunctionFS, and removes `ffs.adb`
+before executing the preserved stock storage script. The current firmware
+script is backed up dynamically as `/usr/local/ewdb/kobo-usb-stock`; if a
+firmware update replaces the wrapper, the next connection refreshes that
+backup before reinstalling the handoff wrapper. The firmware's copy under
+`/lib/udev/rules.d` is never modified.
+
+A manual affirmative-handoff test succeeded. The host first saw ADB, then ADB
+disconnected and the reader re-enumerated as stock `2237:4234` mass storage.
+After the host safely unmounted the volume, the stock removal path checked the
+filesystem and remounted `/mnt/onboard`; the UDC returned to `not attached` and
+the reader did not reboot. Udev 142 also confirmed that the same-named rule in
+`/etc/udev/rules.d` overrides the vendor rule and routes `usb_host` events to
+the EWDB dispatcher.
+
+The subsequent physical event test also passed. Reconnecting the cable started
+ADB automatically, kept `/mnt/onboard` mounted locally, provided root shell and
+mapped `getprop`, and transferred a test file with matching push/pull hashes.
+Accepting Nickel's real prompt disconnected ADB and enumerated the stock
+`2237:4237` mass-storage gadget. After a safe host unmount and physical cable
+removal, `/mnt/onboard` remounted, EWDB stopped, the UDC was unbound, the
+storage-active marker was absent, and the reader had not rebooted.
+
+## Future hardening plan
+
+Every lifecycle test should preserve the same invariants:
+
+- Exactly one mode owns the UDC: ADB, stock storage, or neither.
+- `ffs.adb` and `mass_storage.0` are never linked into the active configuration
+  together.
+- `/mnt/onboard` is mounted locally in ADB mode and unmounted before its block
+  device is assigned to mass storage.
+- A failed ADB start falls back to Nickel's prompt without unmounting onboard
+  storage.
+- ADB is fully stopped and FunctionFS is unmounted before stock storage setup
+  begins.
+- After disconnect, `/mnt/onboard` is mounted, the UDC is unbound, no EWDB
+  process remains, and `/run/ewdb/storage-active` is absent.
+
+For each scenario, capture timestamps, `/tmp/ewdbd.log`, the relevant udev
+environment, UDC state, configfs links, mount state, process state, host
+`lsusb`, and `adb devices -l`. Preserve a synchronized `dmesg` snapshot on
+onboard storage when testing a path that might reboot or drop networking.
+
+### Rapid reconnects and event duplication
+
+Test repeated plug/unplug cycles in ADB mode, repeated cycles after accepting
+storage, and reconnects during each transition. Include unplugging while EWDB
+is initializing, while an ADB transfer is active, immediately after accepting
+storage, while the host is mounting/ejecting storage, and while Kobo's fsck is
+running. Also inject duplicate and reordered `add`, `remove`, and `offline`
+events into the dispatcher.
+
+The scripts must remain idempotent: duplicate starts must not create a second
+daemon or mount, duplicate stops must not enter the storage teardown path, and
+an interrupted transition must converge to a safe unbound state. Add an
+explicit transition/state model if event testing reveals ambiguity that the
+current lock and runtime markers cannot resolve.
+
+### Suspend and resume
+
+Cover suspend while disconnected, while ADB is idle, during ADB traffic, while
+Nickel's prompt is visible, and while stock storage is active. Test resume with
+the cable still connected and with it removed during suspend.
+
+Determine which udev or FunctionFS events the MTK controller emits on suspend
+and resume. EWDB should either retain a usable session or close it cleanly and
+be rediscovered by the host. It must not rebind over active mass storage, leave
+a blocked FunctionFS endpoint, or prevent normal sleep. Measure idle wakeups
+and suspend current to confirm that automatic ADB does not introduce polling or
+material idle overhead.
+
+### Reboot and startup ordering
+
+Test reboot with USB disconnected, with ADB connected, with Nickel's prompt
+visible, and with stock storage active after a safe host eject. Also test boot
+with the cable already connected and boot after an intentionally interrupted
+ADB or storage transition.
+
+Verify when configfs, `/mnt/onboard`, udev, Nickel, and the UDC become ready.
+The dispatcher should fail closed until onboard storage is mounted locally;
+startup events must not be lost or start two owners. If udev does not emit a
+usable event for an already-connected cable, add a one-shot boot reconciliation
+step rather than a polling service. Reboot tests should also verify that `/run`
+state is safely disposable and that no persistent marker is required for
+recovery.
+
+### Firmware upgrades and stock-script preservation
+
+Test an upgrade that replaces `/usr/local/Kobo/udev/usb`, an upgrade that
+replaces `/lib/udev/rules.d/kobo.rules`, and an upgrade that changes the stock
+gadget layout or UDC name. On the next connection,
+`install-storage-hook` should recognize a genuine new stock script, refresh
+`/usr/local/ewdb/kobo-usb-stock`, and reinstall the wrapper atomically. It must
+never back up the EWDB wrapper as though it were stock.
+
+Before wrapping an updated script, consider recording and checking a hash plus
+basic structural expectations, such as the MTK platform branch and safe
+unmount-before-export ordering. Unknown UDCs or incompatible storage scripts
+should disable ADB and leave the firmware's normal USB behavior intact. Repeat
+the full ADB-to-storage handoff test after every supported firmware update.
+
+### Failure injection and recovery
+
+Exercise missing or non-executable EWDB binaries, malformed configuration,
+FunctionFS mount failure, endpoint initialization timeout, occupied UDC,
+configfs creation failure, daemon crash, failed unbind, and failed stock-script
+backup or replacement. Separately test full `/run`, read-only root filesystem,
+and low-memory conditions. Avoid injecting block-device or fsck failures on the
+primary reader without a recoverable image and serial-console access.
+
+Every pre-storage failure must keep `/mnt/onboard` mounted and still deliver
+Nickel's prompt. A failed storage-hook installation must prevent automatic ADB
+for that connection. Errors should be visible through syslog and a bounded
+diagnostic log without creating a retry loop. Document a manual recovery
+sequence that unbinds the UDC, stops EWDB, unmounts FunctionFS, restores the
+stock USB script, reloads udev rules, and verifies onboard mount state.
+
+### Compatibility, security, and packaging
+
+Treat support as firmware- and platform-specific until the full lifecycle
+matrix passes. Test other MTK Kobo models first, then evaluate older Freescale
+and legacy gadget paths separately; do not assume their module-based storage
+flow can use this configfs implementation.
+
+Automatic ADB intentionally treats physical USB as the trust boundary and
+grants unauthenticated root access. Keep that behavior prominent in package
+documentation and release notes. Future options include an on-device disable
+switch, a time-limited ADB window, host authentication, or a reduced-privilege
+daemon, but none should weaken the safe storage handoff.
+
+Make package builds reproducible in CI, publish the pinned EWDB revision and
+artifact hashes, validate archive ownership/modes, and test installation plus
+`/usr/local/ewdb/uninstall` on a clean firmware image. Uninstall testing must
+cover ADB-active, disconnected, and refused-while-storage-active cases, and
+must prove that the exact backed-up stock handler is restored before the udev
+override is removed.
 
 ## References
 

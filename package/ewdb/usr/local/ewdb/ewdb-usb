@@ -1,0 +1,157 @@
+#!/bin/sh
+
+G=/sys/kernel/config/usb_gadget/g1
+UDC=11211000.usb
+FFS=/dev/usb-ffs/adb
+RUN=/run/ewdb
+PID=$RUN/ewdbd.pid
+LOG=/tmp/ewdbd.log
+DAEMON=/usr/local/ewdb/ewdbd
+CONFIG=/etc/ewdbd.conf
+
+log()
+{
+	logger -t ewdb-usb -- "$*"
+}
+
+lock()
+{
+	mkdir -p "$RUN"
+	exec 9>"$RUN/lock"
+	flock -x 9
+}
+
+mounted()
+{
+	mountpoint -q "$1"
+}
+
+daemon_running()
+{
+	test -s "$PID" && kill -0 "$(cat "$PID")" 2>/dev/null
+}
+
+stop_daemon()
+{
+	if daemon_running; then
+		start-stop-daemon -K -p "$PID" -s TERM -o
+		n=0
+		while daemon_running && test "$n" -lt 30; do
+			sleep 0.1
+			n=$((n + 1))
+		done
+		daemon_running && start-stop-daemon -K -p "$PID" -s KILL -o
+	fi
+	rm -f "$PID"
+}
+
+unlink_function()
+{
+	test -L "$G/configs/c.1/$1" && rm -f "$G/configs/c.1/$1"
+}
+
+stop_locked()
+{
+	if test -e "$G/UDC"; then
+		bound=$(cat "$G/UDC")
+		test -z "$bound" || printf '\n' > "$G/UDC"
+	fi
+	stop_daemon
+	mounted "$FFS" && umount "$FFS"
+	unlink_function ffs.adb
+	test -d "$G/functions/ffs.adb" && rmdir "$G/functions/ffs.adb"
+	rmdir "$FFS" 2>/dev/null || true
+	rmdir /dev/usb-ffs 2>/dev/null || true
+}
+
+serial_number()
+{
+	serial=KOBOADB
+	if test -r /mnt/onboard/.kobo/version; then
+		IFS=, read -r candidate ignored < /mnt/onboard/.kobo/version
+		candidate=$(printf '%s' "$candidate" | tr -cd 'A-Za-z0-9._-')
+		test -z "$candidate" || serial=$candidate
+	fi
+	printf '%s\n' "$serial"
+}
+
+start_locked()
+{
+	test -x "$DAEMON" || { log "missing daemon: $DAEMON"; return 1; }
+	test -d /sys/class/udc/$UDC || { log "unsupported UDC: $UDC"; return 1; }
+	mounted /mnt/onboard || { log "refusing ADB: /mnt/onboard is not mounted"; return 1; }
+
+	mkdir -p "$G"
+	if test -s "$G/UDC" && test -n "$(cat "$G/UDC")"; then
+		log "refusing ADB: gadget is already bound"
+		return 1
+	fi
+
+	# A stale mass-storage function may remain after a normal storage session.
+	# It is safe to unlink only because the UDC is unbound and onboard is local.
+	unlink_function mass_storage.0
+	unlink_function ffs.adb
+
+	mkdir -p "$G/strings/0x409" "$G/configs/c.1/strings/0x409"
+	printf '0x18d1\n' > "$G/idVendor"
+	printf '0x4ee7\n' > "$G/idProduct"
+	printf '0x0200\n' > "$G/bcdUSB"
+	printf '0x0100\n' > "$G/bcdDevice"
+	serial=$(serial_number)
+	printf '%s\n' "$serial" > "$G/strings/0x409/serialnumber"
+	printf 'Kobo\n' > "$G/strings/0x409/manufacturer"
+	printf 'Kobo eReader ADB\n' > "$G/strings/0x409/product"
+	printf 'ADB\n' > "$G/configs/c.1/strings/0x409/configuration"
+	printf '120\n' > "$G/configs/c.1/MaxPower"
+	mkdir -p "$G/functions/ffs.adb"
+	ln -s "$G/functions/ffs.adb" "$G/configs/c.1/ffs.adb"
+
+	mkdir -p "$FFS" "$RUN/state"
+	printf '%s\n' "$serial" > "$RUN/serial"
+	if ! mount -t functionfs adb "$FFS"; then
+		log "failed to mount FunctionFS"
+		stop_locked
+		return 1
+	fi
+
+	: > "$LOG"
+	start-stop-daemon -S -b -m -p "$PID" -x /bin/sh -- -c \
+		"exec 9>&-; exec $DAEMON -c $CONFIG -launchers $RUN/launchers >>$LOG 2>&1"
+
+	n=0
+	while test ! -e "$FFS/ep1" && daemon_running && test "$n" -lt 50; do
+		sleep 0.1
+		n=$((n + 1))
+	done
+	if test ! -e "$FFS/ep1" || ! daemon_running; then
+		log "EWDB did not initialize FunctionFS"
+		stop_locked
+		return 1
+	fi
+
+	printf '%s\n' "$UDC" > "$G/UDC"
+	log "bound ADB gadget serial=$serial"
+}
+
+lock
+case ${1:-status} in
+start)
+	if daemon_running; then
+		exit 0
+	fi
+	start_locked
+	;;
+stop)
+	stop_locked
+	;;
+status)
+	bound=
+	test -e "$G/UDC" && bound=$(cat "$G/UDC")
+	if daemon_running; then daemon=running; else daemon=stopped; fi
+	printf 'daemon=%s udc=%s\n' "$daemon" "${bound:-unbound}"
+	;;
+*)
+	echo "usage: ewdb-usb start|stop|status" >&2
+	exit 2
+	;;
+esac

@@ -1,0 +1,29 @@
+#!/bin/sh
+
+ROOT=/usr/local/ewdb
+TARGET=/usr/local/Kobo/udev/usb
+BACKUP=$ROOT/kobo-usb-stock
+MARKER='# EWDB-STORAGE-HANDOFF'
+
+if test -e /run/ewdb/storage-active || ! mountpoint -q /mnt/onboard; then
+	echo "refusing uninstall: disconnect USB storage and wait for onboard to remount" >&2
+	exit 1
+fi
+
+"$ROOT/ewdb-usb" stop || exit 1
+
+if test "$(sed -n '2p' "$TARGET" 2>/dev/null)" = "$MARKER"; then
+	if test ! -x "$BACKUP"; then
+		echo "refusing uninstall: stock Kobo USB script backup is missing" >&2
+		exit 1
+	fi
+	cp -p "$BACKUP" "$TARGET.new" || exit 1
+	mv -f "$TARGET.new" "$TARGET" || exit 1
+fi
+
+rm -f /etc/udev/rules.d/kobo.rules /etc/ewdbd.conf
+udevadm control --reload-rules
+rm -rf /run/ewdb
+rm -rf "$ROOT"
+
+echo "EWDB removed; Kobo's stock USB handler is active"

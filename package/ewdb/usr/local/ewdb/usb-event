@@ -1,0 +1,38 @@
+#!/bin/sh
+
+EWDB=/usr/local/ewdb/ewdb-usb
+INSTALL_HOOK=/usr/local/ewdb/install-storage-hook
+STOCK=/usr/local/Kobo/udev/plug
+
+log()
+{
+	logger -t ewdb-usb -- "$*"
+}
+
+test "$STARTUP" = 1 && exit 0
+
+action=$ACTION
+test "$action" = offline && action=remove
+test "$action" = online && exit 0
+
+case $action in
+add)
+	if ! "$INSTALL_HOOK"; then
+		log "storage handoff hook unavailable; not starting ADB"
+		exec "$STOCK"
+	fi
+	if "$EWDB" start; then
+		log "ADB mode active; forwarding Kobo storage prompt"
+	else
+		log "ADB startup failed; forwarding Kobo storage prompt"
+	fi
+	exec "$STOCK"
+	;;
+remove)
+	"$EWDB" stop
+	exec "$STOCK"
+	;;
+*)
+	exec "$STOCK"
+	;;
+esac

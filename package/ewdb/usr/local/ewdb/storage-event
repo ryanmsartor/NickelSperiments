@@ -1,0 +1,28 @@
+#!/bin/sh
+# EWDB-STORAGE-HANDOFF
+
+EWDB=/usr/local/ewdb/ewdb-usb
+STOCK=/usr/local/ewdb/kobo-usb-stock
+ACTIVE=/run/ewdb/storage-active
+
+test -x "$STOCK" || exit 1
+
+case $ACTION in
+add)
+	# Nickel accepted the storage prompt. Release FunctionFS and the UDC before
+	# the stock script unmounts and exports onboard storage.
+	"$EWDB" stop || exit 1
+	mkdir -p /run/ewdb
+	: > "$ACTIVE"
+	exec "$STOCK" "$@"
+	;;
+remove)
+	"$STOCK" "$@"
+	result=$?
+	rm -f "$ACTIVE"
+	exit "$result"
+	;;
+*)
+	exec "$STOCK" "$@"
+	;;
+esac

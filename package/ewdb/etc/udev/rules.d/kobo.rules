@@ -1,0 +1,10 @@
+# Override /lib/udev/rules.d/kobo.rules without modifying the firmware file.
+KERNEL=="mmcblk[1-9]p[1-9]", RUN+="/usr/local/Kobo/udev/sd"
+KERNEL=="usb_host", RUN+="/usr/local/ewdb/usb-event"
+KERNEL=="fsl-usb2-udc", ACTION=="offline", RUN+="/usr/local/ewdb/usb-event"
+KERNEL=="usb_plug", RUN+="/usr/local/Kobo/udev/ac"
+KERNEL=="ci_hdrc.0", ACTION=="offline", RUN+="/usr/local/ewdb/usb-event"
+KERNEL=="5100000.udc-controller", ACTION=="offline", RUN+="/usr/local/ewdb/usb-event"
+KERNEL=="input*", SUBSYSTEM!="leds", RUN+="/usr/local/Kobo/udev/input"
+KERNEL=="11211000.usb", ACTION=="offline", RUN+="/usr/local/ewdb/usb-event"
+KERNEL=="bd71827_bat", RUN+="/usr/local/Kobo/udev/bat"
