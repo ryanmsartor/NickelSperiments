@@ -3,6 +3,7 @@ GAMBATTE_CORE := $(GAMBATTE_ROOT)/libgambatte
 GAMBATTE_BUILD_DIR := build/gambatte
 GAMBATTE_OUTPUT := build/kobo-gambatte-bench
 GAMBATTE_DISPLAY_OUTPUT := build/kobo-gambatte-display-test
+GAMBATTE_PLAYER_OUTPUT := build/kobo-gambatte-display
 GAMBATTE_CROSS_COMPILE ?= arm-nickel-linux-gnueabihf-
 GAMBATTE_CXX ?= $(GAMBATTE_CROSS_COMPILE)g++
 
@@ -56,18 +57,31 @@ GAMBATTE_DISPLAY_OBJECTS := \
 	$(GAMBATTE_BUILD_DIR)/display/display_test.o \
 	$(GAMBATTE_BUILD_DIR)/display/frame_scaler.o \
 	$(GAMBATTE_BUILD_DIR)/display/framebuffer_backend.o
+GAMBATTE_PLAYER_OBJECTS := \
+	$(GAMBATTE_BUILD_DIR)/display/gambatte_display.o \
+	$(GAMBATTE_BUILD_DIR)/display/frame_scaler.o \
+	$(GAMBATTE_BUILD_DIR)/display/framebuffer_backend.o \
+	$(GAMBATTE_BUILD_DIR)/display/kobo_session.o \
+	$(GAMBATTE_BUILD_DIR)/display/touch_input.o \
+	$(GAMBATTE_BUILD_DIR)/frontend/gambatte-platform.o
 
-.PHONY: gambatte-bench gambatte-display-test gambatte-clean
+.PHONY: gambatte-bench gambatte-display-test gambatte-display gambatte-clean
 
 gambatte-bench: $(GAMBATTE_OUTPUT)
 
 gambatte-display-test: $(GAMBATTE_DISPLAY_OUTPUT)
+
+gambatte-display: $(GAMBATTE_PLAYER_OUTPUT)
 
 $(GAMBATTE_OUTPUT): $(GAMBATTE_CORE_OBJECTS) $(GAMBATTE_FRONTEND_OBJECTS)
 	@mkdir -p $(@D)
 	$(GAMBATTE_CXX) $(GAMBATTE_LDFLAGS) -o $@ $^
 
 $(GAMBATTE_DISPLAY_OUTPUT): $(GAMBATTE_DISPLAY_OBJECTS)
+	@mkdir -p $(@D)
+	$(GAMBATTE_CXX) $(GAMBATTE_LDFLAGS) -o $@ $^
+
+$(GAMBATTE_PLAYER_OUTPUT): $(GAMBATTE_CORE_OBJECTS) $(GAMBATTE_PLAYER_OBJECTS)
 	@mkdir -p $(@D)
 	$(GAMBATTE_CXX) $(GAMBATTE_LDFLAGS) -o $@ $^
 
@@ -84,4 +98,4 @@ $(GAMBATTE_BUILD_DIR)/display/%.o: src/gambatte/%.cpp
 	$(GAMBATTE_CXX) $(GAMBATTE_CPPFLAGS) $(GAMBATTE_CXXFLAGS) -c -o $@ $<
 
 gambatte-clean:
-	rm -rf $(GAMBATTE_BUILD_DIR) $(GAMBATTE_OUTPUT) $(GAMBATTE_DISPLAY_OUTPUT)
+	rm -rf $(GAMBATTE_BUILD_DIR) $(GAMBATTE_OUTPUT) $(GAMBATTE_DISPLAY_OUTPUT) $(GAMBATTE_PLAYER_OUTPUT)

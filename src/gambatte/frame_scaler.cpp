@@ -59,4 +59,34 @@ void scale_monochrome(const std::vector<uint8_t> &source,
     }
 }
 
+void scale_rgb32_grayscale(const std::vector<uint32_t> &source,
+                           unsigned scale,
+                           std::vector<uint32_t> &destination) {
+    if (source.size() != kGameBoyWidth * kGameBoyHeight)
+        throw std::runtime_error("source frame must be 160x144");
+    if (scale == 0U)
+        throw std::runtime_error("scale must be positive");
+
+    const unsigned width = kGameBoyWidth * scale;
+    const unsigned height = kGameBoyHeight * scale;
+    destination.resize(width * height);
+
+    for (unsigned source_y = 0; source_y < kGameBoyHeight; ++source_y) {
+        for (unsigned source_x = 0; source_x < kGameBoyWidth; ++source_x) {
+            const uint32_t rgb = source[source_y * kGameBoyWidth + source_x];
+            const unsigned red = (rgb >> 16U) & 0xFFU;
+            const unsigned green = (rgb >> 8U) & 0xFFU;
+            const unsigned blue = rgb & 0xFFU;
+            const uint32_t gray = (red * 54U + green * 183U + blue * 19U) >> 8U;
+            const uint32_t pixel = 0xFF000000U | gray * 0x00010101U;
+            for (unsigned dy = 0; dy < scale; ++dy) {
+                uint32_t *row = &destination[(source_y * scale + dy) * width +
+                                             source_x * scale];
+                for (unsigned dx = 0; dx < scale; ++dx)
+                    row[dx] = pixel;
+            }
+        }
+    }
+}
+
 } // namespace gambatte_kobo

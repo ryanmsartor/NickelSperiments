@@ -50,6 +50,8 @@ Run `make help` to list the public targets.
   benchmark to `build/kobo-gambatte-bench` using NickelTC.
 - `make gambatte-display-test` cross-compiles the synthetic MediaTek HWTCON
   display prototype to `build/kobo-gambatte-display-test` using NickelTC.
+- `make gambatte-display` cross-compiles the ROM-driven display prototype to
+  `build/kobo-gambatte-display` using NickelTC.
 
 NickelRefresh and EWDB have separate GitHub Actions workflows, toolchains, and
 named artifacts. The older `ewdbd` and `ewdb-koboroot` targets remain as
@@ -82,6 +84,25 @@ devices, not a release asset or installable package. Nickel is not suspended
 yet. Keep an ADB recovery session available during initial testing; the program
 saves and restores only its viewport and attempts a GC16 restore on normal exit
 and SIGINT, SIGTERM, or SIGHUP.
+
+The ROM-driven prototype connects Gambatte's latest completed frame to the same
+presentation backend while emulation continues at the Game Boy's native frame
+rate. Intermediate video frames are intentionally not presented. The default
+is now 5x integer scaling. It has multitouch D-pad, A, B, Start, and Select
+controls, but still has no audio or persistent save handling:
+
+```sh
+build/kobo-gambatte-display game.gb \
+  --rate 8 --scale 5 --seconds 30 --cleanup-seconds 10
+```
+
+Like the synthetic test, this is an ADB-only developer diagnostic. It is
+uploaded only as a workflow artifact and is not a release asset. On the Clara
+BW it exclusively grabs the `cyttsp5_mt` touchscreen, suspends Nickel, saves
+and clears the entire framebuffer, and draws the controls below the game. On
+exit it restores the full framebuffer, releases the touchscreen, and resumes
+Nickel in that order. SIGINT, SIGTERM, and SIGHUP use the same cleanup path;
+SIGKILL and sudden power loss cannot run in-process cleanup.
 
 ### Installing release packages
 

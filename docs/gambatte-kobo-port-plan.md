@@ -201,6 +201,55 @@ framebuffer ABI and rejects other framebuffer drivers instead of guessing.
 Nickel is not stopped yet, so the first device test should be brief and should
 verify restoration before longer ghosting and latency measurements.
 
+The first Clara BW device tests passed on 2026-11-14. A three-second synthetic
+run submitted all 24 requested frames at 8 Hz with no drops. Average update
+submission time was 5.41 ms; the 78.42 ms maximum included a waited GC16
+cleanup. A separate SIGTERM test interrupted an active run after 20 frames and
+returned status 130 after restoring the viewport. Neither test logged an
+HWTCON/display-driver error.
+
+`make gambatte-display` now builds the next integration slice. It runs Gambatte
+at the Game Boy's native frame rate and presents only the latest completed
+frame through the tested backend. With the user-supplied US ROM for *Rolan's
+Curse II*, a five-second Clara BW run emulated 298 frames, presented 40 frames
+at 8 Hz, performed two GC16 cleanups, restored the viewport, and passed without
+display errors. The binary and ROM matched their workstation SHA-256 hashes on
+the reader before execution.
+
+The runner now uses 5x integer scaling (up from the initial 4x test), draws a
+conventional D-pad at the lower left, A and B at the lower right, and labeled
+Start and Select controls along the bottom. It reads the Clara BW's
+`cyttsp5_mt` Type-B multitouch stream directly, handles simultaneous contacts,
+applies the panel's swapped-axis and mirrored-X portrait transform, and uses
+`EVIOCGRAB` so touches cannot reach Nickel.
+
+Before changing the display it sends SIGSTOP to Nickel, saves the complete
+framebuffer, clears it, and performs a full GC16 refresh. Cleanup restores the
+complete saved framebuffer, releases the touchscreen grab, and sends SIGCONT
+to Nickel, in that order. A real-device lifecycle test observed Nickel change
+from sleeping to stopped while the emulator ran and return to sleeping after
+exit. A final five-second regression at 5x scaling emulated 298 frames,
+presented 40, completed two GC16 cleanups, restored the screen, and resumed
+Nickel without a display-driver error.
+
+Touch input is sampled once per emulated Game Boy frame, approximately 59.73
+Hz, independently of the 8 Hz display cadence. Distinct evdev button states are
+queued in order, so a complete tap between samples is delivered as one pressed
+frame followed by a released frame. Tracking-ID releases are supported, and a
+global zero-valued `BTN_TOUCH` or `BTN_TOOL_FINGER` report authoritatively
+clears every slot to prevent a stale contact from holding a direction.
+
+A focused 20-second device test captured 48 input transitions. Input was active
+for 258 of 1,194 emulated frames rather than remaining stuck after the first
+touch; the run completed 160 presentations and restored Nickel successfully.
+The A and B controls use literal bitmap `A` and `B` glyphs rather than
+approximate hand-drawn marks.
+
+This runner still has no audio or save-file persistence. In-process cleanup
+covers normal exit, exceptions, SIGINT, SIGTERM, and SIGHUP; a future external
+supervisor is still required to recover automatically from SIGKILL or a hard
+crash. It remains a developer diagnostic rather than an installable emulator.
+
 - Take exclusive ownership of the framebuffer.
 - Render a synthetic 160-by-144 animated test pattern.
 - Add integer scaling and grayscale conversion.

@@ -19,6 +19,10 @@ void scale_monochrome(const std::vector<uint8_t> &source,
                       unsigned scale,
                       std::vector<uint32_t> &destination);
 
+void scale_rgb32_grayscale(const std::vector<uint32_t> &source,
+                           unsigned scale,
+                           std::vector<uint32_t> &destination);
+
 } // namespace gambatte_kobo
 
 #endif

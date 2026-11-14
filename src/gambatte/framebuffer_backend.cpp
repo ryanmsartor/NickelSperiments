@@ -43,7 +43,7 @@ FramebufferBackend::FramebufferBackend()
 }
 
 FramebufferBackend::~FramebufferBackend() {
-    if (!restored_ && !saved_.empty()) {
+    if (!restored_ && (!saved_.empty() || !saved_screen_.empty())) {
         try {
             restore(0xFFFFFFFEU);
         } catch (...) {
@@ -105,6 +105,16 @@ uint8_t *FramebufferBackend::row_address(uint32_t y) {
     return mapping_ + offset;
 }
 
+uint8_t *FramebufferBackend::screen_row_address(uint32_t y) {
+    const size_t offset = static_cast<size_t>(variable_.yoffset + y) *
+                              fixed_.line_length +
+                          static_cast<size_t>(variable_.xoffset) * 4U;
+    const size_t bytes = static_cast<size_t>(variable_.xres) * 4U;
+    if (offset + bytes > mapping_size_)
+        throw std::runtime_error("framebuffer row is outside mapped memory");
+    return mapping_ + offset;
+}
+
 void FramebufferBackend::save_viewport() {
     const size_t row_bytes = static_cast<size_t>(viewport_.width) * 4U;
     saved_.resize(row_bytes * viewport_.height);
@@ -114,10 +124,27 @@ void FramebufferBackend::save_viewport() {
     restored_ = false;
 }
 
+void FramebufferBackend::save_screen() {
+    const size_t row_bytes = static_cast<size_t>(variable_.xres) * 4U;
+    saved_screen_.resize(row_bytes * variable_.yres);
+    for (uint32_t y = 0; y < variable_.yres; ++y)
+        std::memcpy(&saved_screen_[static_cast<size_t>(y) * row_bytes],
+                    screen_row_address(y), row_bytes);
+    restored_ = false;
+}
+
 void FramebufferBackend::clear_viewport(uint32_t pixel) {
     for (uint32_t y = 0; y < viewport_.height; ++y) {
         uint32_t *row = reinterpret_cast<uint32_t *>(row_address(viewport_.y + y));
         for (uint32_t x = 0; x < viewport_.width; ++x)
+            row[x] = pixel;
+    }
+}
+
+void FramebufferBackend::clear_screen(uint32_t pixel) {
+    for (uint32_t y = 0; y < variable_.yres; ++y) {
+        uint32_t *row = reinterpret_cast<uint32_t *>(screen_row_address(y));
+        for (uint32_t x = 0; x < variable_.xres; ++x)
             row[x] = pixel;
     }
 }
@@ -131,16 +158,26 @@ void FramebufferBackend::draw(const std::vector<uint32_t> &pixels) {
                     &pixels[static_cast<size_t>(y) * viewport_.width], row_bytes);
 }
 
+void FramebufferBackend::draw_screen(const std::vector<uint32_t> &pixels) {
+    if (pixels.size() != static_cast<size_t>(variable_.xres) * variable_.yres)
+        throw std::runtime_error("screen image does not match framebuffer");
+    const size_t row_bytes = static_cast<size_t>(variable_.xres) * 4U;
+    for (uint32_t y = 0; y < variable_.yres; ++y)
+        std::memcpy(screen_row_address(y),
+                    &pixels[static_cast<size_t>(y) * variable_.xres], row_bytes);
+}
+
 double FramebufferBackend::submit(uint32_t waveform,
                                   uint32_t update_mode,
                                   uint32_t marker,
-                                  bool wait_for_completion) {
+                                  bool wait_for_completion,
+                                  const Viewport &region) {
     hwtcon_update_data update;
     std::memset(&update, 0, sizeof(update));
-    update.update_region.top = viewport_.y;
-    update.update_region.left = viewport_.x;
-    update.update_region.width = viewport_.width;
-    update.update_region.height = viewport_.height;
+    update.update_region.top = region.y;
+    update.update_region.left = region.x;
+    update.update_region.width = region.width;
+    update.update_region.height = region.height;
     update.waveform_mode = waveform;
     update.update_mode = update_mode;
     update.update_marker = marker;
@@ -157,23 +194,42 @@ double FramebufferBackend::submit(uint32_t waveform,
 }
 
 double FramebufferBackend::refresh_a2(uint32_t marker) {
-    return submit(HWTCON_WAVEFORM_A2, HWTCON_UPDATE_PARTIAL, marker, false);
+    return submit(HWTCON_WAVEFORM_A2, HWTCON_UPDATE_PARTIAL, marker, false,
+                  viewport_);
 }
 
 double FramebufferBackend::refresh_gc16(uint32_t marker,
                                         bool wait_for_completion) {
     return submit(HWTCON_WAVEFORM_GC16, HWTCON_UPDATE_FULL, marker,
-                  wait_for_completion);
+                  wait_for_completion, viewport_);
+}
+
+double FramebufferBackend::refresh_screen_gc16(uint32_t marker,
+                                                bool wait_for_completion) {
+    Viewport screen = { 0U, 0U, variable_.xres, variable_.yres };
+    return submit(HWTCON_WAVEFORM_GC16, HWTCON_UPDATE_FULL, marker,
+                  wait_for_completion, screen);
 }
 
 void FramebufferBackend::restore(uint32_t marker) {
-    if (saved_.empty() || restored_)
+    if (restored_)
         return;
-    const size_t row_bytes = static_cast<size_t>(viewport_.width) * 4U;
-    for (uint32_t y = 0; y < viewport_.height; ++y)
-        std::memcpy(row_address(viewport_.y + y),
-                    &saved_[static_cast<size_t>(y) * row_bytes], row_bytes);
-    refresh_gc16(marker, true);
+    if (!saved_screen_.empty()) {
+        const size_t row_bytes = static_cast<size_t>(variable_.xres) * 4U;
+        for (uint32_t y = 0; y < variable_.yres; ++y)
+            std::memcpy(screen_row_address(y),
+                        &saved_screen_[static_cast<size_t>(y) * row_bytes],
+                        row_bytes);
+        refresh_screen_gc16(marker, true);
+    } else if (!saved_.empty()) {
+        const size_t row_bytes = static_cast<size_t>(viewport_.width) * 4U;
+        for (uint32_t y = 0; y < viewport_.height; ++y)
+            std::memcpy(row_address(viewport_.y + y),
+                        &saved_[static_cast<size_t>(y) * row_bytes], row_bytes);
+        refresh_gc16(marker, true);
+    } else {
+        return;
+    }
     restored_ = true;
 }
 
