@@ -103,27 +103,70 @@ public:
         previous_ = frame;
     }
 
-    std::vector<koboy::Viewport> take_highest(unsigned maximum) {
+    std::vector<koboy::Viewport> take_highest_rectangles(unsigned maximum) {
         std::vector<koboy::Viewport> selected;
         for (unsigned count = 0U; count < maximum; ++count) {
-            std::size_t best = debt_.size();
-            for (std::size_t index = 0U; index < debt_.size(); ++index)
-                if (debt_[index] &&
-                    (best == debt_.size() || debt_[index] > debt_[best]))
-                    best = index;
-            if (best == debt_.size())
+            struct Candidate {
+                bool valid;
+                unsigned left;
+                unsigned top;
+                unsigned right;
+                unsigned bottom;
+                unsigned long long score;
+            };
+            Candidate best = {false, 0U, 0U, 0U, 0U, 0ULL};
+            std::vector<bool> usable(columns_);
+            std::vector<unsigned long long> column_debt(columns_);
+            for (unsigned top = 0U; top < rows_; ++top) {
+                std::fill(usable.begin(), usable.end(), true);
+                std::fill(column_debt.begin(), column_debt.end(), 0ULL);
+                for (unsigned bottom = top; bottom < rows_; ++bottom) {
+                    for (unsigned column = 0U; column < columns_; ++column) {
+                        const unsigned long long cell_debt = debt_[
+                            static_cast<std::size_t>(bottom) * columns_ +
+                            column];
+                        if (!cell_debt)
+                            usable[column] = false;
+                        if (usable[column])
+                            column_debt[column] += cell_debt;
+                    }
+                    unsigned column = 0U;
+                    while (column < columns_) {
+                        while (column < columns_ && !usable[column])
+                            ++column;
+                        const unsigned left = column;
+                        unsigned long long score = 0ULL;
+                        while (column < columns_ && usable[column]) {
+                            score += column_debt[column];
+                            ++column;
+                        }
+                        if (left != column &&
+                            (!best.valid || score > best.score)) {
+                            best.valid = true;
+                            best.left = left;
+                            best.top = top;
+                            best.right = column;
+                            best.bottom = bottom + 1U;
+                            best.score = score;
+                        }
+                    }
+                }
+            }
+            if (!best.valid)
                 break;
-            const unsigned tile_x = static_cast<unsigned>(best % columns_);
-            const unsigned tile_y = static_cast<unsigned>(best / columns_);
+            const unsigned x = best.left * kDamageTileSize;
+            const unsigned y = best.top * kDamageTileSize;
             koboy::Viewport region = {
-                tile_x * kDamageTileSize, tile_y * kDamageTileSize,
-                std::min(kDamageTileSize,
-                         width_ - tile_x * kDamageTileSize),
-                std::min(kDamageTileSize,
-                         height_ - tile_y * kDamageTileSize)
+                x, y,
+                std::min(width_, best.right * kDamageTileSize) - x,
+                std::min(height_, best.bottom * kDamageTileSize) - y
             };
             selected.push_back(region);
-            debt_[best] = 0ULL;
+            for (unsigned row = best.top; row < best.bottom; ++row)
+                for (unsigned column = best.left;
+                     column < best.right; ++column)
+                    debt_[static_cast<std::size_t>(row) * columns_ +
+                          column] = 0ULL;
         }
         return selected;
     }
@@ -146,10 +189,19 @@ std::vector<koboy::Viewport> regions_outside_tiles(
         (height + kDamageTileSize - 1U) / kDamageTileSize;
     std::vector<bool> blocked(static_cast<std::size_t>(columns) * rows, false);
     for (std::size_t i = 0U; i < locked.size(); ++i) {
-        const unsigned column = locked[i].x / kDamageTileSize;
-        const unsigned row = locked[i].y / kDamageTileSize;
-        if (column < columns && row < rows)
-            blocked[static_cast<std::size_t>(row) * columns + column] = true;
+        const unsigned first_column = locked[i].x / kDamageTileSize;
+        const unsigned first_row = locked[i].y / kDamageTileSize;
+        const unsigned last_column = std::min(
+            columns, (locked[i].x + locked[i].width + kDamageTileSize - 1U) /
+                     kDamageTileSize);
+        const unsigned last_row = std::min(
+            rows, (locked[i].y + locked[i].height + kDamageTileSize - 1U) /
+                  kDamageTileSize);
+        for (unsigned row = first_row; row < last_row; ++row)
+            for (unsigned column = first_column;
+                 column < last_column; ++column)
+                blocked[static_cast<std::size_t>(row) * columns + column] =
+                    true;
     }
 
     std::vector<koboy::Viewport> regions;
@@ -1968,7 +2020,8 @@ int main(int argc, char **argv) {
             } else {
                 if (now >= next_cleanup) {
                     if (!gc16_in_flight) {
-                        gc16_regions = damage_tracker.take_highest(4U);
+                        gc16_regions =
+                            damage_tracker.take_highest_rectangles(4U);
                     }
                     if (!gc16_regions.empty()) {
                         gc16_markers.clear();

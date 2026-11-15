@@ -96,11 +96,12 @@ integration is ready for release.
 
 Gameplay uses only A2 and full GC16. A2 targets a steady 10 Hz cadence across
 the game viewport. Ko Boy measures frame-change debt independently for each
-32-by-32 cell. Once per second it selects up to four individual highest-debt
-cells and starts full-waveform GC16 cleanups for only those cells. While GC16
-owns them, the newest A2 frame continues through coalesced rectangles covering
-the remaining cells. Framebuffer writes follow the same partition so active
-GC16 cells are not modified underneath the controller.
+32-by-32 cell. Once per second it selects up to four highest-debt contiguous
+rectangles of dirty cells and starts full-waveform GC16 cleanups for those
+rectangles. While GC16 owns them, the newest A2 frame continues through
+coalesced rectangles covering the remaining cells. Framebuffer writes follow
+the same partition so active GC16 cells are not modified underneath the
+controller.
 
 This replaces the former developer-configurable fast, slow, and slowest tiers.
 Menus, loading, wake, and exit retain full-screen GC16 boundaries.
@@ -227,11 +228,12 @@ debt according to the number and magnitude of pixel changes, repeated dark-to-
 light transitions, time since its last cleanup, and the waveform used for that
 cleanup. Stronger waveforms should reduce more debt than weaker ones.
 
-When a cleanup becomes due, Ko Boy selects up to four highest-debt cells and
-issues a separate rectangular HWTCON update for each. The cap limits concurrent
-controller work while avoiding the unchanged area that would be included by a
-single bounding rectangle. Cells not selected retain their debt for later
-cleanup.
+When a cleanup becomes due, Ko Boy finds the highest-debt rectangles composed
+entirely of adjacent dirty cells and issues up to four rectangular HWTCON
+updates. This lets one update clean a large contiguous changed area without
+bridging clean gaps merely because they lie inside a global bounding rectangle.
+The cap limits concurrent controller work, and cells not selected retain their
+debt for later cleanup.
 
 Initial implementation should retain an occasional full-viewport slowest
 refresh as a safety net. Its interval can be increased only after device tests
