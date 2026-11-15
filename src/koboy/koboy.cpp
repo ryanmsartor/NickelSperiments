@@ -1597,7 +1597,8 @@ int main(int argc, char **argv) {
         double deadline = options.seconds ? started + options.seconds : 0.0;
         double next_display = started;
         double next_cleanup = slow_interval ? started + slow_interval : 0.0;
-        double emulation_accumulator = 0.0;
+        double emulation_accumulator = 1.0;
+        double last_emulation_time = started;
         unsigned emulated_frames = 0U;
         unsigned displayed_frames = 0U;
         unsigned cleanups = 0U;
@@ -1616,11 +1617,14 @@ int main(int argc, char **argv) {
         cpu_usage.sample(system_cpu_tenths, process_cpu_tenths);
         bool exit_to_nickel = false;
         bool force_first_frame_gc16 = !no_gameplay_refresh;
+        bool refresh_in_flight = false;
 
         while (!interrupted &&
                (!options.seconds || monotonic_seconds() < deadline)) {
-            emulation_accumulator += core.frame_rate() * 10.0 /
-                                    refresh_settings.fast_tenths_hz;
+            const double emulation_time = monotonic_seconds();
+            emulation_accumulator +=
+                (emulation_time - last_emulation_time) * core.frame_rate();
+            last_emulation_time = emulation_time;
             unsigned frames_this_update = static_cast<unsigned>(emulation_accumulator);
             emulation_accumulator -= frames_this_update;
             while (frames_this_update-- != 0U) {
@@ -1640,6 +1644,7 @@ int main(int argc, char **argv) {
                     }
                     last_completed_marker = marker - 1U;
                     last_wait_seconds = drain_elapsed;
+                    refresh_in_flight = false;
                     draw_menu(screen, screen_width, screen_height, developer);
                     framebuffer.draw_screen(screen);
                     koboy::UiAction menu_action =
@@ -1787,7 +1792,11 @@ int main(int argc, char **argv) {
                     if (menu_refresh_healthy)
                         refresh_menu_screen(framebuffer, input, marker++,
                                             diagnostics, true);
-                    next_display = monotonic_seconds();
+                    const double menu_resumed = monotonic_seconds();
+                    next_display = menu_resumed;
+                    last_emulation_time = menu_resumed;
+                    emulation_accumulator = 0.0;
+                    frames_this_update = 0U;
                 }
                 if (sleep_requested || wake_requested) {
                     frames_this_update = 0U;
@@ -1798,6 +1807,7 @@ int main(int argc, char **argv) {
                     if (options.seconds)
                         deadline += paused_for;
                     const double resumed_at = monotonic_seconds();
+                    last_emulation_time = resumed_at;
                     next_display = resumed_at;
                     next_cleanup = slow_interval
                         ? resumed_at + slow_interval : 0.0;
@@ -1810,12 +1820,19 @@ int main(int argc, char **argv) {
                 }
                 if (current_buttons != 0U)
                     ++input_nonzero_polls;
-                core.run_frame(current_buttons, rgb);
+                core.run_frame(current_buttons, rgb,
+                               frames_this_update == 0U);
                 ++emulated_frames;
             }
             if (exit_to_nickel || interrupted)
                 break;
             koboy::scale_rgb32_grayscale(rgb, effective_scale, scaled);
+            if (refresh_in_flight) {
+                last_wait_seconds =
+                    framebuffer.wait_for_update(last_submitted_marker);
+                last_completed_marker = last_submitted_marker;
+                refresh_in_flight = false;
+            }
             framebuffer.draw(scaled);
 
             const double now = monotonic_seconds();
@@ -1834,6 +1851,8 @@ int main(int argc, char **argv) {
                                             last_wait_seconds);
                 last_completed_marker = last_submitted_marker;
                 force_first_frame_gc16 = false;
+                last_emulation_time = monotonic_seconds();
+                emulation_accumulator = 0.0;
             } else if (no_gameplay_refresh) {
                 /*
                  * Isolation mode deliberately keeps emulation, input, scaling,
@@ -1852,12 +1871,12 @@ int main(int argc, char **argv) {
                     record_gameplay_refresh("begin", last_submitted_marker,
                                             last_submitted_type, -1.0);
                 last_wait_seconds = refresh_viewport(
-                    framebuffer, cleanup_type, last_submitted_marker, true);
+                    framebuffer, cleanup_type, last_submitted_marker, false);
                 if (diagnostics)
                     record_gameplay_refresh("end", last_submitted_marker,
                                             last_submitted_type,
                                             last_wait_seconds);
-                last_completed_marker = last_submitted_marker;
+                refresh_in_flight = true;
                 next_cleanup += slow_interval;
                 ++cleanups;
             } else {
@@ -1871,12 +1890,12 @@ int main(int argc, char **argv) {
                                             last_submitted_type, -1.0);
                 last_wait_seconds = refresh_viewport(
                     framebuffer, refresh_settings.fast_type,
-                    last_submitted_marker, true);
+                    last_submitted_marker, false);
                 if (sample_fast)
                     record_gameplay_refresh("end", last_submitted_marker,
                                             last_submitted_type,
                                             last_wait_seconds);
-                last_completed_marker = last_submitted_marker;
+                refresh_in_flight = true;
             }
             if (diagnostics && now >= next_heartbeat) {
                 cpu_usage.sample(system_cpu_tenths, process_cpu_tenths);
@@ -1894,6 +1913,12 @@ int main(int argc, char **argv) {
             sleep_until(next_display);
         }
 
+        if (refresh_in_flight) {
+            last_wait_seconds =
+                framebuffer.wait_for_update(last_submitted_marker);
+            last_completed_marker = last_submitted_marker;
+            refresh_in_flight = false;
+        }
         const double elapsed = monotonic_seconds() - started;
         automatic_state_saved = save_state(core, automatic_state);
         sram_saved = save_sram(core, sram_path);

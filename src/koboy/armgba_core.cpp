@@ -44,13 +44,14 @@ struct ArmGbaCore::Impl {
     double fps;
     unsigned buttons;
     bool loaded;
+    bool capture_video;
     std::string error;
     std::vector<uint32_t> frame;
 
     Impl()
         : pixel_format(RETRO_PIXEL_FORMAT_XRGB8888), width(160U),
           height(144U), fps(16777216.0 / 280896.0), buttons(0U),
-          loaded(false) {}
+          loaded(false), capture_video(true) {}
 };
 
 static bool environment_callback(unsigned command, void *data) {
@@ -119,6 +120,8 @@ static void video_callback(const void *data, unsigned width,
     ArmGbaCore::Impl &impl = *active_core->impl_;
     impl.width = width;
     impl.height = height;
+    if (!impl.capture_video)
+        return;
     impl.frame.resize(static_cast<std::size_t>(width) * height);
     for (unsigned y = 0; y < height; ++y) {
         if (impl.pixel_format == RETRO_PIXEL_FORMAT_XRGB8888) {
@@ -213,10 +216,13 @@ bool ArmGbaCore::load_rom(const std::string &path,
 
 void ArmGbaCore::reset() { retro_reset(); }
 
-void ArmGbaCore::run_frame(unsigned buttons, std::vector<uint32_t> &video) {
+void ArmGbaCore::run_frame(unsigned buttons, std::vector<uint32_t> &video,
+                           bool capture_video) {
     impl_->buttons = buttons;
+    impl_->capture_video = capture_video;
     retro_run();
-    video = impl_->frame;
+    if (capture_video)
+        video = impl_->frame;
 }
 
 std::size_t ArmGbaCore::state_size() const { return retro_serialize_size(); }

@@ -20,7 +20,8 @@ public:
                           const std::vector<unsigned char> &rom,
                           std::string &error);
     virtual void reset();
-    virtual void run_frame(unsigned buttons, std::vector<uint32_t> &video);
+    virtual void run_frame(unsigned buttons, std::vector<uint32_t> &video,
+                           bool capture_video);
     virtual std::size_t state_size() const;
     virtual bool save_state(void *data, std::size_t size);
     virtual bool load_state(const void *data, std::size_t size);

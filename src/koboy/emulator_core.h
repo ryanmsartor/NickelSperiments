@@ -37,7 +37,8 @@ public:
                           std::string &error) = 0;
     virtual void reset() = 0;
     virtual void run_frame(unsigned buttons,
-                           std::vector<uint32_t> &video) = 0;
+                           std::vector<uint32_t> &video,
+                           bool capture_video) = 0;
 
     virtual std::size_t state_size() const = 0;
     virtual bool save_state(void *data, std::size_t size) = 0;

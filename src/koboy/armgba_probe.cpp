@@ -51,7 +51,7 @@ int main(int argc, char **argv) {
             throw std::runtime_error(error);
         std::vector<uint32_t> frame;
         for (unsigned i = 0; i < 120U; ++i)
-            core.run_frame(0U, frame);
+            core.run_frame(0U, frame, i == 119U);
         std::vector<unsigned char> state(core.state_size());
         const bool state_saved = !state.empty() &&
             core.save_state(&state[0], state.size());

@@ -63,7 +63,8 @@ bool GambatteCore::load_rom(const std::string &,
 
 void GambatteCore::reset() { impl_->gb.reset(); }
 
-void GambatteCore::run_frame(unsigned buttons, std::vector<uint32_t> &video) {
+void GambatteCore::run_frame(unsigned buttons, std::vector<uint32_t> &video,
+                             bool capture_video) {
     impl_->input.set(buttons);
     for (;;) {
         unsigned samples = kSamplesPerCall;
@@ -71,9 +72,11 @@ void GambatteCore::run_frame(unsigned buttons, std::vector<uint32_t> &video) {
                              impl_->sound.size(), samples) >= 0)
             break;
     }
-    video.resize(impl_->pixels.size());
-    for (std::size_t i = 0; i < impl_->pixels.size(); ++i)
-        video[i] = static_cast<uint32_t>(impl_->pixels[i]);
+    if (capture_video) {
+        video.resize(impl_->pixels.size());
+        for (std::size_t i = 0; i < impl_->pixels.size(); ++i)
+            video[i] = static_cast<uint32_t>(impl_->pixels[i]);
+    }
 }
 
 std::size_t GambatteCore::state_size() const {
