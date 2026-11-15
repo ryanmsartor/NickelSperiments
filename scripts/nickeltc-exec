@@ -4,8 +4,6 @@ set -eu
 workspace=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 root="$workspace/.toolchains/nickeltc-root"
 qemu="$workspace/.toolchains/qemu/usr/bin/qemu-x86_64"
-loader="$root/lib/x86_64-linux-gnu/ld-2.28.so"
-libraries="$root/lib/x86_64-linux-gnu:$root/usr/lib/x86_64-linux-gnu"
 
 if [ "$#" -lt 1 ]; then
     echo "usage: $0 X86_64_PROGRAM [ARG ...]" >&2
@@ -14,4 +12,4 @@ fi
 
 program=$1
 shift
-exec "$qemu" "$loader" --library-path "$libraries" "$program" "$@"
+exec "$qemu" -L "$root" "$program" "$@"

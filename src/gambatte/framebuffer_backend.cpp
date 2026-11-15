@@ -185,11 +185,16 @@ double FramebufferBackend::submit(uint32_t waveform,
     const double started = monotonic_seconds();
     if (ioctl(fd_, HWTCON_SEND_UPDATE, &update) < 0)
         throw system_error("HWTCON_SEND_UPDATE");
-    if (wait_for_completion) {
-        uint32_t wait_marker = marker;
-        if (ioctl(fd_, HWTCON_WAIT_FOR_UPDATE_COMPLETE, &wait_marker) < 0)
-            throw system_error("HWTCON_WAIT_FOR_UPDATE_COMPLETE");
-    }
+    if (wait_for_completion)
+        wait_for_update(marker);
+    return monotonic_seconds() - started;
+}
+
+double FramebufferBackend::wait_for_update(uint32_t marker) {
+    const double started = monotonic_seconds();
+    uint32_t wait_marker = marker;
+    if (ioctl(fd_, HWTCON_WAIT_FOR_UPDATE_COMPLETE, &wait_marker) < 0)
+        throw system_error("HWTCON_WAIT_FOR_UPDATE_COMPLETE");
     return monotonic_seconds() - started;
 }
 
@@ -221,6 +226,13 @@ double FramebufferBackend::refresh_gc16(uint32_t marker,
                                         bool wait_for_completion) {
     return submit(HWTCON_WAVEFORM_GC16, HWTCON_UPDATE_FULL, marker,
                   wait_for_completion, viewport_);
+}
+
+double FramebufferBackend::refresh_screen_gc16_partial(
+        uint32_t marker, bool wait_for_completion) {
+    Viewport screen = { 0U, 0U, variable_.xres, variable_.yres };
+    return submit(HWTCON_WAVEFORM_GC16, HWTCON_UPDATE_PARTIAL, marker,
+                  wait_for_completion, screen);
 }
 
 double FramebufferBackend::refresh_screen_gc16(uint32_t marker,

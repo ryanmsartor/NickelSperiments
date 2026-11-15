@@ -1,0 +1,43 @@
+#!/bin/sh
+set -eu
+
+workspace=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+target="$workspace/.toolchains/nickeltc-root/tc/arm-nickel-linux-gnueabihf"
+gcc="$target/lib/gcc/arm-nickel-linux-gnueabihf/4.9.4"
+sysroot="$target/arm-nickel-linux-gnueabihf/sysroot"
+tools="$target/arm-nickel-linux-gnueabihf/bin"
+output=a.out
+objects=
+
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        -o)
+            output=$2
+            shift 2
+            ;;
+        -static-libgcc|-static-libstdc++)
+            shift
+            ;;
+        *.o|*.a)
+            objects="$objects $1"
+            shift
+            ;;
+        *)
+            echo "nickeltc-link: unsupported argument: $1" >&2
+            exit 2
+            ;;
+    esac
+done
+
+# Word splitting is intentional: Make-generated object paths in this repository
+# contain no whitespace or shell metacharacters.
+# shellcheck disable=SC2086
+exec "$workspace/scripts/nickeltc-exec" "$tools/ld.bfd.x86_64" \
+    --sysroot="$sysroot" --eh-frame-hdr --hash-style=gnu \
+    -dynamic-linker /lib/ld-linux-armhf.so.3 -X -m armelf_linux_eabi \
+    -o "$output" \
+    "$sysroot/usr/lib/crt1.o" "$sysroot/usr/lib/crti.o" "$gcc/crtbegin.o" \
+    -L"$gcc" -L"$target/arm-nickel-linux-gnueabihf/lib" \
+    -L"$sysroot/lib" -L"$sysroot/usr/lib" \
+    $objects -Bstatic -lstdc++ -Bdynamic -lm -lgcc -lgcc_eh -lc \
+    -lgcc -lgcc_eh "$gcc/crtend.o" "$sysroot/usr/lib/crtn.o"

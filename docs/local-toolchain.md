@@ -1,0 +1,91 @@
+# Local Kobo toolchain
+
+Kobo C and C++ targets use [NickelTC](https://github.com/pgaskin/NickelTC),
+the same GCC 4.9.4 toolchain and Kobo sysroot used by the build workflows.
+Keeping the local compiler aligned with CI avoids accidentally linking against
+the workstation's newer ARM libraries.
+
+## Workspace layout
+
+The local installation is stored under `.toolchains/`, which is excluded from
+Git because it is host-specific and approximately 1.5 GB:
+
+```text
+.toolchains/
+  bin/arm-nickel-linux-gnueabihf-g++
+  nickeltc-root/                         extracted NickelTC 1.0 image
+  qemu/usr/bin/qemu-x86_64              local ARM64 QEMU build
+```
+
+NickelTC 1.0 distributes x86-64 compiler programs. This workstation is ARM64,
+so the compiler cannot run directly. `scripts/nickeltc-exec` starts each
+x86-64 program with the workspace copy of QEMU and uses the extracted image as
+its x86-64 loader prefix.
+
+GCC normally launches several child programs. The installed copies of
+`cc1`, `cc1plus`, and `as` contain local wrappers which route their original
+`.x86_64` programs through `nickeltc-exec`. Kernel `binfmt_misc` registration
+is therefore unnecessary.
+
+The kernel on this workstation does not permit the PRoot-based alternative.
+For Gambatte links, `scripts/nickeltc-link` invokes NickelTC's BFD linker
+directly with the same startup objects, sysroot, static C++ runtime, and Kobo
+dynamic loader selected by GCC. Gambatte does not use LTO, so it does not need
+GCC's otherwise nested `collect2` process.
+
+## Building
+
+`mk/gambatte.mk` detects the workspace compiler automatically. Normal targets
+need no environment setup:
+
+```sh
+make gambatte-bench
+make gambatte-display-test
+make gambatte-display
+make gambatte-supervisor
+```
+
+To rebuild every Gambatte object after changing toolchains, use:
+
+```sh
+make gambatte-clean
+make gambatte-bench gambatte-display-test gambatte-display gambatte-supervisor
+```
+
+Confirm that an output is for the Kobo rather than the workstation:
+
+```sh
+file build/kobo-gambatte-display
+readelf -h build/kobo-gambatte-display
+readelf --version-info build/kobo-gambatte-display
+```
+
+The expected result is a 32-bit ARM EABI5 hard-float executable using
+`/lib/ld-linux-armhf.so.3`. At the time of setup, all four Gambatte outputs
+required no libc symbol newer than `GLIBC_2.17`.
+
+## CI and other hosts
+
+The GitHub workflow runs inside `ghcr.io/pgaskin/nickeltc:1.0` and places the
+native x86-64 compiler on `PATH`. When `.toolchains/bin/arm-nickel-linux-
+gnueabihf-g++` is absent, the Makefile retains that normal behavior and uses
+`arm-nickel-linux-gnueabihf-g++` from `PATH` for both compilation and linking.
+
+The direct linker helper is intentionally limited to this repository's
+non-LTO Gambatte targets and accepts only object files, archives, an output
+path, and the two configured static-runtime flags. It is not a general
+replacement for the full NickelTC driver or the Qt build used by
+NickelRefresh.
+
+## Reinstalling
+
+The installed toolchain came from the content-addressed layers of
+`ghcr.io/pgaskin/nickeltc:1.0`; the layer checksums were validated before
+extraction. QEMU came from Debian's ARM64 `qemu-user` package. Download
+archives were removed after validation and can be fetched again if the local
+installation is damaged.
+
+When reinstalling, preserve the directory names above because the Makefile and
+helper scripts resolve them relative to the repository root. Recreate the
+compiler-stage wrappers or use system-wide x86-64 `binfmt_misc` support before
+removing the local wrappers.

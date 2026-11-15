@@ -179,15 +179,16 @@ UiAction TouchInput::ui_hit_test(int raw_x, int raw_y,
     if (screen == UI_SCREEN_REFRESH_SETTINGS) {
         const int left = static_cast<int>(screen_width_ * 8U / 100U);
         const int right = static_cast<int>(screen_width_ * 92U / 100U);
-        const int half_height = static_cast<int>(screen_height_ * 5U / 100U);
+        const int half_height = static_cast<int>(screen_height_ * 4U / 100U);
         if (x < left || x > right)
             return UI_NONE;
-        const unsigned centers[] = {28U, 42U, 56U, 70U};
+        const unsigned centers[] = {22U, 34U, 46U, 58U, 70U};
         const UiAction actions[] = {
             UI_SETTING_FAST_TYPE, UI_SETTING_SLOW_TYPE,
+            UI_SETTING_SLOWEST_TYPE,
             UI_SETTING_FAST_FREQUENCY, UI_SETTING_SLOW_FREQUENCY
         };
-        for (unsigned i = 0; i < 4U; ++i)
+        for (unsigned i = 0; i < 5U; ++i)
             if (std::abs(y - static_cast<int>(screen_height_ * centers[i] /
                                               100U)) <= half_height)
                 return actions[i];
@@ -262,6 +263,8 @@ void TouchInput::update_buttons() {
 }
 
 void TouchInput::poll() {
+    if (fd_ < 0)
+        return;
     for (;;) {
         input_event event;
         const ssize_t bytes = read(fd_, &event, sizeof(event));
@@ -289,6 +292,16 @@ void TouchInput::advance_frame() {
     } else {
         buttons_ = physical_buttons_;
     }
+}
+
+void TouchInput::suppress_ui_input_until_release() {
+    poll();
+    ui_touch_active_ = false;
+    for (unsigned slot = 0; slot < 16U; ++slot)
+        if (contacts_[slot].active) {
+            ui_touch_active_ = true;
+            break;
+        }
 }
 
 UiAction TouchInput::take_ui_action(UiScreen screen) {

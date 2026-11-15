@@ -4,7 +4,6 @@
  */
 
 #include "framebuffer_backend.h"
-#include "kobo_session.h"
 
 #include <cerrno>
 #include <csignal>
@@ -56,10 +55,8 @@ int child_exit_code(int status) {
 int main(int argc, char **argv) {
     try {
         const std::string player = player_path();
-        gambatte_kobo::NickelSession nickel;
         gambatte_kobo::FramebufferBackend framebuffer;
 
-        nickel.suspend();
         framebuffer.open_device("/dev/fb0");
         framebuffer.save_screen();
 
@@ -94,7 +91,6 @@ int main(int argc, char **argv) {
         child_pid = -1;
 
         framebuffer.restore(0xFFFF0001U);
-        nickel.resume();
 
         const int result = child_exit_code(status);
         std::cout << "supervisor_child_status=" << result << '\n';

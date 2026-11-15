@@ -42,7 +42,7 @@ display prototype and supervisor. The player includes touch controls and an
 on-device game browser available both at startup and from the in-game menu.
 Games can be resumed or switched, and the player can return safely to Nickel.
 Ko Boy remains a developer prototype rather than an installable end-user
-package; no ROMs are included.
+package. No ROMs are included.
 
 - [Ko Boy usage and launcher setup](docs/koboy.md)
 - [Ko Boy port plan and technical details](docs/gambatte-kobo-port-plan.md)

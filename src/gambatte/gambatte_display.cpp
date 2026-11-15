@@ -5,7 +5,6 @@
 
 #include "frame_scaler.h"
 #include "framebuffer_backend.h"
-#include "kobo_session.h"
 #include "touch_input.h"
 
 #include <gambatte.h>
@@ -22,6 +21,7 @@
 #include <fcntl.h>
 #include <fstream>
 #include <iostream>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <sys/stat.h>
@@ -38,6 +38,10 @@ const char *const kKoBoyRoot = "/mnt/onboard/KoBoy";
 const char *const kKoBoyRomDirectory = "/mnt/onboard/KoBoy/Roms";
 const char *const kKoBoyStateDirectory = "/mnt/onboard/KoBoy/States";
 const char *const kDeveloperFlag = "/mnt/onboard/KoBoy/developer";
+const char *const kDiagnosticsFlag = "/mnt/onboard/KoBoy/diagnostics";
+const char *const kNoGameplayRefreshFlag =
+    "/mnt/onboard/KoBoy/isolate-no-gameplay-refresh";
+const char *const kNoTouchFlag = "/mnt/onboard/KoBoy/isolate-no-touch";
 const char *const kRefreshConfig = "/mnt/onboard/KoBoy/refresh.conf";
 const char *const kRefreshBreadcrumb =
     "/mnt/onboard/KoBoy/refresh-active.log";
@@ -52,14 +56,19 @@ enum RefreshType {
     REFRESH_TYPE_COUNT
 };
 
+const unsigned kFastRefreshTypeCount = 3U;
+const unsigned kSlowRefreshTypeCount = 4U;
+
 struct RefreshSettings {
     RefreshType fast_type;
     RefreshType slow_type;
-    unsigned fast_hz;
+    RefreshType slowest_type;
+    unsigned fast_tenths_hz;
     unsigned slow_tenths_hz;
     RefreshSettings()
         : fast_type(REFRESH_A2), slow_type(REFRESH_GC16_PARTIAL),
-          fast_hz(8U), slow_tenths_hz(10U) {}
+          slowest_type(REFRESH_GC16_PARTIAL), fast_tenths_hz(80U),
+          slow_tenths_hz(10U) {}
 };
 
 void handle_signal(int) { interrupted = 1; }
@@ -153,16 +162,25 @@ bool load_refresh_settings_file(const char *path, RefreshSettings &settings) {
         if (errno || !end || *end != '\0' || parsed > UINT_MAX)
             continue;
         const unsigned value = static_cast<unsigned>(parsed);
-        if (key == "fast_type" && value < REFRESH_TYPE_COUNT) {
+        if (key == "fast_type" && value < kFastRefreshTypeCount) {
             settings.fast_type = static_cast<RefreshType>(value);
             recognized |= 1U;
-        } else if (key == "slow_type" && value < REFRESH_TYPE_COUNT) {
+        } else if (key == "slow_type" && value < kSlowRefreshTypeCount) {
             settings.slow_type = static_cast<RefreshType>(value);
             recognized |= 2U;
+        } else if (key == "slowest_type" &&
+                   value >= REFRESH_GL16 && value <= REFRESH_GC16_FULL) {
+            settings.slowest_type = static_cast<RefreshType>(value);
+            recognized |= 16U;
+        } else if (key == "fast_tenths_hz" &&
+                 (value == 60U || value == 80U || value == 100U ||
+                  value == 105U || value == 110U || value == 115U ||
+                  value == 120U)) {
+            settings.fast_tenths_hz = value;
+            recognized |= 4U;
         } else if (key == "fast_hz" &&
-                 (value == 2U || value == 4U || value == 6U ||
-                  value == 8U || value == 10U)) {
-            settings.fast_hz = value;
+                   (value == 6U || value == 8U || value == 10U)) {
+            settings.fast_tenths_hz = value * 10U;
             recognized |= 4U;
         } else if (key == "slow_tenths_hz" &&
                  (value == 0U || value == 1U || value == 2U ||
@@ -171,7 +189,7 @@ bool load_refresh_settings_file(const char *path, RefreshSettings &settings) {
             recognized |= 8U;
         }
     }
-    return recognized == 15U;
+    return (recognized & 15U) == 15U;
 }
 
 void load_refresh_settings(RefreshSettings &settings) {
@@ -199,14 +217,145 @@ bool write_all(int descriptor, const std::string &contents) {
     return true;
 }
 
+unsigned long long read_unsigned_file(const char *path) {
+    std::ifstream input(path);
+    unsigned long long value = 0ULL;
+    input >> value;
+    return input ? value : 0ULL;
+}
+
+struct SystemMetrics {
+    unsigned long long memory_available_kb;
+    unsigned long long resident_kb;
+    unsigned long long cpu_frequency_khz;
+    long long cpu_temperature_mc;
+    long long battery_temperature_mc;
+    long long ap_temperature_mc;
+    SystemMetrics()
+        : memory_available_kb(0ULL), resident_kb(0ULL),
+          cpu_frequency_khz(0ULL), cpu_temperature_mc(0LL),
+          battery_temperature_mc(0LL), ap_temperature_mc(0LL) {}
+};
+
+SystemMetrics read_system_metrics() {
+    SystemMetrics metrics;
+    std::ifstream memory("/proc/meminfo");
+    std::string key;
+    unsigned long long value;
+    std::string unit;
+    while (memory >> key >> value >> unit)
+        if (key == "MemAvailable:") {
+            metrics.memory_available_kb = value;
+            break;
+        }
+
+    std::ifstream statm("/proc/self/statm");
+    unsigned long long total_pages = 0ULL;
+    unsigned long long resident_pages = 0ULL;
+    if (statm >> total_pages >> resident_pages) {
+        const long page_size = sysconf(_SC_PAGESIZE);
+        if (page_size > 0)
+            metrics.resident_kb = resident_pages *
+                static_cast<unsigned long long>(page_size) / 1024ULL;
+    }
+
+    metrics.cpu_frequency_khz = read_unsigned_file(
+        "/sys/devices/system/cpu/cpu0/cpufreq/scaling_cur_freq");
+    metrics.cpu_temperature_mc = static_cast<long long>(read_unsigned_file(
+        "/sys/class/thermal/thermal_zone0/temp"));
+    metrics.battery_temperature_mc = static_cast<long long>(read_unsigned_file(
+        "/sys/class/thermal/thermal_zone1/temp"));
+    metrics.ap_temperature_mc = static_cast<long long>(read_unsigned_file(
+        "/sys/class/thermal/thermal_zone2/temp"));
+    return metrics;
+}
+
+class CpuUsageSampler {
+public:
+    CpuUsageSampler() : total_(0ULL), idle_(0ULL), process_(0ULL) {}
+
+    void sample(unsigned &system_tenths, unsigned &process_tenths) {
+        unsigned long long total = 0ULL;
+        unsigned long long idle = 0ULL;
+        unsigned long long process = 0ULL;
+        system_tenths = 0U;
+        process_tenths = 0U;
+        if (!read_system(total, idle) || !read_process(process))
+            return;
+        if (total_ && total > total_) {
+            const unsigned long long total_delta = total - total_;
+            const unsigned long long idle_delta = idle >= idle_
+                ? idle - idle_ : 0ULL;
+            const unsigned long long process_delta = process >= process_
+                ? process - process_ : 0ULL;
+            system_tenths = static_cast<unsigned>(
+                (total_delta - std::min(total_delta, idle_delta)) * 1000ULL /
+                total_delta);
+            const long cpus = sysconf(_SC_NPROCESSORS_ONLN);
+            process_tenths = static_cast<unsigned>(
+                process_delta * static_cast<unsigned long long>(
+                    cpus > 0 ? cpus : 1L) * 1000ULL / total_delta);
+        }
+        total_ = total;
+        idle_ = idle;
+        process_ = process;
+    }
+
+private:
+    bool read_system(unsigned long long &total,
+                     unsigned long long &idle) const {
+        std::ifstream input("/proc/stat");
+        std::string label;
+        unsigned long long user = 0ULL, nice = 0ULL, system = 0ULL;
+        unsigned long long idle_ticks = 0ULL, iowait = 0ULL, irq = 0ULL;
+        unsigned long long softirq = 0ULL, steal = 0ULL;
+        if (!(input >> label >> user >> nice >> system >> idle_ticks >>
+              iowait >> irq >> softirq >> steal) || label != "cpu")
+            return false;
+        total = user + nice + system + idle_ticks + iowait + irq +
+                softirq + steal;
+        idle = idle_ticks + iowait;
+        return true;
+    }
+
+    bool read_process(unsigned long long &ticks) const {
+        std::ifstream input("/proc/self/stat");
+        std::string line;
+        if (!std::getline(input, line))
+            return false;
+        const std::string::size_type close = line.rfind(')');
+        if (close == std::string::npos || close + 2U >= line.size())
+            return false;
+        std::istringstream fields(line.substr(close + 2U));
+        char state = 0;
+        long long ignored = 0LL;
+        if (!(fields >> state))
+            return false;
+        for (unsigned field = 4U; field <= 13U; ++field)
+            if (!(fields >> ignored))
+                return false;
+        unsigned long long user = 0ULL, system = 0ULL;
+        if (!(fields >> user >> system))
+            return false;
+        ticks = user + system;
+        return true;
+    }
+
+    unsigned long long total_;
+    unsigned long long idle_;
+    unsigned long long process_;
+};
+
 std::string serialize_refresh_settings(const RefreshSettings &settings) {
     char contents[128];
     const int length = std::snprintf(
         contents, sizeof(contents),
-        "fast_type=%u\nslow_type=%u\nfast_hz=%u\nslow_tenths_hz=%u\n",
+        "fast_type=%u\nslow_type=%u\nslowest_type=%u\n"
+        "fast_tenths_hz=%u\nslow_tenths_hz=%u\n",
         static_cast<unsigned>(settings.fast_type),
-        static_cast<unsigned>(settings.slow_type), settings.fast_hz,
-        settings.slow_tenths_hz);
+        static_cast<unsigned>(settings.slow_type),
+        static_cast<unsigned>(settings.slowest_type),
+        settings.fast_tenths_hz, settings.slow_tenths_hz);
     return length > 0 ? std::string(contents, static_cast<std::size_t>(length))
                       : std::string();
 }
@@ -253,15 +402,22 @@ void save_refresh_settings(const RefreshSettings &settings) {
 void record_active_refresh_settings(const RefreshSettings &settings) {
     if (!ensure_directory(kKoBoyRoot))
         return;
-    char entry[256];
+    const SystemMetrics metrics = read_system_metrics();
+    char entry[384];
     const int length = std::snprintf(
         entry, sizeof(entry),
-        "active pid=%ld uptime=%.3f fast=%s fast_hz=%u slow=%s "
-        "slow_hz=%.1f\n",
+        "active pid=%ld uptime=%.3f fast=%s fast_hz=%.1f slow=%s "
+        "slow_hz=%.1f slowest=%s mem_available_kb=%llu rss_kb=%llu cpu_khz=%llu "
+        "cpu_temp_mc=%lld battery_temp_mc=%lld ap_temp_mc=%lld\n",
         static_cast<long>(getpid()), monotonic_seconds(),
-        refresh_type_name(settings.fast_type), settings.fast_hz,
+        refresh_type_name(settings.fast_type),
+        static_cast<double>(settings.fast_tenths_hz) / 10.0,
         refresh_type_name(settings.slow_type),
-        static_cast<double>(settings.slow_tenths_hz) / 10.0);
+        static_cast<double>(settings.slow_tenths_hz) / 10.0,
+        refresh_type_name(settings.slowest_type),
+        metrics.memory_available_kb, metrics.resident_kb,
+        metrics.cpu_frequency_khz, metrics.cpu_temperature_mc,
+        metrics.battery_temperature_mc, metrics.ap_temperature_mc);
     const int output = open(kRefreshBreadcrumb,
                             O_WRONLY | O_CREAT | O_APPEND, 0644);
     if (output < 0 || length <= 0 ||
@@ -272,14 +428,155 @@ void record_active_refresh_settings(const RefreshSettings &settings) {
         close(output);
 }
 
+void record_menu_refresh(const char *stage, uint32_t marker,
+                         double elapsed_seconds) {
+    if (!ensure_directory(kKoBoyRoot))
+        return;
+    const SystemMetrics metrics = read_system_metrics();
+    char entry[384];
+    const int length = elapsed_seconds < 0.0
+        ? std::snprintf(entry, sizeof(entry),
+                        "menu_refresh %s pid=%ld uptime=%.3f marker=%u "
+                        "mem_available_kb=%llu rss_kb=%llu cpu_khz=%llu "
+                        "cpu_temp_mc=%lld battery_temp_mc=%lld "
+                        "ap_temp_mc=%lld\n",
+                        stage, static_cast<long>(getpid()), monotonic_seconds(),
+                        marker, metrics.memory_available_kb,
+                        metrics.resident_kb, metrics.cpu_frequency_khz,
+                        metrics.cpu_temperature_mc,
+                        metrics.battery_temperature_mc,
+                        metrics.ap_temperature_mc)
+        : std::snprintf(entry, sizeof(entry),
+                        "menu_refresh %s pid=%ld uptime=%.3f marker=%u "
+                        "elapsed=%.3f mem_available_kb=%llu rss_kb=%llu "
+                        "cpu_khz=%llu cpu_temp_mc=%lld battery_temp_mc=%lld "
+                        "ap_temp_mc=%lld\n",
+                        stage, static_cast<long>(getpid()), monotonic_seconds(),
+                        marker, elapsed_seconds, metrics.memory_available_kb,
+                        metrics.resident_kb, metrics.cpu_frequency_khz,
+                        metrics.cpu_temperature_mc,
+                        metrics.battery_temperature_mc,
+                        metrics.ap_temperature_mc);
+    const int output = open(kRefreshBreadcrumb,
+                            O_WRONLY | O_CREAT | O_APPEND, 0644);
+    if (output < 0 || length <= 0 ||
+        !write_all(output, std::string(entry, static_cast<std::size_t>(length))) ||
+        fsync(output) != 0)
+        std::cerr << "warning: cannot record menu refresh\n";
+    if (output >= 0)
+        close(output);
+}
+
+void record_simple_breadcrumb(const char *event, uint32_t marker) {
+    if (!ensure_directory(kKoBoyRoot))
+        return;
+    char entry[160];
+    const int length = std::snprintf(
+        entry, sizeof(entry), "%s pid=%ld uptime=%.3f marker=%u\n",
+        event, static_cast<long>(getpid()), monotonic_seconds(), marker);
+    const int output = open(kRefreshBreadcrumb,
+                            O_WRONLY | O_CREAT | O_APPEND, 0644);
+    if (output < 0 || length <= 0 ||
+        !write_all(output, std::string(entry, static_cast<std::size_t>(length))) ||
+        fsync(output) != 0)
+        std::cerr << "warning: cannot record breadcrumb\n";
+    if (output >= 0)
+        close(output);
+}
+
+void record_gameplay_refresh(const char *stage, uint32_t marker,
+                             RefreshType type, double elapsed_seconds) {
+    if (!ensure_directory(kKoBoyRoot))
+        return;
+    char entry[224];
+    const int length = elapsed_seconds < 0.0
+        ? std::snprintf(entry, sizeof(entry),
+                        "gameplay_refresh %s pid=%ld uptime=%.3f marker=%u "
+                        "type=%s\n",
+                        stage, static_cast<long>(getpid()), monotonic_seconds(),
+                        marker, refresh_type_name(type))
+        : std::snprintf(entry, sizeof(entry),
+                        "gameplay_refresh %s pid=%ld uptime=%.3f marker=%u "
+                        "type=%s elapsed=%.3f\n",
+                        stage, static_cast<long>(getpid()), monotonic_seconds(),
+                        marker, refresh_type_name(type), elapsed_seconds);
+    const int output = open(kRefreshBreadcrumb,
+                            O_WRONLY | O_CREAT | O_APPEND, 0644);
+    if (output < 0 || length <= 0 ||
+        !write_all(output, std::string(entry, static_cast<std::size_t>(length))) ||
+        fsync(output) != 0)
+        std::cerr << "warning: cannot record gameplay refresh\n";
+    if (output >= 0)
+        close(output);
+}
+
+void record_gameplay_heartbeat(uint32_t submitted_marker,
+                               RefreshType submitted_type,
+                               uint32_t completed_marker,
+                               double last_wait_seconds,
+                               const unsigned counts[REFRESH_TYPE_COUNT],
+                               unsigned system_cpu_tenths,
+                               unsigned process_cpu_tenths) {
+    if (!ensure_directory(kKoBoyRoot))
+        return;
+    const SystemMetrics metrics = read_system_metrics();
+    char entry[512];
+    const int length = std::snprintf(
+        entry, sizeof(entry),
+        "heartbeat pid=%ld uptime=%.3f submitted_marker=%u "
+        "submitted_type=%s completed_marker=%u last_wait=%.3f "
+        "count_a2=%u count_du=%u count_gl16=%u count_gc16_partial=%u "
+        "count_gc16_full=%u system_cpu_pct=%u.%u process_cpu_pct=%u.%u "
+        "mem_available_kb=%llu rss_kb=%llu "
+        "cpu_khz=%llu cpu_temp_mc=%lld battery_temp_mc=%lld ap_temp_mc=%lld\n",
+        static_cast<long>(getpid()), monotonic_seconds(), submitted_marker,
+        refresh_type_name(submitted_type), completed_marker,
+        last_wait_seconds, counts[REFRESH_A2], counts[REFRESH_DU],
+        counts[REFRESH_GL16], counts[REFRESH_GC16_PARTIAL],
+        counts[REFRESH_GC16_FULL], system_cpu_tenths / 10U,
+        system_cpu_tenths % 10U, process_cpu_tenths / 10U,
+        process_cpu_tenths % 10U, metrics.memory_available_kb,
+        metrics.resident_kb, metrics.cpu_frequency_khz,
+        metrics.cpu_temperature_mc, metrics.battery_temperature_mc,
+        metrics.ap_temperature_mc);
+    const int output = open(kRefreshBreadcrumb,
+                            O_WRONLY | O_CREAT | O_APPEND, 0644);
+    if (output < 0 || length <= 0 ||
+        !write_all(output, std::string(entry, static_cast<std::size_t>(length))) ||
+        fsync(output) != 0)
+        std::cerr << "warning: cannot record gameplay heartbeat\n";
+    if (output >= 0)
+        close(output);
+}
+
 void cycle_fast_frequency(RefreshSettings &settings) {
-    const unsigned values[] = {2U, 4U, 6U, 8U, 10U};
-    for (unsigned i = 0; i < 5U; ++i)
-        if (settings.fast_hz == values[i]) {
-            settings.fast_hz = values[(i + 1U) % 5U];
+    const unsigned values[] = {60U, 80U, 100U, 105U, 110U, 115U, 120U};
+    for (unsigned i = 0; i < 7U; ++i)
+        if (settings.fast_tenths_hz == values[i]) {
+            settings.fast_tenths_hz = values[(i + 1U) % 7U];
             return;
         }
-    settings.fast_hz = 8U;
+    settings.fast_tenths_hz = 80U;
+}
+
+void cycle_fast_type(RefreshSettings &settings) {
+    settings.fast_type = static_cast<RefreshType>(
+        (static_cast<unsigned>(settings.fast_type) + 1U) %
+        kFastRefreshTypeCount);
+}
+
+void cycle_slow_type(RefreshType &type) {
+    type = static_cast<RefreshType>(
+        (static_cast<unsigned>(type) + 1U) % kSlowRefreshTypeCount);
+}
+
+void cycle_slowest_type(RefreshSettings &settings) {
+    if (settings.slowest_type == REFRESH_GL16)
+        settings.slowest_type = REFRESH_GC16_PARTIAL;
+    else if (settings.slowest_type == REFRESH_GC16_PARTIAL)
+        settings.slowest_type = REFRESH_GC16_FULL;
+    else
+        settings.slowest_type = REFRESH_GL16;
 }
 
 void cycle_slow_frequency(RefreshSettings &settings) {
@@ -634,8 +931,8 @@ void draw_menu(std::vector<uint32_t> &screen, unsigned width,
     const uint32_t dark = 0xFF202020U;
     const uint32_t light = 0xFFFFFFFFU;
     screen.assign(static_cast<size_t>(width) * height, light);
-    draw_label(screen, width, height, width / 2, height * 28 / 100,
-               "MENU", 10, dark);
+    draw_label(screen, width, height, width / 2, height * 12 / 100,
+               "KO BOY", 10, dark);
 
     const int left = width * 18 / 100;
     const int right = width * 82 / 100;
@@ -664,12 +961,13 @@ void draw_menu(std::vector<uint32_t> &screen, unsigned width,
                "EXIT TO NICKEL", 5, light);
 }
 
-std::string slow_frequency_name(unsigned tenths_hz) {
+std::string frequency_name(unsigned tenths_hz) {
     if (!tenths_hz)
         return "OFF";
     char text[32];
-    if (tenths_hz < 10U)
-        std::snprintf(text, sizeof(text), "0.%u HZ", tenths_hz);
+    if (tenths_hz % 10U)
+        std::snprintf(text, sizeof(text), "%u.%u HZ",
+                      tenths_hz / 10U, tenths_hz % 10U);
     else
         std::snprintf(text, sizeof(text), "%u HZ", tenths_hz / 10U);
     return text;
@@ -685,17 +983,19 @@ void draw_refresh_settings(std::vector<uint32_t> &screen, unsigned width,
                "REFRESH SETTINGS", 6, dark);
     const int left = width * 8 / 100;
     const int right = width * 92 / 100;
-    const int half_height = height * 5 / 100;
-    const unsigned centers[] = {28U, 42U, 56U, 70U};
+    const int half_height = height * 4 / 100;
+    const unsigned centers[] = {22U, 34U, 46U, 58U, 70U};
     const std::string rows[] = {
         std::string("FAST TYPE  ") + refresh_type_name(settings.fast_type),
         std::string("SLOW TYPE  ") + refresh_type_name(settings.slow_type),
+        std::string("SLOWEST TYPE  ") +
+            refresh_type_name(settings.slowest_type),
         std::string("FAST FREQUENCY  ") +
-            std::to_string(settings.fast_hz) + " HZ",
+            frequency_name(settings.fast_tenths_hz),
         std::string("SLOW FREQUENCY  ") +
-            slow_frequency_name(settings.slow_tenths_hz)
+            frequency_name(settings.slow_tenths_hz)
     };
-    for (unsigned i = 0; i < 4U; ++i) {
+    for (unsigned i = 0; i < 5U; ++i) {
         const int center = height * centers[i] / 100;
         fill_rectangle(screen, width, height, left, center - half_height,
                        right, center + half_height, dark);
@@ -809,29 +1109,61 @@ std::string choose_game(gambatte_kobo::FramebufferBackend &framebuffer,
     }
 }
 
-void refresh_viewport(gambatte_kobo::FramebufferBackend &framebuffer,
-                      RefreshType type, uint32_t marker,
-                      bool wait_for_completion) {
+double refresh_viewport(gambatte_kobo::FramebufferBackend &framebuffer,
+                        RefreshType type, uint32_t marker,
+                        bool wait_for_completion) {
     switch (type) {
         case REFRESH_A2:
-            framebuffer.refresh_a2(marker, wait_for_completion);
-            break;
+            return framebuffer.refresh_a2(marker, wait_for_completion);
         case REFRESH_DU:
-            framebuffer.refresh_du(marker, wait_for_completion);
-            break;
+            return framebuffer.refresh_du(marker, wait_for_completion);
         case REFRESH_GL16:
-            framebuffer.refresh_gl16(marker, wait_for_completion);
-            break;
+            return framebuffer.refresh_gl16(marker, wait_for_completion);
         case REFRESH_GC16_PARTIAL:
-            framebuffer.refresh_gc16_partial(marker, wait_for_completion);
-            break;
+            return framebuffer.refresh_gc16_partial(marker,
+                                                     wait_for_completion);
         case REFRESH_GC16_FULL:
-            framebuffer.refresh_gc16(marker, wait_for_completion);
-            break;
+            return framebuffer.refresh_gc16(marker, wait_for_completion);
         default:
-            framebuffer.refresh_a2(marker, wait_for_completion);
-            break;
+            return framebuffer.refresh_a2(marker, wait_for_completion);
     }
+}
+
+bool refresh_menu_screen(
+        gambatte_kobo::FramebufferBackend &framebuffer,
+        gambatte_kobo::TouchInput &input, uint32_t marker,
+        bool diagnostics) {
+    if (diagnostics)
+        record_menu_refresh("begin", marker, -1.0);
+    const double elapsed =
+        framebuffer.refresh_screen_gc16_partial(marker, true);
+    if (diagnostics)
+        record_menu_refresh("end", marker, elapsed);
+    input.suppress_ui_input_until_release();
+    if (elapsed >= 4.5) {
+        std::cerr << "warning: menu refresh approached HWTCON timeout ("
+                  << elapsed << " seconds); closing refresh settings\n";
+        return false;
+    }
+    return true;
+}
+
+bool drain_gameplay_refresh(
+        gambatte_kobo::FramebufferBackend &framebuffer,
+        gambatte_kobo::TouchInput &input, uint32_t marker,
+        bool diagnostics, double &elapsed) {
+    if (diagnostics)
+        record_menu_refresh("drain_begin", marker, -1.0);
+    elapsed = framebuffer.wait_for_update(marker);
+    if (diagnostics)
+        record_menu_refresh("drain_end", marker, elapsed);
+    input.suppress_ui_input_until_release();
+    if (elapsed >= 4.5) {
+        std::cerr << "warning: gameplay refresh drain approached HWTCON "
+                  << "timeout; menu open cancelled\n";
+        return false;
+    }
+    return true;
 }
 
 } // namespace
@@ -841,21 +1173,23 @@ int main(int argc, char **argv) {
         const Options options = parse_options(argc, argv);
         const bool supervised = std::getenv("GAMBATTE_SUPERVISED") != 0;
         const bool developer = file_exists(kDeveloperFlag);
+        const bool diagnostics = file_exists(kDiagnosticsFlag);
+        const bool no_gameplay_refresh =
+            file_exists(kNoGameplayRefreshFlag);
+        const bool no_touch = file_exists(kNoTouchFlag);
         RefreshSettings refresh_settings;
         load_refresh_settings(refresh_settings);
         if (options.rate_set)
-            refresh_settings.fast_hz = options.rate;
+            refresh_settings.fast_tenths_hz = options.rate * 10U;
         gambatte::GB gb;
 
         std::signal(SIGINT, handle_signal);
         std::signal(SIGTERM, handle_signal);
         std::signal(SIGHUP, handle_signal);
 
-        gambatte_kobo::NickelSession nickel;
         gambatte_kobo::TouchInput input(1072U, 1448U);
-        input.open_device();
-        if (!supervised)
-            nickel.suspend();
+        if (!no_touch)
+            input.open_device();
         gambatte_kobo::FramebufferBackend framebuffer;
         framebuffer.open_device("/dev/fb0");
         framebuffer.configure_viewport(gambatte_kobo::kGameBoyWidth * options.scale,
@@ -885,7 +1219,8 @@ int main(int argc, char **argv) {
         if (options.rom.empty()) {
             draw_loading_screen(screen, screen_width, screen_height, rom_path);
             framebuffer.draw_screen(screen);
-            framebuffer.refresh_screen_gc16(marker++, true);
+            if (!no_gameplay_refresh)
+                framebuffer.refresh_screen_gc16(marker++, true);
         }
         std::vector<unsigned char> rom = read_file(rom_path.c_str());
         if (gb.load(&rom[0], rom.size()) != 0)
@@ -897,18 +1232,20 @@ int main(int argc, char **argv) {
 
         draw_controls(screen, screen_width, screen_height);
         framebuffer.draw_screen(screen);
-        framebuffer.refresh_screen_gc16(marker++, true);
+        if (!no_gameplay_refresh)
+            framebuffer.refresh_screen_gc16(marker++, true);
 
         std::cout << "scale=" << options.scale << '\n';
         std::cout << "touch_x_range=" << input.x_min() << ',' << input.x_max() << '\n';
         std::cout << "touch_y_range=" << input.y_min() << ',' << input.y_max() << '\n';
 
-        double display_interval = 1.0 / refresh_settings.fast_hz;
+        double display_interval = 10.0 / refresh_settings.fast_tenths_hz;
         double slow_interval = options.cleanup_set
             ? static_cast<double>(options.cleanup_seconds)
             : (refresh_settings.slow_tenths_hz
                 ? 10.0 / refresh_settings.slow_tenths_hz : 0.0);
-        record_active_refresh_settings(refresh_settings);
+        if (diagnostics)
+            record_active_refresh_settings(refresh_settings);
         const double started = monotonic_seconds();
         double deadline = options.seconds ? started + options.seconds : 0.0;
         double next_display = started;
@@ -920,26 +1257,51 @@ int main(int argc, char **argv) {
         unsigned last_buttons = 0U;
         unsigned input_transitions = 0U;
         unsigned input_nonzero_polls = 0U;
+        unsigned refresh_counts[REFRESH_TYPE_COUNT] = { 0U, 0U, 0U, 0U, 0U };
+        uint32_t last_submitted_marker = marker - 1U;
+        uint32_t last_completed_marker = marker - 1U;
+        RefreshType last_submitted_type = REFRESH_GC16_FULL;
+        double last_wait_seconds = 0.0;
+        double next_heartbeat = started + 5.0;
+        CpuUsageSampler cpu_usage;
+        unsigned system_cpu_tenths = 0U;
+        unsigned process_cpu_tenths = 0U;
+        cpu_usage.sample(system_cpu_tenths, process_cpu_tenths);
         bool exit_to_nickel = false;
-        bool force_first_frame_gc16 = true;
+        bool force_first_frame_gc16 = !no_gameplay_refresh;
 
         while (!interrupted &&
                (!options.seconds || monotonic_seconds() < deadline)) {
-            emulation_accumulator += kGameBoyFrameRate /
-                                    refresh_settings.fast_hz;
+            emulation_accumulator += kGameBoyFrameRate * 10.0 /
+                                    refresh_settings.fast_tenths_hz;
             unsigned frames_this_update = static_cast<unsigned>(emulation_accumulator);
             emulation_accumulator -= frames_this_update;
             while (frames_this_update-- != 0U) {
                 input.advance_frame();
-                if (input.take_ui_action(gambatte_kobo::UI_SCREEN_GAME) ==
+                if (!no_gameplay_refresh &&
+                    input.take_ui_action(gambatte_kobo::UI_SCREEN_GAME) ==
                     gambatte_kobo::UI_OPEN_MENU) {
                     const double menu_started = monotonic_seconds();
+                    if (diagnostics)
+                        record_simple_breadcrumb("menu_press", marker - 1U);
+                    double drain_elapsed = 0.0;
+                    if (!drain_gameplay_refresh(framebuffer, input,
+                                                marker - 1U, diagnostics,
+                                                drain_elapsed)) {
+                        next_display = monotonic_seconds();
+                        continue;
+                    }
+                    last_completed_marker = marker - 1U;
+                    last_wait_seconds = drain_elapsed;
                     draw_menu(screen, screen_width, screen_height, developer);
                     framebuffer.draw_screen(screen);
-                    framebuffer.refresh_screen_gc16(marker++, true);
-
                     gambatte_kobo::UiAction menu_action =
                         gambatte_kobo::UI_NONE;
+                    bool menu_refresh_healthy =
+                        refresh_menu_screen(framebuffer, input, marker++,
+                                            diagnostics);
+                    if (!menu_refresh_healthy)
+                        menu_action = gambatte_kobo::UI_RESUME_GAME;
                     while (!interrupted && menu_action == gambatte_kobo::UI_NONE) {
                         menu_action = input.take_ui_action(developer
                             ? gambatte_kobo::UI_SCREEN_MENU_DEVELOPER
@@ -985,7 +1347,11 @@ int main(int argc, char **argv) {
                                                   screen_height,
                                                   refresh_settings);
                             framebuffer.draw_screen(screen);
-                            framebuffer.refresh_screen_gc16(marker++, true);
+                            if (!refresh_menu_screen(framebuffer, input,
+                                                     marker++, diagnostics)) {
+                                menu_refresh_healthy = false;
+                                break;
+                            }
                             gambatte_kobo::UiAction setting_action =
                                 gambatte_kobo::UI_NONE;
                             while (!interrupted &&
@@ -1000,16 +1366,13 @@ int main(int argc, char **argv) {
                                 break;
                             if (setting_action ==
                                 gambatte_kobo::UI_SETTING_FAST_TYPE)
-                                refresh_settings.fast_type =
-                                    static_cast<RefreshType>(
-                                        (refresh_settings.fast_type + 1) %
-                                        REFRESH_TYPE_COUNT);
+                                cycle_fast_type(refresh_settings);
                             else if (setting_action ==
                                      gambatte_kobo::UI_SETTING_SLOW_TYPE)
-                                refresh_settings.slow_type =
-                                    static_cast<RefreshType>(
-                                        (refresh_settings.slow_type + 1) %
-                                        REFRESH_TYPE_COUNT);
+                                cycle_slow_type(refresh_settings.slow_type);
+                            else if (setting_action ==
+                                     gambatte_kobo::UI_SETTING_SLOWEST_TYPE)
+                                cycle_slowest_type(refresh_settings);
                             else if (setting_action ==
                                      gambatte_kobo::UI_SETTING_FAST_FREQUENCY)
                                 cycle_fast_frequency(refresh_settings);
@@ -1018,10 +1381,12 @@ int main(int argc, char **argv) {
                                 cycle_slow_frequency(refresh_settings);
                             save_refresh_settings(refresh_settings);
                         }
-                        display_interval = 1.0 / refresh_settings.fast_hz;
+                        display_interval =
+                            10.0 / refresh_settings.fast_tenths_hz;
                         slow_interval = refresh_settings.slow_tenths_hz
                             ? 10.0 / refresh_settings.slow_tenths_hz : 0.0;
-                        record_active_refresh_settings(refresh_settings);
+                        if (diagnostics)
+                            record_active_refresh_settings(refresh_settings);
                         next_cleanup = slow_interval
                             ? monotonic_seconds() + slow_interval : 0.0;
                         emulation_accumulator = 0.0;
@@ -1038,7 +1403,9 @@ int main(int argc, char **argv) {
                     framebuffer.draw_screen(screen);
                     if (!scaled.empty())
                         framebuffer.draw(scaled);
-                    framebuffer.refresh_screen_gc16(marker++, true);
+                    if (menu_refresh_healthy)
+                        refresh_menu_screen(framebuffer, input, marker++,
+                                            diagnostics);
                     next_display = monotonic_seconds();
                 }
                 const unsigned current_buttons = input();
@@ -1060,23 +1427,77 @@ int main(int argc, char **argv) {
 
             const double now = monotonic_seconds();
             if (force_first_frame_gc16) {
-                framebuffer.refresh_gc16(marker++, true);
+                last_submitted_marker = marker++;
+                last_submitted_type = REFRESH_GC16_FULL;
+                ++refresh_counts[REFRESH_GC16_FULL];
+                if (diagnostics)
+                    record_gameplay_refresh("begin", last_submitted_marker,
+                                            last_submitted_type, -1.0);
+                last_wait_seconds = framebuffer.refresh_gc16(
+                    last_submitted_marker, true);
+                if (diagnostics)
+                    record_gameplay_refresh("end", last_submitted_marker,
+                                            last_submitted_type,
+                                            last_wait_seconds);
+                last_completed_marker = last_submitted_marker;
                 force_first_frame_gc16 = false;
+            } else if (no_gameplay_refresh) {
+                /*
+                 * Isolation mode deliberately keeps emulation, input, scaling,
+                 * and framebuffer writes active while issuing no HWTCON ioctl,
+                 * including during startup and the first emulated frame.
+                 */
             } else if (slow_interval && now >= next_cleanup) {
-                refresh_viewport(framebuffer, refresh_settings.slow_type,
-                                 marker++, true);
+                const RefreshType cleanup_type =
+                    (cleanups + 1U) % 5U == 0U
+                    ? refresh_settings.slowest_type
+                    : refresh_settings.slow_type;
+                last_submitted_marker = marker++;
+                last_submitted_type = cleanup_type;
+                ++refresh_counts[cleanup_type];
+                if (diagnostics)
+                    record_gameplay_refresh("begin", last_submitted_marker,
+                                            last_submitted_type, -1.0);
+                last_wait_seconds = refresh_viewport(
+                    framebuffer, cleanup_type, last_submitted_marker, true);
+                if (diagnostics)
+                    record_gameplay_refresh("end", last_submitted_marker,
+                                            last_submitted_type,
+                                            last_wait_seconds);
+                last_completed_marker = last_submitted_marker;
                 next_cleanup += slow_interval;
                 ++cleanups;
             } else {
-                const bool fast_wait =
-                    refresh_settings.fast_type == REFRESH_GL16 ||
-                    refresh_settings.fast_type == REFRESH_GC16_PARTIAL ||
-                    refresh_settings.fast_type == REFRESH_GC16_FULL;
-                refresh_viewport(framebuffer, refresh_settings.fast_type,
-                                 marker++, fast_wait);
+                last_submitted_marker = marker++;
+                last_submitted_type = refresh_settings.fast_type;
+                ++refresh_counts[refresh_settings.fast_type];
+                const bool sample_fast = diagnostics &&
+                    refresh_counts[refresh_settings.fast_type] % 50U == 0U;
+                if (sample_fast)
+                    record_gameplay_refresh("begin", last_submitted_marker,
+                                            last_submitted_type, -1.0);
+                last_wait_seconds = refresh_viewport(
+                    framebuffer, refresh_settings.fast_type,
+                    last_submitted_marker, true);
+                if (sample_fast)
+                    record_gameplay_refresh("end", last_submitted_marker,
+                                            last_submitted_type,
+                                            last_wait_seconds);
+                last_completed_marker = last_submitted_marker;
+            }
+            if (diagnostics && now >= next_heartbeat) {
+                cpu_usage.sample(system_cpu_tenths, process_cpu_tenths);
+                record_gameplay_heartbeat(
+                    last_submitted_marker, last_submitted_type,
+                    last_completed_marker, last_wait_seconds, refresh_counts,
+                    system_cpu_tenths, process_cpu_tenths);
+                next_heartbeat = now + 5.0;
             }
             ++displayed_frames;
             next_display += display_interval;
+            const double after_refresh = monotonic_seconds();
+            if (next_display < after_refresh)
+                next_display = after_refresh;
             sleep_until(next_display);
         }
 

@@ -18,6 +18,7 @@ enum UiAction {
     UI_EXIT_TO_NICKEL,
     UI_SETTING_FAST_TYPE,
     UI_SETTING_SLOW_TYPE,
+    UI_SETTING_SLOWEST_TYPE,
     UI_SETTING_FAST_FREQUENCY,
     UI_SETTING_SLOW_FREQUENCY,
     UI_LIST_PREVIOUS,
@@ -47,6 +48,7 @@ public:
 
     void open_device();
     void advance_frame();
+    void suppress_ui_input_until_release();
     UiAction take_ui_action(UiScreen screen);
     unsigned operator()() { return buttons_; }
 
