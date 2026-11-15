@@ -95,9 +95,10 @@ integration is ready for release.
 ## Developer refresh settings
 
 Create `/mnt/onboard/KoBoy/developer` before launching Ko Boy to add Refresh
-Settings to the in-game menu. Fast gameplay refreshes always use A2 and submit
-the next update as soon as the previous update completes. The menu exposes
-three persistent cleanup controls:
+Settings to the in-game menu. Fast gameplay refreshes always use A2 on a steady
+10 Hz clock. Only one update may be active; an overlong refresh delays and
+re-anchors the next submission instead of queueing it. The menu exposes three
+persistent cleanup controls:
 
 - Slow refresh type: A2, DU, GL16, or GC16 Partial.
 - Slowest refresh type: GL16, GC16 Partial, or GC16 Full Flash.

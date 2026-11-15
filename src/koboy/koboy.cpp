@@ -59,6 +59,7 @@ enum RefreshType {
 };
 
 const unsigned kSlowRefreshTypeCount = 4U;
+const double kFastRefreshInterval = 0.1;
 
 struct RefreshSettings {
     RefreshType slow_type;
@@ -420,7 +421,7 @@ void record_active_refresh_settings(const RefreshSettings &settings) {
     char entry[384];
     const int length = std::snprintf(
         entry, sizeof(entry),
-        "active pid=%ld uptime=%.3f fast=A2 fast_hz=max slow=%s "
+        "active pid=%ld uptime=%.3f fast=A2 fast_hz=10.0 slow=%s "
         "slow_hz=%.1f slowest=%s mem_available_kb=%llu rss_kb=%llu cpu_khz=%llu "
         "cpu_temp_mc=%lld battery_temp_mc=%lld ap_temp_mc=%lld\n",
         static_cast<long>(getpid()), monotonic_seconds(),
@@ -1871,7 +1872,9 @@ int main(int argc, char **argv) {
             }
             ++displayed_frames;
             const double after_refresh = monotonic_seconds();
-            next_display = after_refresh;
+            next_display += kFastRefreshInterval;
+            if (next_display < after_refresh)
+                next_display = after_refresh;
             sleep_until(next_display);
         }
 
