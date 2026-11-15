@@ -29,12 +29,18 @@ public:
     void clear_viewport(uint32_t pixel);
     void clear_screen(uint32_t pixel);
     void draw(const std::vector<uint32_t> &pixels);
+    void draw_region(const std::vector<uint32_t> &pixels,
+                     const Viewport &region);
     void draw_screen(const std::vector<uint32_t> &pixels);
     double refresh_a2(uint32_t marker, bool wait_for_completion = false);
+    double refresh_a2_region(const Viewport &region, uint32_t marker,
+                             bool wait_for_completion = false);
     double refresh_du(uint32_t marker, bool wait_for_completion);
     double refresh_gl16(uint32_t marker, bool wait_for_completion);
     double refresh_gc16_partial(uint32_t marker, bool wait_for_completion);
     double refresh_gc16(uint32_t marker, bool wait_for_completion);
+    double refresh_gc16_region(const Viewport &region, uint32_t marker,
+                               bool wait_for_completion);
     double refresh_screen_gc16_partial(uint32_t marker,
                                        bool wait_for_completion);
     double refresh_screen_gc16(uint32_t marker, bool wait_for_completion);
@@ -54,6 +60,7 @@ private:
                   uint32_t marker,
                   bool wait_for_completion,
                   const Viewport &region);
+    Viewport absolute_region(const Viewport &region) const;
     uint8_t *row_address(uint32_t y);
     uint8_t *screen_row_address(uint32_t y);
     void close_device();

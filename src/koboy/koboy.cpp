@@ -60,6 +60,118 @@ enum RefreshType {
 
 const unsigned kSlowRefreshTypeCount = 4U;
 const double kFastRefreshInterval = 0.1;
+const double kCleanupRefreshInterval = 1.0;
+const unsigned kDamageTileSize = 32U;
+
+struct DamageRegion {
+    bool valid;
+    koboy::Viewport rectangle;
+    DamageRegion() : valid(false) {
+        rectangle.x = rectangle.y = rectangle.width = rectangle.height = 0U;
+    }
+};
+
+DamageRegion calculate_damage(const std::vector<uint32_t> &current,
+                              const std::vector<uint32_t> &previous,
+                              unsigned width, unsigned height) {
+    DamageRegion damage;
+    if (current.size() != static_cast<std::size_t>(width) * height)
+        throw std::runtime_error("damage frame dimensions do not match data");
+    if (previous.size() != current.size()) {
+        damage.valid = true;
+        damage.rectangle.x = 0U;
+        damage.rectangle.y = 0U;
+        damage.rectangle.width = width;
+        damage.rectangle.height = height;
+        return damage;
+    }
+
+    unsigned left = width;
+    unsigned top = height;
+    unsigned right = 0U;
+    unsigned bottom = 0U;
+    for (unsigned y = 0U; y < height; ++y) {
+        for (unsigned x = 0U; x < width; ++x) {
+            const std::size_t index = static_cast<std::size_t>(y) * width + x;
+            if (current[index] == previous[index])
+                continue;
+            left = std::min(left, x);
+            top = std::min(top, y);
+            right = std::max(right, x + 1U);
+            bottom = std::max(bottom, y + 1U);
+        }
+    }
+    if (left == width)
+        return damage;
+
+    left = left / kDamageTileSize * kDamageTileSize;
+    top = top / kDamageTileSize * kDamageTileSize;
+    right = std::min(width,
+        (right + kDamageTileSize - 1U) / kDamageTileSize * kDamageTileSize);
+    bottom = std::min(height,
+        (bottom + kDamageTileSize - 1U) / kDamageTileSize * kDamageTileSize);
+    damage.valid = true;
+    damage.rectangle.x = left;
+    damage.rectangle.y = top;
+    damage.rectangle.width = right - left;
+    damage.rectangle.height = bottom - top;
+    return damage;
+}
+
+void accumulate_damage(DamageRegion &accumulated,
+                       const DamageRegion &addition) {
+    if (!addition.valid)
+        return;
+    if (!accumulated.valid) {
+        accumulated = addition;
+        return;
+    }
+    const unsigned left = std::min(accumulated.rectangle.x,
+                                   addition.rectangle.x);
+    const unsigned top = std::min(accumulated.rectangle.y,
+                                  addition.rectangle.y);
+    const unsigned right = std::max(
+        accumulated.rectangle.x + accumulated.rectangle.width,
+        addition.rectangle.x + addition.rectangle.width);
+    const unsigned bottom = std::max(
+        accumulated.rectangle.y + accumulated.rectangle.height,
+        addition.rectangle.y + addition.rectangle.height);
+    accumulated.rectangle.x = left;
+    accumulated.rectangle.y = top;
+    accumulated.rectangle.width = right - left;
+    accumulated.rectangle.height = bottom - top;
+}
+
+std::vector<koboy::Viewport> regions_outside(
+        unsigned width, unsigned height, const koboy::Viewport &excluded) {
+    std::vector<koboy::Viewport> regions;
+    if (excluded.y > 0U) {
+        koboy::Viewport top = {0U, 0U, width, excluded.y};
+        regions.push_back(top);
+    }
+    const unsigned excluded_bottom = excluded.y + excluded.height;
+    if (excluded_bottom < height) {
+        koboy::Viewport bottom = {
+            0U, excluded_bottom, width, height - excluded_bottom
+        };
+        regions.push_back(bottom);
+    }
+    if (excluded.x > 0U) {
+        koboy::Viewport left = {
+            0U, excluded.y, excluded.x, excluded.height
+        };
+        regions.push_back(left);
+    }
+    const unsigned excluded_right = excluded.x + excluded.width;
+    if (excluded_right < width) {
+        koboy::Viewport right = {
+            excluded_right, excluded.y, width - excluded_right,
+            excluded.height
+        };
+        regions.push_back(right);
+    }
+    return regions;
+}
 
 struct RefreshSettings {
     RefreshType slow_type;
@@ -1471,13 +1583,12 @@ int main(int argc, char **argv) {
     try {
         const Options options = parse_options(argc, argv);
         const bool supervised = std::getenv("KOBOY_SUPERVISED") != 0;
-        const bool developer = file_exists(kDeveloperFlag);
+        const bool developer = false;
         const bool diagnostics = file_exists(kDiagnosticsFlag);
         const bool no_gameplay_refresh =
             file_exists(kNoGameplayRefreshFlag);
         const bool no_touch = file_exists(kNoTouchFlag);
         RefreshSettings refresh_settings;
-        load_refresh_settings(refresh_settings);
         std::unique_ptr<koboy::EmulatorCore> selected_core =
             koboy::create_default_core();
         koboy::EmulatorCore &core = *selected_core;
@@ -1498,6 +1609,8 @@ int main(int argc, char **argv) {
 
         std::vector<uint32_t> rgb;
         std::vector<uint32_t> scaled;
+        std::vector<uint32_t> refreshed_frame;
+        DamageRegion cleanup_damage;
         uint32_t marker = 1U;
         const unsigned screen_width = framebuffer.variable_info().xres;
         const unsigned screen_height = framebuffer.variable_info().yres;
@@ -1553,16 +1666,11 @@ int main(int argc, char **argv) {
         std::cout << "touch_x_range=" << input.x_min() << ',' << input.x_max() << '\n';
         std::cout << "touch_y_range=" << input.y_min() << ',' << input.y_max() << '\n';
 
-        double slow_interval = options.cleanup_set
-            ? static_cast<double>(options.cleanup_seconds)
-            : (refresh_settings.slow_tenths_hz
-                ? 10.0 / refresh_settings.slow_tenths_hz : 0.0);
-        if (diagnostics)
-            record_active_refresh_settings(refresh_settings);
+        const double slow_interval = kCleanupRefreshInterval;
         const double started = monotonic_seconds();
         double deadline = options.seconds ? started + options.seconds : 0.0;
         double next_display = started;
-        double next_cleanup = slow_interval ? started + slow_interval : 0.0;
+        double next_cleanup = started + slow_interval;
         double emulation_accumulator = 1.0;
         double last_emulation_time = started;
         unsigned emulated_frames = 0U;
@@ -1583,7 +1691,11 @@ int main(int argc, char **argv) {
         cpu_usage.sample(system_cpu_tenths, process_cpu_tenths);
         bool exit_to_nickel = false;
         bool force_first_frame_gc16 = !no_gameplay_refresh;
-        bool refresh_in_flight = false;
+        std::vector<uint32_t> a2_markers;
+        bool gc16_in_flight = false;
+        uint32_t gc16_marker = 0U;
+        double gc16_submitted_at = 0.0;
+        koboy::Viewport gc16_region = {0U, 0U, 0U, 0U};
 
         while (!interrupted &&
                (!options.seconds || monotonic_seconds() < deadline)) {
@@ -1610,7 +1722,13 @@ int main(int argc, char **argv) {
                     }
                     last_completed_marker = marker - 1U;
                     last_wait_seconds = drain_elapsed;
-                    refresh_in_flight = false;
+                    a2_markers.clear();
+                    if (gc16_in_flight) {
+                        last_wait_seconds =
+                            framebuffer.wait_for_update(gc16_marker);
+                        last_completed_marker = gc16_marker;
+                        gc16_in_flight = false;
+                    }
                     draw_menu(screen, screen_width, screen_height, developer);
                     framebuffer.draw_screen(screen);
                     koboy::UiAction menu_action =
@@ -1695,51 +1813,6 @@ int main(int argc, char **argv) {
                             force_first_frame_gc16 = true;
                         }
                     }
-                    if (menu_action == koboy::UI_REFRESH_SETTINGS &&
-                        developer) {
-                        for (;;) {
-                            draw_refresh_settings(screen, screen_width,
-                                                  screen_height,
-                                                  refresh_settings);
-                            framebuffer.draw_screen(screen);
-                            if (!refresh_menu_screen(framebuffer, input,
-                                                     marker++, diagnostics,
-                                                     false)) {
-                                menu_refresh_healthy = false;
-                                break;
-                            }
-                            koboy::UiAction setting_action =
-                                koboy::UI_NONE;
-                            while (!interrupted &&
-                                   setting_action == koboy::UI_NONE) {
-                                setting_action = input.take_ui_action(
-                                    koboy::UI_SCREEN_REFRESH_SETTINGS);
-                                if (setting_action == koboy::UI_NONE)
-                                    usleep(20000);
-                            }
-                            if (interrupted ||
-                                setting_action == koboy::UI_LIST_CANCEL)
-                                break;
-                            if (setting_action ==
-                                koboy::UI_SETTING_SLOW_TYPE)
-                                cycle_slow_type(refresh_settings.slow_type);
-                            else if (setting_action ==
-                                     koboy::UI_SETTING_SLOWEST_TYPE)
-                                cycle_slowest_type(refresh_settings);
-                            else if (setting_action ==
-                                     koboy::UI_SETTING_SLOW_FREQUENCY)
-                                cycle_slow_frequency(refresh_settings);
-                            save_refresh_settings(refresh_settings);
-                        }
-                        slow_interval = refresh_settings.slow_tenths_hz
-                            ? 10.0 / refresh_settings.slow_tenths_hz : 0.0;
-                        if (diagnostics)
-                            record_active_refresh_settings(refresh_settings);
-                        next_cleanup = slow_interval
-                            ? monotonic_seconds() + slow_interval : 0.0;
-                        emulation_accumulator = 0.0;
-                    }
-
                     const double paused_for = monotonic_seconds() - menu_started;
                     if (options.seconds)
                         deadline += paused_for;
@@ -1755,6 +1828,8 @@ int main(int argc, char **argv) {
                     if (menu_refresh_healthy)
                         refresh_menu_screen(framebuffer, input, marker++,
                                             diagnostics, true);
+                    refreshed_frame = scaled;
+                    cleanup_damage = DamageRegion();
                     const double menu_resumed = monotonic_seconds();
                     next_display = menu_resumed;
                     last_emulation_time = menu_resumed;
@@ -1764,16 +1839,24 @@ int main(int argc, char **argv) {
                 if (sleep_requested || wake_requested) {
                     frames_this_update = 0U;
                     emulation_accumulator = 0.0;
+                    for (std::size_t i = 0; i < a2_markers.size(); ++i)
+                        framebuffer.wait_for_update(a2_markers[i]);
+                    a2_markers.clear();
+                    if (gc16_in_flight) {
+                        framebuffer.wait_for_update(gc16_marker);
+                        gc16_in_flight = false;
+                    }
                     const double paused_for = pause_for_sleep(
                         framebuffer, input, screen, scaled, marker++,
                         diagnostics);
                     if (options.seconds)
                         deadline += paused_for;
                     const double resumed_at = monotonic_seconds();
+                    refreshed_frame = scaled;
+                    cleanup_damage = DamageRegion();
                     last_emulation_time = resumed_at;
                     next_display = resumed_at;
-                    next_cleanup = slow_interval
-                        ? resumed_at + slow_interval : 0.0;
+                    next_cleanup = resumed_at + slow_interval;
                     continue;
                 }
                 const unsigned current_buttons = input.buttons();
@@ -1792,15 +1875,43 @@ int main(int argc, char **argv) {
             koboy::scale_rgb32_grayscale(
                 rgb, core.video_width(), core.video_height(),
                 effective_scale, scaled);
-            if (refresh_in_flight) {
+            for (std::size_t i = 0; i < a2_markers.size(); ++i) {
                 last_wait_seconds =
-                    framebuffer.wait_for_update(last_submitted_marker);
-                last_completed_marker = last_submitted_marker;
-                refresh_in_flight = false;
+                    framebuffer.wait_for_update(a2_markers[i]);
+                last_completed_marker = a2_markers[i];
             }
-            framebuffer.draw(scaled);
+            a2_markers.clear();
 
-            const double now = monotonic_seconds();
+            double now = monotonic_seconds();
+            if (gc16_in_flight && now - gc16_submitted_at >= 0.30) {
+                last_wait_seconds = framebuffer.wait_for_update(gc16_marker);
+                last_completed_marker = gc16_marker;
+                gc16_in_flight = false;
+                now = monotonic_seconds();
+            }
+
+            const DamageRegion frame_damage = calculate_damage(
+                scaled, refreshed_frame, framebuffer.viewport().width,
+                framebuffer.viewport().height);
+            accumulate_damage(cleanup_damage, frame_damage);
+            refreshed_frame = scaled;
+
+            std::vector<koboy::Viewport> a2_regions;
+            if (gc16_in_flight) {
+                a2_regions = regions_outside(
+                    framebuffer.viewport().width,
+                    framebuffer.viewport().height, gc16_region);
+                for (std::size_t i = 0; i < a2_regions.size(); ++i)
+                    framebuffer.draw_region(scaled, a2_regions[i]);
+            } else {
+                framebuffer.draw(scaled);
+                a2_regions.push_back(koboy::Viewport{
+                    0U, 0U, framebuffer.viewport().width,
+                    framebuffer.viewport().height
+                });
+            }
+
+            bool submitted_refresh = false;
             if (force_first_frame_gc16) {
                 last_submitted_marker = marker++;
                 last_submitted_type = REFRESH_GC16_FULL;
@@ -1818,49 +1929,50 @@ int main(int argc, char **argv) {
                 force_first_frame_gc16 = false;
                 last_emulation_time = monotonic_seconds();
                 emulation_accumulator = 0.0;
+                refreshed_frame = scaled;
+                cleanup_damage = DamageRegion();
+                next_cleanup = last_emulation_time + slow_interval;
+                submitted_refresh = true;
             } else if (no_gameplay_refresh) {
                 /*
                  * Isolation mode deliberately keeps emulation, input, scaling,
                  * and framebuffer writes active while issuing no HWTCON ioctl,
                  * including during startup and the first emulated frame.
                  */
-            } else if (slow_interval && now >= next_cleanup) {
-                const RefreshType cleanup_type =
-                    (cleanups + 1U) % 5U == 0U
-                    ? refresh_settings.slowest_type
-                    : refresh_settings.slow_type;
-                last_submitted_marker = marker++;
-                last_submitted_type = cleanup_type;
-                ++refresh_counts[cleanup_type];
-                if (diagnostics)
-                    record_gameplay_refresh("begin", last_submitted_marker,
-                                            last_submitted_type, -1.0);
-                last_wait_seconds = refresh_viewport(
-                    framebuffer, cleanup_type, last_submitted_marker, false);
-                if (diagnostics)
-                    record_gameplay_refresh("end", last_submitted_marker,
-                                            last_submitted_type,
-                                            last_wait_seconds);
-                refresh_in_flight = true;
-                next_cleanup += slow_interval;
-                ++cleanups;
             } else {
-                last_submitted_marker = marker++;
-                last_submitted_type = REFRESH_A2;
-                ++refresh_counts[REFRESH_A2];
-                const bool sample_fast = diagnostics &&
-                    refresh_counts[REFRESH_A2] % 50U == 0U;
-                if (sample_fast)
-                    record_gameplay_refresh("begin", last_submitted_marker,
-                                            last_submitted_type, -1.0);
-                last_wait_seconds = refresh_viewport(
-                    framebuffer, REFRESH_A2,
-                    last_submitted_marker, false);
-                if (sample_fast)
-                    record_gameplay_refresh("end", last_submitted_marker,
-                                            last_submitted_type,
-                                            last_wait_seconds);
-                refresh_in_flight = true;
+                if (now >= next_cleanup) {
+                    if (!gc16_in_flight && cleanup_damage.valid) {
+                        gc16_region = cleanup_damage.rectangle;
+                        gc16_marker = marker++;
+                        last_submitted_marker = gc16_marker;
+                        last_submitted_type = REFRESH_GC16_FULL;
+                        ++refresh_counts[REFRESH_GC16_FULL];
+                        last_wait_seconds = framebuffer.refresh_gc16_region(
+                            gc16_region, gc16_marker, false);
+                        gc16_in_flight = true;
+                        gc16_submitted_at = now;
+                        cleanup_damage = DamageRegion();
+                        a2_regions = regions_outside(
+                            framebuffer.viewport().width,
+                            framebuffer.viewport().height, gc16_region);
+                        ++cleanups;
+                        submitted_refresh = true;
+                    }
+                    next_cleanup += slow_interval;
+                    if (next_cleanup < now)
+                        next_cleanup = now + slow_interval;
+                }
+
+                for (std::size_t i = 0; i < a2_regions.size(); ++i) {
+                    const uint32_t a2_marker = marker++;
+                    last_submitted_marker = a2_marker;
+                    last_submitted_type = REFRESH_A2;
+                    ++refresh_counts[REFRESH_A2];
+                    last_wait_seconds = framebuffer.refresh_a2_region(
+                        a2_regions[i], a2_marker, false);
+                    a2_markers.push_back(a2_marker);
+                    submitted_refresh = true;
+                }
             }
             if (diagnostics && now >= next_heartbeat) {
                 cpu_usage.sample(system_cpu_tenths, process_cpu_tenths);
@@ -1870,7 +1982,8 @@ int main(int argc, char **argv) {
                     system_cpu_tenths, process_cpu_tenths);
                 next_heartbeat = now + 5.0;
             }
-            ++displayed_frames;
+            if (submitted_refresh)
+                ++displayed_frames;
             const double after_refresh = monotonic_seconds();
             next_display += kFastRefreshInterval;
             if (next_display < after_refresh)
@@ -1878,11 +1991,12 @@ int main(int argc, char **argv) {
             sleep_until(next_display);
         }
 
-        if (refresh_in_flight) {
-            last_wait_seconds =
-                framebuffer.wait_for_update(last_submitted_marker);
-            last_completed_marker = last_submitted_marker;
-            refresh_in_flight = false;
+        for (std::size_t i = 0; i < a2_markers.size(); ++i)
+            framebuffer.wait_for_update(a2_markers[i]);
+        a2_markers.clear();
+        if (gc16_in_flight) {
+            framebuffer.wait_for_update(gc16_marker);
+            gc16_in_flight = false;
         }
         const double elapsed = monotonic_seconds() - started;
         automatic_state_saved = save_state(core, automatic_state);

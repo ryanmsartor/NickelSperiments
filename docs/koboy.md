@@ -92,23 +92,17 @@ executable. Ko Boy now links this complete backend and obtains it through the
 core factory. An on-device probe and player test remain required before this
 integration is ready for release.
 
-## Developer refresh settings
+## Refresh scheduling
 
-Create `/mnt/onboard/KoBoy/developer` before launching Ko Boy to add Refresh
-Settings to the in-game menu. Fast gameplay refreshes always use A2 on a steady
-10 Hz clock. Only one update may be active; an overlong refresh delays and
-re-anchors the next submission instead of queueing it. The menu exposes three
-persistent cleanup controls:
+Gameplay uses only A2 and full GC16. A2 targets a steady 10 Hz cadence across
+the game viewport. Once per second, Ko Boy selects a 32-pixel-aligned rectangle
+covering accumulated frame changes and starts a full-waveform GC16 cleanup for
+that region. While GC16 owns that rectangle, the newest A2 frame continues in
+up to four non-overlapping strips around it. Framebuffer writes follow the same
+partition so an active GC16 region is not modified underneath the controller.
 
-- Slow refresh type: A2, DU, GL16, or GC16 Partial.
-- Slowest refresh type: GL16, GC16 Partial, or GC16 Full Flash.
-- Slow refresh frequency: Off, 0.1, 0.2, 0.5, 1, or 2 Hz.
-
-Every fifth scheduled slow refresh uses the slowest type instead. It therefore
-shares the slow frequency rather than having a separate frequency control.
-
-Tap a row to advance to its next value. Changes are written immediately to
-`/mnt/onboard/KoBoy/refresh.conf` and take effect when returning to the game.
+This replaces the former developer-configurable fast, slow, and slowest tiers.
+Menus, loading, wake, and exit retain full-screen GC16 boundaries.
 Removing the developer flag hides the menu on the next launch but preserves
 the selected configuration. Delete `refresh.conf` to restore the defaults:
 A2 at 10.5 Hz, DU at 2 Hz for the slow tier, and full-update GC16 for every
@@ -217,11 +211,12 @@ saves the framebuffer before drawing, and restores it before returning to
 Nickel. Stopping Nickel is intentionally avoided: device testing showed that a
 `SIGSTOP` lasting roughly one watchdog interval can reboot the Kobo.
 
-## Proposed targeted cleanup refreshes
+## Targeted cleanup refreshes
 
-This proposal is deferred for a future implementation pass. The goal is to
-reduce the area affected by slow and slowest gameplay refreshes without
-allowing ghosting to accumulate indefinitely.
+The initial implementation uses aligned rectangular damage accumulated from
+scaled frame differences. It is intentionally conservative while device tests
+establish the controller's behavior for simultaneous non-overlapping A2 and
+GC16 regions.
 
 The framebuffer cannot reveal which physical e-ink pixels still retain a
 visible prior image; it contains only the image Ko Boy intended to display.
@@ -243,11 +238,10 @@ show that targeted refreshes do not permit artifacts to accumulate over long
 sessions. Developer diagnostics should record the selected rectangle, its debt,
 and the waveform so the heuristic can be tuned from observed results.
 
-Before implementing debt tracking, run a visual device test with progressively
-smaller rectangular GL16 and GC16 updates. Determine the controller's practical
-minimum dimensions and alignment requirements, and look for edge artifacts or
-waveform spill beyond the requested rectangle. Those results should set the tile
-size and region-expansion rules used by the scheduler.
+The next refinement is tile-level debt weighting so cleanup can prioritize the
+worst subregion instead of taking the bounding rectangle of all recent motion.
+Device testing must also confirm minimum dimensions, alignment requirements,
+edge artifacts, and whether waveforms spill beyond their requested rectangles.
 
 ## Deferred work
 
