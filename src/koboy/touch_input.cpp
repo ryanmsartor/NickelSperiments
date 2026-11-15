@@ -28,7 +28,8 @@ bool inside_circle(int x, int y, int center_x, int center_y, int radius) {
 TouchInput::TouchInput(unsigned screen_width, unsigned screen_height)
     : fd_(-1), screen_width_(screen_width), screen_height_(screen_height),
       current_slot_(0U), physical_buttons_(0U), buttons_(0U),
-      ui_touch_active_(false), suppress_gameplay_until_release_(false) {
+      ui_touch_active_(false), suppress_gameplay_until_release_(false),
+      shoulder_buttons_enabled_(false) {
     std::memset(&x_info_, 0, sizeof(x_info_));
     std::memset(&y_info_, 0, sizeof(y_info_));
     std::memset(contacts_, 0, sizeof(contacts_));
@@ -121,6 +122,20 @@ unsigned TouchInput::hit_test(int raw_x, int raw_y) const {
     if (inside_circle(x, y, static_cast<int>(screen_width_ * 70U / 100U),
                       static_cast<int>(screen_height_ * 84U / 100U), radius))
         return CORE_BUTTON_B;
+    if (shoulder_buttons_enabled_) {
+        const int shoulder_radius =
+            static_cast<int>(screen_width_ * 5U / 100U);
+        const int shoulder_y =
+            static_cast<int>(screen_height_ * 64U / 100U);
+        if (inside_circle(x, y,
+                          static_cast<int>(screen_width_ * 70U / 100U),
+                          shoulder_y, shoulder_radius))
+            return CORE_BUTTON_L;
+        if (inside_circle(x, y,
+                          static_cast<int>(screen_width_ * 85U / 100U),
+                          shoulder_y, shoulder_radius))
+            return CORE_BUTTON_R;
+    }
 
     const int menu_y = static_cast<int>(screen_height_ * 94U / 100U);
     const int menu_half_width = static_cast<int>(screen_width_ * 8U / 100U);
@@ -144,8 +159,8 @@ UiAction TouchInput::ui_hit_test(int raw_x, int raw_y,
     if (screen == UI_SCREEN_GAME) {
         const int center_x = static_cast<int>(screen_width_ * 52U / 100U);
         const int center_y = static_cast<int>(screen_height_ * 75U / 100U);
-        const int half_width = static_cast<int>(screen_width_ * 12U / 100U);
-        const int half_height = static_cast<int>(screen_height_ * 3U / 100U);
+        const int half_width = static_cast<int>(screen_width_ * 8U / 100U);
+        const int half_height = static_cast<int>(screen_height_ * 2U / 100U);
         return std::abs(x - center_x) <= half_width &&
                std::abs(y - center_y) <= half_height
             ? UI_OPEN_MENU : UI_NONE;

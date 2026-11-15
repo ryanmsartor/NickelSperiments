@@ -1065,7 +1065,7 @@ void draw_label(std::vector<uint32_t> &screen, unsigned width,
 }
 
 void draw_controls(std::vector<uint32_t> &screen, unsigned width,
-                   unsigned height) {
+                   unsigned height, bool shoulder_buttons) {
     const uint32_t dark = 0xFF202020U;
     const uint32_t light = 0xFFFFFFFFU;
     const int dpad_x = width * 21 / 100;
@@ -1088,6 +1088,18 @@ void draw_controls(std::vector<uint32_t> &screen, unsigned width,
     fill_circle(screen, width, height, b_x, b_y, radius, dark);
     draw_label(screen, width, height, a_x, a_y, "A", 10, light);
     draw_label(screen, width, height, b_x, b_y, "B", 10, light);
+    if (shoulder_buttons) {
+        const int shoulder_radius = width * 5 / 100;
+        const int shoulder_y = height * 64 / 100;
+        const int l_x = width * 70 / 100;
+        const int r_x = width * 85 / 100;
+        fill_circle(screen, width, height, l_x, shoulder_y,
+                    shoulder_radius, dark);
+        fill_circle(screen, width, height, r_x, shoulder_y,
+                    shoulder_radius, dark);
+        draw_label(screen, width, height, l_x, shoulder_y, "L", 5, light);
+        draw_label(screen, width, height, r_x, shoulder_y, "R", 5, light);
+    }
 
     const int menu_y = height * 94 / 100;
     const int menu_half_width = width * 8 / 100;
@@ -1105,12 +1117,12 @@ void draw_controls(std::vector<uint32_t> &screen, unsigned width,
 
     const int system_x = width * 52 / 100;
     const int system_y = height * 75 / 100;
-    const int system_half_width = width * 12 / 100;
-    const int system_half_height = height * 3 / 100;
+    const int system_half_width = width * 8 / 100;
+    const int system_half_height = height * 2 / 100;
     fill_rectangle(screen, width, height, system_x - system_half_width,
                    system_y - system_half_height, system_x + system_half_width,
                    system_y + system_half_height, dark);
-    draw_label(screen, width, height, system_x, system_y, "MENU", 4, light);
+    draw_label(screen, width, height, system_x, system_y, "MENU", 3, light);
 }
 
 void draw_menu(std::vector<uint32_t> &screen, unsigned width,
@@ -1193,7 +1205,8 @@ void draw_refresh_settings(std::vector<uint32_t> &screen, unsigned width,
         std::string("SLOWEST TYPE  ") +
             refresh_type_name(settings.slowest_type),
         std::string("FAST FREQUENCY  ") +
-            frequency_name(settings.fast_tenths_hz),
+            (settings.fast_type == REFRESH_A2
+                ? "MAX" : frequency_name(settings.fast_tenths_hz)),
         std::string("SLOW FREQUENCY  ") +
             frequency_name(settings.slow_tenths_hz)
     };
@@ -1569,6 +1582,9 @@ int main(int argc, char **argv) {
             throw std::runtime_error("ROM video size does not fit the display");
         framebuffer.configure_viewport(core.video_width() * effective_scale,
                                        core.video_height() * effective_scale);
+        bool shoulder_buttons = core.video_width() == 240U &&
+                                core.video_height() == 160U;
+        input.set_shoulder_buttons_enabled(shoulder_buttons);
         std::string automatic_state = state_path(rom_path.c_str(), 0U);
         std::string manual_state = state_path(rom_path.c_str(), 1U);
         std::string sram_path = save_path(rom_path.c_str());
@@ -1577,7 +1593,7 @@ int main(int argc, char **argv) {
         bool automatic_state_loaded = load_state(core, automatic_state);
         bool automatic_state_saved = false;
 
-        draw_controls(screen, screen_width, screen_height);
+        draw_controls(screen, screen_width, screen_height, shoulder_buttons);
         framebuffer.draw_screen(screen);
         if (!no_gameplay_refresh)
             framebuffer.refresh_screen_gc16(marker++, true);
@@ -1712,6 +1728,10 @@ int main(int argc, char **argv) {
                             framebuffer.configure_viewport(
                                 core.video_width() * effective_scale,
                                 core.video_height() * effective_scale);
+                            shoulder_buttons = core.video_width() == 240U &&
+                                               core.video_height() == 160U;
+                            input.set_shoulder_buttons_enabled(
+                                shoulder_buttons);
                             rom.swap(selected_rom);
                             rom_path = selected;
                             automatic_state = state_path(rom_path.c_str(), 0U);
@@ -1785,7 +1805,8 @@ int main(int argc, char **argv) {
 
                     screen.assign(static_cast<size_t>(screen_width) *
                                   screen_height, 0xFFFFFFFFU);
-                    draw_controls(screen, screen_width, screen_height);
+                    draw_controls(screen, screen_width, screen_height,
+                                  shoulder_buttons);
                     framebuffer.draw_screen(screen);
                     if (!scaled.empty())
                         framebuffer.draw(scaled);
@@ -1908,10 +1929,14 @@ int main(int argc, char **argv) {
                 next_heartbeat = now + 5.0;
             }
             ++displayed_frames;
-            next_display += display_interval;
             const double after_refresh = monotonic_seconds();
-            if (next_display < after_refresh)
+            if (refresh_settings.fast_type == REFRESH_A2) {
                 next_display = after_refresh;
+            } else {
+                next_display += display_interval;
+                if (next_display < after_refresh)
+                    next_display = after_refresh;
+            }
             sleep_until(next_display);
         }
 
@@ -1928,6 +1953,8 @@ int main(int argc, char **argv) {
             input.wait_for_release();
         if (!supervised)
             framebuffer.restore(marker++);
+        if (!supervised)
+            framebuffer.refresh_screen_gc16(marker++, true);
         std::cout << "name=Ko Boy\n";
         std::cout << "rom_directory=" << kKoBoyRomDirectory << '\n';
         std::cout << "state0_loaded="

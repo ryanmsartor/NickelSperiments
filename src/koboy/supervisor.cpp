@@ -91,6 +91,7 @@ int main(int argc, char **argv) {
         child_pid = -1;
 
         framebuffer.restore(0xFFFF0001U);
+        framebuffer.refresh_screen_gc16(0xFFFF0002U, true);
 
         const int result = child_exit_code(status);
         std::cout << "supervisor_child_status=" << result << '\n';

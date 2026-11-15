@@ -53,6 +53,9 @@ public:
     void advance_frame();
     void suppress_input_until_release();
     void wait_for_release();
+    void set_shoulder_buttons_enabled(bool enabled) {
+        shoulder_buttons_enabled_ = enabled;
+    }
     UiAction take_ui_action(UiScreen screen);
     unsigned buttons() const { return buttons_; }
 
@@ -90,6 +93,7 @@ private:
     unsigned buttons_;
     bool ui_touch_active_;
     bool suppress_gameplay_until_release_;
+    bool shoulder_buttons_enabled_;
     std::deque<unsigned> pending_states_;
 };
 
