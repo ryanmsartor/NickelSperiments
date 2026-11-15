@@ -58,18 +58,14 @@ enum RefreshType {
     REFRESH_TYPE_COUNT
 };
 
-const unsigned kFastRefreshTypeCount = 3U;
 const unsigned kSlowRefreshTypeCount = 4U;
 
 struct RefreshSettings {
-    RefreshType fast_type;
     RefreshType slow_type;
     RefreshType slowest_type;
-    unsigned fast_tenths_hz;
     unsigned slow_tenths_hz;
     RefreshSettings()
-        : fast_type(REFRESH_A2), slow_type(REFRESH_DU),
-          slowest_type(REFRESH_GC16_FULL), fast_tenths_hz(105U),
+        : slow_type(REFRESH_DU), slowest_type(REFRESH_GC16_FULL),
           slow_tenths_hz(20U) {}
 };
 
@@ -195,34 +191,21 @@ bool load_refresh_settings_file(const char *path, RefreshSettings &settings) {
         if (errno || !end || *end != '\0' || parsed > UINT_MAX)
             continue;
         const unsigned value = static_cast<unsigned>(parsed);
-        if (key == "fast_type" && value < kFastRefreshTypeCount) {
-            settings.fast_type = static_cast<RefreshType>(value);
-            recognized |= 1U;
-        } else if (key == "slow_type" && value < kSlowRefreshTypeCount) {
+        if (key == "slow_type" && value < kSlowRefreshTypeCount) {
             settings.slow_type = static_cast<RefreshType>(value);
-            recognized |= 2U;
+            recognized |= 1U;
         } else if (key == "slowest_type" &&
                    value >= REFRESH_GL16 && value <= REFRESH_GC16_FULL) {
             settings.slowest_type = static_cast<RefreshType>(value);
-            recognized |= 16U;
-        } else if (key == "fast_tenths_hz" &&
-                 (value == 60U || value == 80U || value == 100U ||
-                  value == 105U || value == 110U || value == 115U ||
-                  value == 120U)) {
-            settings.fast_tenths_hz = value;
-            recognized |= 4U;
-        } else if (key == "fast_hz" &&
-                   (value == 6U || value == 8U || value == 10U)) {
-            settings.fast_tenths_hz = value * 10U;
-            recognized |= 4U;
+            recognized |= 2U;
         } else if (key == "slow_tenths_hz" &&
                  (value == 0U || value == 1U || value == 2U ||
                   value == 5U || value == 10U || value == 20U)) {
             settings.slow_tenths_hz = value;
-            recognized |= 8U;
+            recognized |= 4U;
         }
     }
-    return (recognized & 15U) == 15U;
+    return recognized == 7U;
 }
 
 void load_refresh_settings(RefreshSettings &settings) {
@@ -383,12 +366,10 @@ std::string serialize_refresh_settings(const RefreshSettings &settings) {
     char contents[128];
     const int length = std::snprintf(
         contents, sizeof(contents),
-        "fast_type=%u\nslow_type=%u\nslowest_type=%u\n"
-        "fast_tenths_hz=%u\nslow_tenths_hz=%u\n",
-        static_cast<unsigned>(settings.fast_type),
+        "slow_type=%u\nslowest_type=%u\nslow_tenths_hz=%u\n",
         static_cast<unsigned>(settings.slow_type),
         static_cast<unsigned>(settings.slowest_type),
-        settings.fast_tenths_hz, settings.slow_tenths_hz);
+        settings.slow_tenths_hz);
     return length > 0 ? std::string(contents, static_cast<std::size_t>(length))
                       : std::string();
 }
@@ -439,12 +420,10 @@ void record_active_refresh_settings(const RefreshSettings &settings) {
     char entry[384];
     const int length = std::snprintf(
         entry, sizeof(entry),
-        "active pid=%ld uptime=%.3f fast=%s fast_hz=%.1f slow=%s "
+        "active pid=%ld uptime=%.3f fast=A2 fast_hz=max slow=%s "
         "slow_hz=%.1f slowest=%s mem_available_kb=%llu rss_kb=%llu cpu_khz=%llu "
         "cpu_temp_mc=%lld battery_temp_mc=%lld ap_temp_mc=%lld\n",
         static_cast<long>(getpid()), monotonic_seconds(),
-        refresh_type_name(settings.fast_type),
-        static_cast<double>(settings.fast_tenths_hz) / 10.0,
         refresh_type_name(settings.slow_type),
         static_cast<double>(settings.slow_tenths_hz) / 10.0,
         refresh_type_name(settings.slowest_type),
@@ -580,22 +559,6 @@ void record_gameplay_heartbeat(uint32_t submitted_marker,
         std::cerr << "warning: cannot record gameplay heartbeat\n";
     if (output >= 0)
         close(output);
-}
-
-void cycle_fast_frequency(RefreshSettings &settings) {
-    const unsigned values[] = {60U, 80U, 100U, 105U, 110U, 115U, 120U};
-    for (unsigned i = 0; i < 7U; ++i)
-        if (settings.fast_tenths_hz == values[i]) {
-            settings.fast_tenths_hz = values[(i + 1U) % 7U];
-            return;
-        }
-    settings.fast_tenths_hz = 80U;
-}
-
-void cycle_fast_type(RefreshSettings &settings) {
-    settings.fast_type = static_cast<RefreshType>(
-        (static_cast<unsigned>(settings.fast_type) + 1U) %
-        kFastRefreshTypeCount);
 }
 
 void cycle_slow_type(RefreshType &type) {
@@ -892,14 +855,12 @@ bool save_sram(koboy::EmulatorCore &core, const std::string &path) {
 
 struct Options {
     std::string rom;
-    unsigned rate;
     unsigned scale;
     unsigned seconds;
     unsigned cleanup_seconds;
-    bool rate_set;
     bool cleanup_set;
-    Options() : rate(8), scale(6), seconds(0), cleanup_seconds(1),
-                rate_set(false), cleanup_set(false) {}
+    Options() : scale(6), seconds(0), cleanup_seconds(1),
+                cleanup_set(false) {}
 };
 
 Options parse_options(int argc, char **argv) {
@@ -912,10 +873,7 @@ Options parse_options(int argc, char **argv) {
     for (int i = first_option; i < argc; i += 2) {
         if (i + 1 >= argc)
             throw std::runtime_error("every option requires a value");
-        if (std::strcmp(argv[i], "--rate") == 0) {
-            options.rate = parse_unsigned(argv[i + 1], "--rate");
-            options.rate_set = true;
-        } else if (std::strcmp(argv[i], "--scale") == 0)
+        if (std::strcmp(argv[i], "--scale") == 0)
             options.scale = parse_unsigned(argv[i + 1], "--scale");
         else if (std::strcmp(argv[i], "--seconds") == 0)
             options.seconds = parse_unsigned(argv[i + 1], "--seconds");
@@ -925,8 +883,6 @@ Options parse_options(int argc, char **argv) {
         } else
             throw std::runtime_error(std::string("unknown option: ") + argv[i]);
     }
-    if (options.rate > 30U)
-        throw std::runtime_error("--rate must not exceed 30");
     if (options.scale > 6U)
         throw std::runtime_error("--scale must not exceed 6");
     return options;
@@ -1198,19 +1154,15 @@ void draw_refresh_settings(std::vector<uint32_t> &screen, unsigned width,
     const int left = width * 8 / 100;
     const int right = width * 92 / 100;
     const int half_height = height * 4 / 100;
-    const unsigned centers[] = {22U, 34U, 46U, 58U, 70U};
+    const unsigned centers[] = {28U, 46U, 64U};
     const std::string rows[] = {
-        std::string("FAST TYPE  ") + refresh_type_name(settings.fast_type),
         std::string("SLOW TYPE  ") + refresh_type_name(settings.slow_type),
         std::string("SLOWEST TYPE  ") +
             refresh_type_name(settings.slowest_type),
-        std::string("FAST FREQUENCY  ") +
-            (settings.fast_type == REFRESH_A2
-                ? "MAX" : frequency_name(settings.fast_tenths_hz)),
         std::string("SLOW FREQUENCY  ") +
             frequency_name(settings.slow_tenths_hz)
     };
-    for (unsigned i = 0; i < 5U; ++i) {
+    for (unsigned i = 0; i < 3U; ++i) {
         const int center = height * centers[i] / 100;
         fill_rectangle(screen, width, height, left, center - half_height,
                        right, center + half_height, dark);
@@ -1525,8 +1477,6 @@ int main(int argc, char **argv) {
         const bool no_touch = file_exists(kNoTouchFlag);
         RefreshSettings refresh_settings;
         load_refresh_settings(refresh_settings);
-        if (options.rate_set)
-            refresh_settings.fast_tenths_hz = options.rate * 10U;
         std::unique_ptr<koboy::EmulatorCore> selected_core =
             koboy::create_default_core();
         koboy::EmulatorCore &core = *selected_core;
@@ -1602,7 +1552,6 @@ int main(int argc, char **argv) {
         std::cout << "touch_x_range=" << input.x_min() << ',' << input.x_max() << '\n';
         std::cout << "touch_y_range=" << input.y_min() << ',' << input.y_max() << '\n';
 
-        double display_interval = 10.0 / refresh_settings.fast_tenths_hz;
         double slow_interval = options.cleanup_set
             ? static_cast<double>(options.cleanup_seconds)
             : (refresh_settings.slow_tenths_hz
@@ -1771,24 +1720,16 @@ int main(int argc, char **argv) {
                                 setting_action == koboy::UI_LIST_CANCEL)
                                 break;
                             if (setting_action ==
-                                koboy::UI_SETTING_FAST_TYPE)
-                                cycle_fast_type(refresh_settings);
-                            else if (setting_action ==
-                                     koboy::UI_SETTING_SLOW_TYPE)
+                                koboy::UI_SETTING_SLOW_TYPE)
                                 cycle_slow_type(refresh_settings.slow_type);
                             else if (setting_action ==
                                      koboy::UI_SETTING_SLOWEST_TYPE)
                                 cycle_slowest_type(refresh_settings);
                             else if (setting_action ==
-                                     koboy::UI_SETTING_FAST_FREQUENCY)
-                                cycle_fast_frequency(refresh_settings);
-                            else if (setting_action ==
                                      koboy::UI_SETTING_SLOW_FREQUENCY)
                                 cycle_slow_frequency(refresh_settings);
                             save_refresh_settings(refresh_settings);
                         }
-                        display_interval =
-                            10.0 / refresh_settings.fast_tenths_hz;
                         slow_interval = refresh_settings.slow_tenths_hz
                             ? 10.0 / refresh_settings.slow_tenths_hz : 0.0;
                         if (diagnostics)
@@ -1904,15 +1845,15 @@ int main(int argc, char **argv) {
                 ++cleanups;
             } else {
                 last_submitted_marker = marker++;
-                last_submitted_type = refresh_settings.fast_type;
-                ++refresh_counts[refresh_settings.fast_type];
+                last_submitted_type = REFRESH_A2;
+                ++refresh_counts[REFRESH_A2];
                 const bool sample_fast = diagnostics &&
-                    refresh_counts[refresh_settings.fast_type] % 50U == 0U;
+                    refresh_counts[REFRESH_A2] % 50U == 0U;
                 if (sample_fast)
                     record_gameplay_refresh("begin", last_submitted_marker,
                                             last_submitted_type, -1.0);
                 last_wait_seconds = refresh_viewport(
-                    framebuffer, refresh_settings.fast_type,
+                    framebuffer, REFRESH_A2,
                     last_submitted_marker, false);
                 if (sample_fast)
                     record_gameplay_refresh("end", last_submitted_marker,
@@ -1930,13 +1871,7 @@ int main(int argc, char **argv) {
             }
             ++displayed_frames;
             const double after_refresh = monotonic_seconds();
-            if (refresh_settings.fast_type == REFRESH_A2) {
-                next_display = after_refresh;
-            } else {
-                next_display += display_interval;
-                if (next_display < after_refresh)
-                    next_display = after_refresh;
-            }
+            next_display = after_refresh;
             sleep_until(next_display);
         }
 

@@ -210,13 +210,12 @@ UiAction TouchInput::ui_hit_test(int raw_x, int raw_y,
         const int half_height = static_cast<int>(screen_height_ * 4U / 100U);
         if (x < left || x > right)
             return UI_NONE;
-        const unsigned centers[] = {22U, 34U, 46U, 58U, 70U};
+        const unsigned centers[] = {28U, 46U, 64U};
         const UiAction actions[] = {
-            UI_SETTING_FAST_TYPE, UI_SETTING_SLOW_TYPE,
-            UI_SETTING_SLOWEST_TYPE,
-            UI_SETTING_FAST_FREQUENCY, UI_SETTING_SLOW_FREQUENCY
+            UI_SETTING_SLOW_TYPE, UI_SETTING_SLOWEST_TYPE,
+            UI_SETTING_SLOW_FREQUENCY
         };
-        for (unsigned i = 0; i < 5U; ++i)
+        for (unsigned i = 0; i < 3U; ++i)
             if (std::abs(y - static_cast<int>(screen_height_ * centers[i] /
                                               100U)) <= half_height)
                 return actions[i];
