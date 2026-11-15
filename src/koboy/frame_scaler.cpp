@@ -60,20 +60,23 @@ void scale_monochrome(const std::vector<uint8_t> &source,
 }
 
 void scale_rgb32_grayscale(const std::vector<uint32_t> &source,
+                           unsigned source_width,
+                           unsigned source_height,
                            unsigned scale,
                            std::vector<uint32_t> &destination) {
-    if (source.size() != kGameBoyWidth * kGameBoyHeight)
-        throw std::runtime_error("source frame must be 160x144");
+    if (source_width == 0U || source_height == 0U ||
+        source.size() != static_cast<std::size_t>(source_width) * source_height)
+        throw std::runtime_error("source frame dimensions do not match data");
     if (scale == 0U)
         throw std::runtime_error("scale must be positive");
 
-    const unsigned width = kGameBoyWidth * scale;
-    const unsigned height = kGameBoyHeight * scale;
+    const unsigned width = source_width * scale;
+    const unsigned height = source_height * scale;
     destination.resize(width * height);
 
-    for (unsigned source_y = 0; source_y < kGameBoyHeight; ++source_y) {
-        for (unsigned source_x = 0; source_x < kGameBoyWidth; ++source_x) {
-            const uint32_t rgb = source[source_y * kGameBoyWidth + source_x];
+    for (unsigned source_y = 0; source_y < source_height; ++source_y) {
+        for (unsigned source_x = 0; source_x < source_width; ++source_x) {
+            const uint32_t rgb = source[source_y * source_width + source_x];
             const unsigned red = (rgb >> 16U) & 0xFFU;
             const unsigned green = (rgb >> 8U) & 0xFFU;
             const unsigned blue = rgb & 0xFFU;

@@ -1826,7 +1826,9 @@ int main(int argc, char **argv) {
             }
             if (exit_to_nickel || interrupted)
                 break;
-            koboy::scale_rgb32_grayscale(rgb, effective_scale, scaled);
+            koboy::scale_rgb32_grayscale(
+                rgb, core.video_width(), core.video_height(),
+                effective_scale, scaled);
             if (refresh_in_flight) {
                 last_wait_seconds =
                     framebuffer.wait_for_update(last_submitted_marker);
