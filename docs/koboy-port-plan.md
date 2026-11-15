@@ -325,8 +325,7 @@ errors or an unacceptable buildup of latency.
 
 The frontend and eventual package are named **Ko Boy**. User games live in
 `/mnt/onboard/KoBoy/Roms/`; Ko Boy never bundles ROMs. Resume Game, Select
-Game, and Exit to Nickel are implemented. The remaining planned menu entries
-will be added around them:
+Game, Save State, Load State, Reset Game, and Exit to Nickel are implemented:
 
 1. Resume Game
 2. Save State
@@ -340,7 +339,18 @@ initial state model has exactly two per-game slots. `state0` is automatic: Ko
 Boy saves it when returning to Nickel and loads it when that game is selected.
 `state1` is manual and is used exclusively by the menu's Save State and Load
 State entries. State files live under `/mnt/onboard/KoBoy/States/`; they are
-kept separate from ROMs and keyed by the ROM filename.
+kept separate from ROMs and keyed by the ROM filename. Battery-backed SRAM is
+loaded from `/mnt/onboard/KoBoy/Saves/` after loading a ROM and flushed
+atomically on manual save, game switch, and normal exit.
+
+The frontend now reaches Gambatte through a core-neutral interface covering
+ROM loading, video frames, input, reset, state serialization, and save RAM.
+armGBA is pinned at revision `e099bbf9` in `deps/armgba`. Its initial libretro
+adapter covers video, input, reset, state serialization, and save RAM. Both the
+adapter and armGBA's ARMv7/NEON/JIT machine core compile with NickelTC. The
+remaining libretro support layer, final link, and device tests are still
+required. The current Gambatte adapter remains selected through the core
+factory until the armGBA path passes those tests.
 
 - Connect Gambatte video to the display backend.
 - Add touch D-pad, A, B, Start, Select, and Menu controls.

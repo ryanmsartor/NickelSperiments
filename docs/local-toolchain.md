@@ -47,7 +47,13 @@ make koboy-framebuffer-isolation
 make koboy
 make koboy-supervisor
 make koboy-lifecycle
+make armgba-adapter-check
+make armgba-core-check
 ```
+
+The armGBA checks also use NickelTC's C compiler through
+`scripts/nickeltc-tool`. Its machine core is compiled explicitly for ARMv7-A,
+NEON, and the hard-float ABI used by the Kobo firmware.
 
 To rebuild every Gambatte and Ko Boy object after changing toolchains, use:
 

@@ -1,9 +1,11 @@
 KOBO_CROSS_COMPILE ?= arm-nickel-linux-gnueabihf-
 KOBO_LOCAL_CXX := $(CURDIR)/.toolchains/bin/arm-nickel-linux-gnueabihf-g++
 ifneq ($(wildcard $(KOBO_LOCAL_CXX)),)
+KOBO_CC ?= $(CURDIR)/scripts/nickeltc-tool arm-nickel-linux-gnueabihf-gcc
 KOBO_CXX ?= $(KOBO_LOCAL_CXX)
 KOBO_LINK ?= $(CURDIR)/scripts/nickeltc-link
 else
+KOBO_CC ?= $(KOBO_CROSS_COMPILE)gcc
 KOBO_CXX ?= $(KOBO_CROSS_COMPILE)g++
 KOBO_LINK ?= $(KOBO_CXX)
 endif

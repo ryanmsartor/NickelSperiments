@@ -110,17 +110,17 @@ unsigned TouchInput::hit_test(int raw_x, int raw_y) const {
         (std::abs(dx) <= dpad_half_width ||
          std::abs(dy) <= dpad_half_width)) {
         if (std::abs(dx) > std::abs(dy))
-            return dx < 0 ? LEFT : RIGHT;
-        return dy < 0 ? UP : DOWN;
+            return dx < 0 ? CORE_BUTTON_LEFT : CORE_BUTTON_RIGHT;
+        return dy < 0 ? CORE_BUTTON_UP : CORE_BUTTON_DOWN;
     }
 
     const int radius = static_cast<int>(screen_width_ * 9U / 100U);
     if (inside_circle(x, y, static_cast<int>(screen_width_ * 85U / 100U),
                       static_cast<int>(screen_height_ * 76U / 100U), radius))
-        return A;
+        return CORE_BUTTON_A;
     if (inside_circle(x, y, static_cast<int>(screen_width_ * 70U / 100U),
                       static_cast<int>(screen_height_ * 84U / 100U), radius))
-        return B;
+        return CORE_BUTTON_B;
 
     const int menu_y = static_cast<int>(screen_height_ * 94U / 100U);
     const int menu_half_width = static_cast<int>(screen_width_ * 8U / 100U);
@@ -128,10 +128,10 @@ unsigned TouchInput::hit_test(int raw_x, int raw_y) const {
     if (std::abs(y - menu_y) <= menu_half_height) {
         if (std::abs(x - static_cast<int>(screen_width_ * 43U / 100U)) <=
             menu_half_width)
-            return SELECT;
+            return CORE_BUTTON_SELECT;
         if (std::abs(x - static_cast<int>(screen_width_ * 60U / 100U)) <=
             menu_half_width)
-            return START;
+            return CORE_BUTTON_START;
     }
     return 0U;
 }
@@ -154,20 +154,33 @@ UiAction TouchInput::ui_hit_test(int raw_x, int raw_y,
     if (screen == UI_SCREEN_MENU || screen == UI_SCREEN_MENU_DEVELOPER) {
         const int left = static_cast<int>(screen_width_ * 18U / 100U);
         const int right = static_cast<int>(screen_width_ * 82U / 100U);
-        const int half_height = static_cast<int>(screen_height_ * 4U / 100U);
+        const int half_height = static_cast<int>(screen_height_ * 3U / 100U);
         if (x < left || x > right)
             return UI_NONE;
-        const unsigned resume_y = screen == UI_SCREEN_MENU_DEVELOPER ? 34U : 40U;
-        const unsigned select_y = screen == UI_SCREEN_MENU_DEVELOPER ? 45U : 52U;
-        const unsigned exit_y = screen == UI_SCREEN_MENU_DEVELOPER ? 67U : 64U;
+        const bool developer = screen == UI_SCREEN_MENU_DEVELOPER;
+        const unsigned resume_y = developer ? 23U : 26U;
+        const unsigned save_y = developer ? 32U : 36U;
+        const unsigned load_y = developer ? 41U : 46U;
+        const unsigned reset_y = developer ? 50U : 56U;
+        const unsigned select_y = developer ? 59U : 66U;
+        const unsigned exit_y = 76U;
         if (std::abs(y - static_cast<int>(screen_height_ * resume_y / 100U)) <=
             half_height)
             return UI_RESUME_GAME;
+        if (std::abs(y - static_cast<int>(screen_height_ * save_y / 100U)) <=
+            half_height)
+            return UI_SAVE_STATE;
+        if (std::abs(y - static_cast<int>(screen_height_ * load_y / 100U)) <=
+            half_height)
+            return UI_LOAD_STATE;
+        if (std::abs(y - static_cast<int>(screen_height_ * reset_y / 100U)) <=
+            half_height)
+            return UI_RESET_GAME;
         if (std::abs(y - static_cast<int>(screen_height_ * select_y / 100U)) <=
             half_height)
             return UI_SELECT_GAME;
-        if (screen == UI_SCREEN_MENU_DEVELOPER &&
-            std::abs(y - static_cast<int>(screen_height_ * 56U / 100U)) <=
+        if (developer &&
+            std::abs(y - static_cast<int>(screen_height_ * 68U / 100U)) <=
             half_height)
             return UI_REFRESH_SETTINGS;
         if (std::abs(y - static_cast<int>(screen_height_ * exit_y / 100U)) <=
@@ -262,10 +275,12 @@ void TouchInput::update_buttons() {
         if (contacts_[slot].active)
             updated |= hit_test(contacts_[slot].x, contacts_[slot].y);
     }
-    if ((updated & (LEFT | RIGHT)) == (LEFT | RIGHT))
-        updated &= ~(LEFT | RIGHT);
-    if ((updated & (UP | DOWN)) == (UP | DOWN))
-        updated &= ~(UP | DOWN);
+    if ((updated & (CORE_BUTTON_LEFT | CORE_BUTTON_RIGHT)) ==
+        (CORE_BUTTON_LEFT | CORE_BUTTON_RIGHT))
+        updated &= ~(CORE_BUTTON_LEFT | CORE_BUTTON_RIGHT);
+    if ((updated & (CORE_BUTTON_UP | CORE_BUTTON_DOWN)) ==
+        (CORE_BUTTON_UP | CORE_BUTTON_DOWN))
+        updated &= ~(CORE_BUTTON_UP | CORE_BUTTON_DOWN);
 
     const unsigned last_queued = pending_states_.empty()
         ? physical_buttons_ : pending_states_.back();

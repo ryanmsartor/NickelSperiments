@@ -9,6 +9,8 @@ KOBOY_COMMON_OBJECTS := \
 	$(KOBOY_OBJ_DIR)/framebuffer_backend.o
 KOBOY_PLAYER_OBJECTS := \
 	$(KOBOY_OBJ_DIR)/koboy.o \
+	$(KOBOY_OBJ_DIR)/core_factory.o \
+	$(KOBOY_OBJ_DIR)/gambatte_core.o \
 	$(KOBOY_COMMON_OBJECTS) \
 	$(KOBOY_OBJ_DIR)/touch_input.o
 KOBOY_SUPERVISOR_OBJECTS := \

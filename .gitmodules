@@ -7,3 +7,6 @@
 [submodule "deps/gambatte"]
 	path = deps/gambatte
 	url = https://github.com/libretro/gambatte-libretro.git
+[submodule "deps/armgba"]
+	path = deps/armgba
+	url = https://github.com/MagnominusGit/armGBA.git

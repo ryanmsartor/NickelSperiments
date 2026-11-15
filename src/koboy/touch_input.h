@@ -3,7 +3,7 @@
 #ifndef NICKELSPERIMENTS_TOUCH_INPUT_H
 #define NICKELSPERIMENTS_TOUCH_INPUT_H
 
-#include <gambatte.h>
+#include "emulator_core.h"
 #include <linux/input.h>
 #include <deque>
 
@@ -13,6 +13,9 @@ enum UiAction {
     UI_NONE,
     UI_OPEN_MENU,
     UI_RESUME_GAME,
+    UI_SAVE_STATE,
+    UI_LOAD_STATE,
+    UI_RESET_GAME,
     UI_SELECT_GAME,
     UI_REFRESH_SETTINGS,
     UI_EXIT_TO_NICKEL,
@@ -41,7 +44,7 @@ enum UiScreen {
     UI_SCREEN_GAME_LIST
 };
 
-class TouchInput : public gambatte::InputGetter {
+class TouchInput {
 public:
     TouchInput(unsigned screen_width, unsigned screen_height);
     ~TouchInput();
@@ -51,7 +54,7 @@ public:
     void suppress_input_until_release();
     void wait_for_release();
     UiAction take_ui_action(UiScreen screen);
-    unsigned operator()() { return buttons_; }
+    unsigned buttons() const { return buttons_; }
 
     int x_min() const { return x_info_.minimum; }
     int x_max() const { return x_info_.maximum; }

@@ -3,11 +3,10 @@
  * SPDX-License-Identifier: GPL-2.0-only
  */
 
+#include "core_factory.h"
 #include "frame_scaler.h"
 #include "framebuffer_backend.h"
 #include "touch_input.h"
-
-#include <gambatte.h>
 
 #include <algorithm>
 #include <cerrno>
@@ -31,12 +30,10 @@
 
 namespace {
 
-const unsigned kSamplesPerCall = 2064U;
-const unsigned kSoundBufferSamples = kSamplesPerCall + 2064U;
-const double kGameBoyFrameRate = 59.727500569606;
 const char *const kKoBoyRoot = "/mnt/onboard/KoBoy";
 const char *const kKoBoyRomDirectory = "/mnt/onboard/KoBoy/Roms";
 const char *const kKoBoyStateDirectory = "/mnt/onboard/KoBoy/States";
+const char *const kKoBoySaveDirectory = "/mnt/onboard/KoBoy/Saves";
 const char *const kDeveloperFlag = "/mnt/onboard/KoBoy/developer";
 const char *const kDiagnosticsFlag = "/mnt/onboard/KoBoy/diagnostics";
 const char *const kNoGameplayRefreshFlag =
@@ -69,9 +66,9 @@ struct RefreshSettings {
     unsigned fast_tenths_hz;
     unsigned slow_tenths_hz;
     RefreshSettings()
-        : fast_type(REFRESH_A2), slow_type(REFRESH_GC16_PARTIAL),
-          slowest_type(REFRESH_GC16_PARTIAL), fast_tenths_hz(80U),
-          slow_tenths_hz(10U) {}
+        : fast_type(REFRESH_A2), slow_type(REFRESH_DU),
+          slowest_type(REFRESH_GC16_FULL), fast_tenths_hz(105U),
+          slow_tenths_hz(20U) {}
 };
 
 void handle_signal(int) { interrupted = 1; }
@@ -666,7 +663,7 @@ std::string rom_title(const std::string &path) {
     return title;
 }
 
-std::string state_path(const char *rom_path, unsigned slot) {
+std::string storage_name(const char *rom_path) {
     std::string name(rom_path);
     const std::string::size_type slash = name.rfind('/');
     if (slash != std::string::npos)
@@ -679,11 +676,21 @@ std::string state_path(const char *rom_path, unsigned slot) {
               character == '.' || character == '-' || character == '_'))
             name[index] = '_';
     }
-    return std::string(kKoBoyStateDirectory) + "/" + name + ".state" +
+    return name;
+}
+
+std::string state_path(const char *rom_path, unsigned slot) {
+    return std::string(kKoBoyStateDirectory) + "/" +
+           storage_name(rom_path) + ".state" +
            static_cast<char>('0' + slot);
 }
 
-bool load_state(gambatte::GB &gb, const std::string &path) {
+std::string save_path(const char *rom_path) {
+    return std::string(kKoBoySaveDirectory) + "/" +
+           storage_name(rom_path) + ".sav";
+}
+
+bool load_state(koboy::EmulatorCore &core, const std::string &path) {
     std::ifstream input(path.c_str(), std::ios::binary | std::ios::ate);
     if (!input)
         return false;
@@ -693,22 +700,23 @@ bool load_state(gambatte::GB &gb, const std::string &path) {
     std::vector<unsigned char> state(static_cast<std::size_t>(end));
     input.seekg(0, std::ios::beg);
     input.read(reinterpret_cast<char *>(&state[0]), state.size());
-    if (!input || !gb.loadState(&state[0], state.size())) {
+    if (!input || !core.load_state(&state[0], state.size())) {
         std::cerr << "warning: rejected save state " << path << '\n';
         return false;
     }
     return true;
 }
 
-bool save_state(gambatte::GB &gb, const std::string &path) {
+bool save_state(koboy::EmulatorCore &core, const std::string &path) {
     if (!ensure_directory(kKoBoyRoot) ||
         !ensure_directory(kKoBoyStateDirectory))
         return false;
-    const std::size_t size = gb.stateSize();
+    const std::size_t size = core.state_size();
     if (!size)
         return false;
     std::vector<unsigned char> state(size);
-    gb.saveState(&state[0]);
+    if (!core.save_state(&state[0], state.size()))
+        return false;
     const std::string temporary = path + ".tmp";
     std::ofstream output(temporary.c_str(),
                          std::ios::binary | std::ios::trunc);
@@ -726,15 +734,54 @@ bool save_state(gambatte::GB &gb, const std::string &path) {
     return true;
 }
 
-void run_frame(gambatte::GB &gb,
-               std::vector<gambatte::video_pixel_t> &video,
-               std::vector<gambatte::uint_least32_t> &sound) {
-    for (;;) {
-        unsigned samples = kSamplesPerCall;
-        if (gb.runFor(&video[0], koboy::kGameBoyWidth, &sound[0],
-                      sound.size(), samples) >= 0)
-            return;
+bool load_sram(koboy::EmulatorCore &core, const std::string &path) {
+    const std::size_t size = core.save_ram_size();
+    void *const data = core.save_ram_data();
+    if (!size || !data)
+        return false;
+    std::ifstream input(path.c_str(), std::ios::binary | std::ios::ate);
+    if (!input)
+        return false;
+    const std::ifstream::pos_type end = input.tellg();
+    if (end != static_cast<std::ifstream::pos_type>(size)) {
+        std::cerr << "warning: rejected save RAM with unexpected size "
+                  << path << '\n';
+        return false;
     }
+    std::vector<unsigned char> saved(size);
+    input.seekg(0, std::ios::beg);
+    input.read(reinterpret_cast<char *>(&saved[0]), saved.size());
+    if (!input) {
+        std::cerr << "warning: cannot read complete save RAM " << path << '\n';
+        return false;
+    }
+    std::memcpy(data, &saved[0], size);
+    return true;
+}
+
+bool save_sram(koboy::EmulatorCore &core, const std::string &path) {
+    const std::size_t size = core.save_ram_size();
+    void *const data = core.save_ram_data();
+    if (!size || !data)
+        return true;
+    if (!ensure_directory(kKoBoyRoot) ||
+        !ensure_directory(kKoBoySaveDirectory))
+        return false;
+    const std::string temporary = path + ".tmp";
+    std::ofstream output(temporary.c_str(),
+                         std::ios::binary | std::ios::trunc);
+    output.write(reinterpret_cast<const char *>(data), size);
+    output.close();
+    if (!output) {
+        std::cerr << "warning: cannot write save RAM " << temporary << '\n';
+        return false;
+    }
+    if (rename(temporary.c_str(), path.c_str()) != 0) {
+        std::cerr << "warning: cannot install save RAM " << path << ": "
+                  << std::strerror(errno) << '\n';
+        return false;
+    }
+    return true;
 }
 
 struct Options {
@@ -970,13 +1017,22 @@ void draw_menu(std::vector<uint32_t> &screen, unsigned width,
 
     const int left = width * 18 / 100;
     const int right = width * 82 / 100;
-    const int half_height = height * 4 / 100;
-    const int resume_y = height * (developer ? 34 : 40) / 100;
-    const int select_y = height * (developer ? 45 : 52) / 100;
-    const int settings_y = height * 56 / 100;
-    const int exit_y = height * (developer ? 67 : 64) / 100;
+    const int half_height = height * 3 / 100;
+    const int resume_y = height * (developer ? 23 : 26) / 100;
+    const int save_y = height * (developer ? 32 : 36) / 100;
+    const int load_y = height * (developer ? 41 : 46) / 100;
+    const int reset_y = height * (developer ? 50 : 56) / 100;
+    const int select_y = height * (developer ? 59 : 66) / 100;
+    const int settings_y = height * 68 / 100;
+    const int exit_y = height * 76 / 100;
     fill_rectangle(screen, width, height, left, resume_y - half_height,
                    right, resume_y + half_height, dark);
+    fill_rectangle(screen, width, height, left, save_y - half_height,
+                   right, save_y + half_height, dark);
+    fill_rectangle(screen, width, height, left, load_y - half_height,
+                   right, load_y + half_height, dark);
+    fill_rectangle(screen, width, height, left, reset_y - half_height,
+                   right, reset_y + half_height, dark);
     fill_rectangle(screen, width, height, left, select_y - half_height,
                    right, select_y + half_height, dark);
     if (developer)
@@ -986,6 +1042,12 @@ void draw_menu(std::vector<uint32_t> &screen, unsigned width,
                    right, exit_y + half_height, dark);
     draw_label(screen, width, height, width / 2, resume_y,
                "RESUME GAME", 6, light);
+    draw_label(screen, width, height, width / 2, save_y,
+               "SAVE STATE", 6, light);
+    draw_label(screen, width, height, width / 2, load_y,
+               "LOAD STATE", 6, light);
+    draw_label(screen, width, height, width / 2, reset_y,
+               "RESET GAME", 6, light);
     draw_label(screen, width, height, width / 2, select_y,
                "SELECT GAME", 6, light);
     if (developer)
@@ -1246,7 +1308,9 @@ int main(int argc, char **argv) {
         load_refresh_settings(refresh_settings);
         if (options.rate_set)
             refresh_settings.fast_tenths_hz = options.rate * 10U;
-        gambatte::GB gb;
+        std::unique_ptr<koboy::EmulatorCore> selected_core =
+            koboy::create_default_core();
+        koboy::EmulatorCore &core = *selected_core;
 
         std::signal(SIGINT, handle_signal);
         std::signal(SIGTERM, handle_signal);
@@ -1259,15 +1323,12 @@ int main(int argc, char **argv) {
             input.open_device();
         koboy::FramebufferBackend framebuffer;
         framebuffer.open_device("/dev/fb0");
-        framebuffer.configure_viewport(koboy::kGameBoyWidth * options.scale,
-                                       koboy::kGameBoyHeight * options.scale);
+        framebuffer.configure_viewport(core.video_width() * options.scale,
+                                       core.video_height() * options.scale);
         if (!supervised)
             framebuffer.save_screen();
 
-        std::vector<gambatte::video_pixel_t> video(
-            koboy::kGameBoyWidth * koboy::kGameBoyHeight);
-        std::vector<gambatte::uint_least32_t> sound(kSoundBufferSamples);
-        std::vector<uint32_t> rgb(video.size());
+        std::vector<uint32_t> rgb;
         std::vector<uint32_t> scaled;
         uint32_t marker = 1U;
         const unsigned screen_width = framebuffer.variable_info().xres;
@@ -1291,11 +1352,15 @@ int main(int argc, char **argv) {
                 framebuffer.refresh_screen_gc16(marker++, true);
         }
         std::vector<unsigned char> rom = read_file(rom_path.c_str());
-        if (gb.load(&rom[0], rom.size()) != 0)
-            throw std::runtime_error("Gambatte rejected the ROM image");
-        gb.setInputGetter(&input);
+        std::string core_error;
+        if (!core.load_rom(rom_path, rom, core_error))
+            throw std::runtime_error(core_error);
         std::string automatic_state = state_path(rom_path.c_str(), 0U);
-        bool automatic_state_loaded = load_state(gb, automatic_state);
+        std::string manual_state = state_path(rom_path.c_str(), 1U);
+        std::string sram_path = save_path(rom_path.c_str());
+        bool sram_loaded = load_sram(core, sram_path);
+        bool sram_saved = false;
+        bool automatic_state_loaded = load_state(core, automatic_state);
         bool automatic_state_saved = false;
 
         draw_controls(screen, screen_width, screen_height);
@@ -1340,7 +1405,7 @@ int main(int argc, char **argv) {
 
         while (!interrupted &&
                (!options.seconds || monotonic_seconds() < deadline)) {
-            emulation_accumulator += kGameBoyFrameRate * 10.0 /
+            emulation_accumulator += core.frame_rate() * 10.0 /
                                     refresh_settings.fast_tenths_hz;
             unsigned frames_this_update = static_cast<unsigned>(emulation_accumulator);
             emulation_accumulator -= frames_this_update;
@@ -1383,8 +1448,25 @@ int main(int argc, char **argv) {
                     }
                     if (interrupted)
                         break;
+                    if (menu_action == koboy::UI_SAVE_STATE) {
+                        if (!save_state(core, manual_state))
+                            std::cerr << "warning: manual save state failed\n";
+                        sram_saved = save_sram(core, sram_path);
+                    } else if (menu_action == koboy::UI_LOAD_STATE) {
+                        if (load_state(core, manual_state)) {
+                            scaled.clear();
+                            force_first_frame_gc16 = true;
+                        } else {
+                            std::cerr << "warning: no usable manual save state\n";
+                        }
+                    } else if (menu_action == koboy::UI_RESET_GAME) {
+                        core.reset();
+                        scaled.clear();
+                        force_first_frame_gc16 = true;
+                    }
                     if (menu_action == koboy::UI_SELECT_GAME) {
-                        automatic_state_saved = save_state(gb, automatic_state);
+                        automatic_state_saved = save_state(core, automatic_state);
+                        sram_saved = save_sram(core, sram_path);
                         const std::string selected = choose_game(
                             framebuffer, input, screen, marker, true);
                         if (!selected.empty()) {
@@ -1394,16 +1476,18 @@ int main(int argc, char **argv) {
                             framebuffer.refresh_screen_gc16(marker++, true);
                             std::vector<unsigned char> selected_rom =
                                 read_file(selected.c_str());
-                            if (gb.load(&selected_rom[0], selected_rom.size()) != 0)
-                                throw std::runtime_error(
-                                    "Gambatte rejected the selected ROM image");
+                            if (!core.load_rom(selected, selected_rom,
+                                               core_error))
+                                throw std::runtime_error(core_error);
                             rom.swap(selected_rom);
                             rom_path = selected;
                             automatic_state = state_path(rom_path.c_str(), 0U);
+                            manual_state = state_path(rom_path.c_str(), 1U);
+                            sram_path = save_path(rom_path.c_str());
+                            sram_loaded = load_sram(core, sram_path);
                             automatic_state_loaded =
-                                load_state(gb, automatic_state);
+                                load_state(core, automatic_state);
                             automatic_state_saved = false;
-                            gb.setInputGetter(&input);
                             scaled.clear();
                             force_first_frame_gc16 = true;
                         }
@@ -1491,20 +1575,18 @@ int main(int argc, char **argv) {
                         ? resumed_at + slow_interval : 0.0;
                     continue;
                 }
-                const unsigned current_buttons = input();
+                const unsigned current_buttons = input.buttons();
                 if (current_buttons != last_buttons) {
                     ++input_transitions;
                     last_buttons = current_buttons;
                 }
                 if (current_buttons != 0U)
                     ++input_nonzero_polls;
-                run_frame(gb, video, sound);
+                core.run_frame(current_buttons, rgb);
                 ++emulated_frames;
             }
             if (exit_to_nickel || interrupted)
                 break;
-            for (std::size_t i = 0; i < video.size(); ++i)
-                rgb[i] = static_cast<uint32_t>(video[i]);
             koboy::scale_rgb32_grayscale(rgb, options.scale, scaled);
             framebuffer.draw(scaled);
 
@@ -1585,7 +1667,8 @@ int main(int argc, char **argv) {
         }
 
         const double elapsed = monotonic_seconds() - started;
-        automatic_state_saved = save_state(gb, automatic_state);
+        automatic_state_saved = save_state(core, automatic_state);
+        sram_saved = save_sram(core, sram_path);
         if (exit_to_nickel)
             input.wait_for_release();
         if (!supervised)
@@ -1596,6 +1679,10 @@ int main(int argc, char **argv) {
                   << (automatic_state_loaded ? "yes" : "no") << '\n';
         std::cout << "state0_saved="
                   << (automatic_state_saved ? "yes" : "no") << '\n';
+        std::cout << "core=" << core.name() << '\n';
+        std::cout << "sram_bytes=" << core.save_ram_size() << '\n';
+        std::cout << "sram_loaded=" << (sram_loaded ? "yes" : "no") << '\n';
+        std::cout << "sram_saved=" << (sram_saved ? "yes" : "no") << '\n';
         std::cout << "rom_bytes=" << rom.size() << '\n';
         std::cout << "elapsed_seconds=" << elapsed << '\n';
         std::cout << "emulated_frames=" << emulated_frames << '\n';

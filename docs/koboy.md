@@ -16,7 +16,8 @@ Install both ARM binaries together:
 
 ROMs belong in `/mnt/onboard/KoBoy/Roms/`. Ko Boy scans that directory for
 case-insensitive `.gb` and `.gbc` extensions. Automatic save states are kept
-in `/mnt/onboard/KoBoy/States/` and keyed by ROM filename.
+in `/mnt/onboard/KoBoy/States/` and keyed by ROM filename. Battery-backed game
+saves are kept as `.sav` files in `/mnt/onboard/KoBoy/Saves/`.
 
 Run the supervisor without a ROM to open the game browser:
 
@@ -43,21 +44,39 @@ directory as configuration.
 ## Player flow
 
 The startup browser shows seven alphabetically sorted games per page. During
-play, the Menu button pauses emulation and offers Resume Game, Select Game,
-and Exit to Nickel. Selecting another game saves the current automatic state
-and clears the browser to a loading screen before loading the selected game's
-state. The first actual game frame is then presented with waited full GC16 so
-the loading text cannot bleed into the title screen. Exit also saves the
-current state before the supervisor restores the original framebuffer and
-returns control to Nickel. During play, Ko Boy performs a
-waited, non-flashing partial GC16 cleanup every second by default. This uses
-GC16's higher-fidelity waveform without the disorienting inversion caused by
-the driver's full-update mode.
+play, the Menu button pauses emulation and offers Resume Game, Save State,
+Load State, Reset Game, Select Game, and Exit to Nickel. Reset Game restarts
+the emulated system without reading or writing any state files. The manual
+entries use each game's `state1` slot, independently of its automatic `state0`
+resume slot.
+Selecting another game saves the current automatic state and SRAM, then clears
+the browser to a loading screen before loading the selected game's saves. The
+first actual game frame is then presented with waited full GC16 so the loading
+text cannot bleed into the title screen. Manual Save State, game switching,
+and normal exit atomically flush battery-backed SRAM to the game's `.sav`
+file. Exit also saves the current automatic state before the supervisor
+restores the original framebuffer and returns control to Nickel.
 The default 6x integer scale produces a 960-by-864 game viewport on the Clara
 BW; `--scale 5` can be used when a smaller viewport is preferred.
 
 For the implementation history, device measurements, and remaining work, see
 the [Ko Boy port plan](koboy-port-plan.md).
+
+## Emulator core boundary
+
+Ko Boy's frontend depends on a small core-neutral interface for ROM loading,
+frame production, input, reset, save states, and battery-backed save RAM. The
+current `GambatteCore` adapter preserves the established GB/GBC behavior while
+keeping Gambatte types out of the display, touch, menu, and lifecycle code.
+The player obtains its backend through a factory, so backend construction is
+also outside the frontend.
+
+armGBA is pinned as the `deps/armgba` submodule at revision `e099bbf9`. It is
+not linked into the player yet. An initial `ArmGbaCore` adapter now implements
+the same interface through armGBA's libretro API, including dynamic GB/GBA
+video formats, input, reset, states, and save RAM. The adapter and armGBA's
+ARMv7/NEON/JIT core compile with NickelTC; the remaining libretro support
+sources must be built and linked before the new adapter can run on-device.
 
 ## Developer refresh settings
 
@@ -77,7 +96,8 @@ Tap a row to advance to its next value. Changes are written immediately to
 `/mnt/onboard/KoBoy/refresh.conf` and take effect when returning to the game.
 Removing the developer flag hides the menu on the next launch but preserves
 the selected configuration. Delete `refresh.conf` to restore the defaults:
-A2 at 8 Hz with partial GC16 at 1 Hz for both slow tiers.
+A2 at 10.5 Hz, DU at 2 Hz for the slow tier, and full-update GC16 for every
+fifth slow refresh.
 
 Settings updates are synchronized through `refresh.conf.tmp`, while the prior
 valid configuration is retained as `refresh.conf.bak`. At startup Ko Boy uses
@@ -216,17 +236,8 @@ size and region-expansion rules used by the scheduler.
 
 ## Deferred work
 
-- Implement the manual Save State and Load State menu entries. Keep these on
-  the existing per-game manual slot (`state1`), separate from the automatic
-  resume slot (`state0`).
-- Implement SRAM save support.
-- Evaluate armgba as an alternative emulator backend to Gambatte. In addition
-  to Game Boy compatibility and performance on the Kobo's ARMv7 CPU, compare
-  its licensing, integration surface, save-state behavior, and support for
-  other consoles that could be explored with the same Ko Boy frontend.
 - Implement the ability to load ROMs directly from ZIP archives.
 - Subfolder handling in the game library.
-- Implement reset game from menu.
 - Add (max) emulation speed setting.
 - Core options config, whether in-UI or just by editing a text file.
 - Bluetooth audio?
