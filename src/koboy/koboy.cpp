@@ -1529,8 +1529,6 @@ int main(int argc, char **argv) {
             input.open_device();
         koboy::FramebufferBackend framebuffer;
         framebuffer.open_device("/dev/fb0");
-        framebuffer.configure_viewport(core.video_width() * options.scale,
-                                       core.video_height() * options.scale);
         if (!supervised)
             framebuffer.save_screen();
 
@@ -1561,6 +1559,16 @@ int main(int argc, char **argv) {
         std::string core_error;
         if (!core.load_rom(rom_path, rom, core_error))
             throw std::runtime_error(core_error);
+        const unsigned horizontal_scale =
+            framebuffer.variable_info().xres / core.video_width();
+        const unsigned vertical_scale =
+            framebuffer.variable_info().yres / core.video_height();
+        unsigned effective_scale = std::min(
+            options.scale, std::min(horizontal_scale, vertical_scale));
+        if (effective_scale == 0U)
+            throw std::runtime_error("ROM video size does not fit the display");
+        framebuffer.configure_viewport(core.video_width() * effective_scale,
+                                       core.video_height() * effective_scale);
         std::string automatic_state = state_path(rom_path.c_str(), 0U);
         std::string manual_state = state_path(rom_path.c_str(), 1U);
         std::string sram_path = save_path(rom_path.c_str());
@@ -1574,7 +1582,7 @@ int main(int argc, char **argv) {
         if (!no_gameplay_refresh)
             framebuffer.refresh_screen_gc16(marker++, true);
 
-        std::cout << "scale=" << options.scale << '\n';
+        std::cout << "scale=" << effective_scale << '\n';
         std::cout << "touch_x_range=" << input.x_min() << ',' << input.x_max() << '\n';
         std::cout << "touch_y_range=" << input.y_min() << ',' << input.y_max() << '\n';
 
@@ -1685,6 +1693,20 @@ int main(int argc, char **argv) {
                             if (!core.load_rom(selected, selected_rom,
                                                core_error))
                                 throw std::runtime_error(core_error);
+                            const unsigned selected_horizontal_scale =
+                                screen_width / core.video_width();
+                            const unsigned selected_vertical_scale =
+                                screen_height / core.video_height();
+                            effective_scale = std::min(
+                                options.scale,
+                                std::min(selected_horizontal_scale,
+                                         selected_vertical_scale));
+                            if (effective_scale == 0U)
+                                throw std::runtime_error(
+                                    "ROM video size does not fit the display");
+                            framebuffer.configure_viewport(
+                                core.video_width() * effective_scale,
+                                core.video_height() * effective_scale);
                             rom.swap(selected_rom);
                             rom_path = selected;
                             automatic_state = state_path(rom_path.c_str(), 0U);
@@ -1793,7 +1815,7 @@ int main(int argc, char **argv) {
             }
             if (exit_to_nickel || interrupted)
                 break;
-            koboy::scale_rgb32_grayscale(rgb, options.scale, scaled);
+            koboy::scale_rgb32_grayscale(rgb, effective_scale, scaled);
             framebuffer.draw(scaled);
 
             const double now = monotonic_seconds();

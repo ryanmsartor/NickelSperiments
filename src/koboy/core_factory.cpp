@@ -4,12 +4,12 @@
  */
 
 #include "core_factory.h"
-#include "gambatte_core.h"
+#include "armgba_core.h"
 
 namespace koboy {
 
 std::unique_ptr<EmulatorCore> create_default_core() {
-    return std::unique_ptr<EmulatorCore>(new GambatteCore);
+    return std::unique_ptr<EmulatorCore>(new ArmGbaCore);
 }
 
 } // namespace koboy

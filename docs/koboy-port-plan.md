@@ -346,9 +346,9 @@ Battery-backed SRAM uses the same mirrored layout under
 `/mnt/onboard/KoBoy/Saves/`, and is flushed atomically on manual save, game
 switch, and normal exit.
 
-The frontend now reaches Gambatte through a core-neutral interface covering
+The frontend reaches its emulator through a core-neutral interface covering
 ROM loading, video frames, input, reset, state serialization, and save RAM.
-armGBA is pinned at revision `e099bbf9` in `deps/armgba`. Its initial libretro
+armGBA is pinned at revision `6deb8f84` in `deps/armgba`. Its libretro
 adapter covers video, input, reset, state serialization, and save RAM. Both the
 adapter and armGBA's ARMv7/NEON/JIT machine core compile with NickelTC. The
 libretro support layer also compiles except its optional CPU LCD-effects
@@ -356,11 +356,11 @@ source, which uses `__builtin_convertvector` newer than NickelTC GCC 4.9. Ko
 Boy already owns display processing, so a no-effects compatibility shim passes
 native frames through instead of modifying the pinned submodule. The embedded
 Gambatte and archive dependencies compile, and a standalone `armgba-probe`
-links successfully for ARM. Device tests are still required. The current
-Gambatte adapter remains selected through the core factory until the armGBA
-path passes those tests.
+links successfully for ARM. Ko Boy now selects armGBA through the core factory
+and links the complete backend in place of the standalone Gambatte objects.
+Device probe and player tests are still required.
 
-- Connect Gambatte video to the display backend.
+- Validate armGBA video for each supported system on the display backend.
 - Add touch D-pad, A, B, Start, Select, and Menu controls.
 - Use a freely distributable test ROM; do not bundle commercial ROMs.
 - Add pause, exit, reset, and save-state controls.

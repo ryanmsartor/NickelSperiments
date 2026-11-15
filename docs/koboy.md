@@ -74,14 +74,12 @@ the [Ko Boy port plan](koboy-port-plan.md).
 ## Emulator core boundary
 
 Ko Boy's frontend depends on a small core-neutral interface for ROM loading,
-frame production, input, reset, save states, and battery-backed save RAM. The
-current `GambatteCore` adapter preserves the established GB/GBC behavior while
-keeping Gambatte types out of the display, touch, menu, and lifecycle code.
-The player obtains its backend through a factory, so backend construction is
-also outside the frontend.
+frame production, input, reset, save states, and battery-backed save RAM. Core
+types stay out of the display, touch, menu, and lifecycle code, and the player
+obtains its backend through a factory.
 
-armGBA is pinned as the `deps/armgba` submodule at revision `e099bbf9`. It is
-not linked into the player yet. An initial `ArmGbaCore` adapter now implements
+armGBA is pinned as the `deps/armgba` submodule at revision `6deb8f84`. The
+`ArmGbaCore` adapter implements
 the same interface through armGBA's libretro API, including dynamic GB/GBA
 video formats, input, reset, states, and save RAM. The adapter and armGBA's
 ARMv7/NEON/JIT core compile with NickelTC; the remaining libretro support
@@ -90,8 +88,9 @@ newer compiler's `__builtin_convertvector`; Ko Boy does its own display
 processing, so `armgba_lcd_compat.c` supplies a no-effects pass-through layer
 rather than modifying the pinned dependency. The embedded Gambatte and archive
 dependencies now compile, and `make armgba-probe` links a standalone ARM test
-executable. An on-device probe is still required before the new adapter can be
-enabled in Ko Boy.
+executable. Ko Boy now links this complete backend and obtains it through the
+core factory. An on-device probe and player test remain required before this
+integration is ready for release.
 
 ## Developer refresh settings
 
