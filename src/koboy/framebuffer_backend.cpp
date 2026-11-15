@@ -17,7 +17,7 @@
 #include <time.h>
 #include <unistd.h>
 
-namespace gambatte_kobo {
+namespace koboy {
 namespace {
 
 double monotonic_seconds() {
@@ -275,4 +275,4 @@ void FramebufferBackend::close_device() {
     }
 }
 
-} // namespace gambatte_kobo
+} // namespace koboy

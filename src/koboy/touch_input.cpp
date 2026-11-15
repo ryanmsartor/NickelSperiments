@@ -14,7 +14,7 @@
 #include <sys/ioctl.h>
 #include <unistd.h>
 
-namespace gambatte_kobo {
+namespace koboy {
 namespace {
 
 bool inside_circle(int x, int y, int center_x, int center_y, int radius) {
@@ -28,7 +28,7 @@ bool inside_circle(int x, int y, int center_x, int center_y, int radius) {
 TouchInput::TouchInput(unsigned screen_width, unsigned screen_height)
     : fd_(-1), screen_width_(screen_width), screen_height_(screen_height),
       current_slot_(0U), physical_buttons_(0U), buttons_(0U),
-      ui_touch_active_(false) {
+      ui_touch_active_(false), suppress_gameplay_until_release_(false) {
     std::memset(&x_info_, 0, sizeof(x_info_));
     std::memset(&y_info_, 0, sizeof(y_info_));
     std::memset(contacts_, 0, sizeof(contacts_));
@@ -245,6 +245,18 @@ void TouchInput::handle(const input_event &event) {
 }
 
 void TouchInput::update_buttons() {
+    bool touching = false;
+    for (unsigned slot = 0; slot < 16U; ++slot)
+        touching = touching || contacts_[slot].active;
+    if (suppress_gameplay_until_release_) {
+        physical_buttons_ = 0U;
+        buttons_ = 0U;
+        pending_states_.clear();
+        if (!touching)
+            suppress_gameplay_until_release_ = false;
+        return;
+    }
+
     unsigned updated = 0U;
     for (unsigned slot = 0; slot < 16U; ++slot) {
         if (contacts_[slot].active)
@@ -294,14 +306,31 @@ void TouchInput::advance_frame() {
     }
 }
 
-void TouchInput::suppress_ui_input_until_release() {
+void TouchInput::suppress_input_until_release() {
     poll();
-    ui_touch_active_ = false;
+    physical_buttons_ = 0U;
+    buttons_ = 0U;
+    pending_states_.clear();
+    bool touching = false;
     for (unsigned slot = 0; slot < 16U; ++slot)
-        if (contacts_[slot].active) {
-            ui_touch_active_ = true;
-            break;
-        }
+        touching = touching || contacts_[slot].active;
+    suppress_gameplay_until_release_ = touching;
+    ui_touch_active_ = touching;
+}
+
+void TouchInput::wait_for_release() {
+    suppress_input_until_release();
+    while (ui_touch_active_) {
+        usleep(10000);
+        poll();
+        ui_touch_active_ = false;
+        for (unsigned slot = 0; slot < 16U; ++slot)
+            if (contacts_[slot].active) {
+                ui_touch_active_ = true;
+                break;
+            }
+    }
+    suppress_input_until_release();
 }
 
 UiAction TouchInput::take_ui_action(UiScreen screen) {
@@ -321,4 +350,4 @@ UiAction TouchInput::take_ui_action(UiScreen screen) {
     return action;
 }
 
-} // namespace gambatte_kobo
+} // namespace koboy

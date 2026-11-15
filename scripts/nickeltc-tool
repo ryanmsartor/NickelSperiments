@@ -1,0 +1,14 @@
+#!/bin/sh
+set -eu
+
+workspace=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+toolchain="$workspace/.toolchains/nickeltc-root/tc/arm-nickel-linux-gnueabihf/bin"
+
+if [ "$#" -lt 1 ]; then
+    echo "usage: $0 TOOL [ARG ...]" >&2
+    exit 2
+fi
+
+tool=$1
+shift
+exec "$workspace/scripts/nickeltc-exec" "$toolchain/$tool" "$@"

@@ -7,7 +7,7 @@
 #include <linux/input.h>
 #include <deque>
 
-namespace gambatte_kobo {
+namespace koboy {
 
 enum UiAction {
     UI_NONE,
@@ -48,7 +48,8 @@ public:
 
     void open_device();
     void advance_frame();
-    void suppress_ui_input_until_release();
+    void suppress_input_until_release();
+    void wait_for_release();
     UiAction take_ui_action(UiScreen screen);
     unsigned operator()() { return buttons_; }
 
@@ -85,9 +86,10 @@ private:
     unsigned physical_buttons_;
     unsigned buttons_;
     bool ui_touch_active_;
+    bool suppress_gameplay_until_release_;
     std::deque<unsigned> pending_states_;
 };
 
-} // namespace gambatte_kobo
+} // namespace koboy
 
 #endif

@@ -1,0 +1,48 @@
+name: Build Ko Boy
+
+on:
+  push:
+  pull_request:
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  koboy:
+    name: Ko Boy ARMv7 binaries
+    runs-on: ubuntu-latest
+    container: ghcr.io/pgaskin/nickeltc:1.0
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Initialize Ko Boy dependencies
+        run: git submodule update --init deps/gambatte deps/NickelHook
+
+      - name: Add NickelTC cross-toolchain to PATH
+        run: echo "/tc/arm-nickel-linux-gnueabihf/bin" >> "$GITHUB_PATH"
+
+      - name: Build Ko Boy and diagnostics
+        run: make koboy koboy-supervisor koboy-display-test koboy-framebuffer-isolation koboy-lifecycle
+
+      - name: Verify ARMv7 outputs
+        run: |
+          file build/koboy | grep -q 'ELF 32-bit.*ARM'
+          file build/koboy-supervisor | grep -q 'ELF 32-bit.*ARM'
+          file build/koboy-display-test | grep -q 'ELF 32-bit.*ARM'
+          file build/koboy-framebuffer-isolation | grep -q 'ELF 32-bit.*ARM'
+          file libkoboylifecycle.so | grep -q 'ELF 32-bit.*ARM.*shared object'
+
+      - name: Upload Ko Boy binaries
+        uses: actions/upload-artifact@v4
+        with:
+          name: Ko-Boy-ARMv7
+          path: |
+            build/koboy
+            build/koboy-supervisor
+            build/koboy-display-test
+            build/koboy-framebuffer-isolation
+            libkoboylifecycle.so
+          if-no-files-found: error

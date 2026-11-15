@@ -39,7 +39,7 @@ std::string player_path() {
     const std::string::size_type slash = path.rfind('/');
     if (slash == std::string::npos)
         throw std::runtime_error("supervisor path has no directory");
-    return path.substr(0, slash + 1U) + "kobo-gambatte-display";
+    return path.substr(0, slash + 1U) + "koboy";
 }
 
 int child_exit_code(int status) {
@@ -55,7 +55,7 @@ int child_exit_code(int status) {
 int main(int argc, char **argv) {
     try {
         const std::string player = player_path();
-        gambatte_kobo::FramebufferBackend framebuffer;
+        koboy::FramebufferBackend framebuffer;
 
         framebuffer.open_device("/dev/fb0");
         framebuffer.save_screen();
@@ -69,7 +69,7 @@ int main(int argc, char **argv) {
             throw std::runtime_error(std::string("fork failed: ") +
                                      std::strerror(errno));
         if (forked == 0) {
-            if (setenv("GAMBATTE_SUPERVISED", "1", 1) != 0)
+            if (setenv("KOBOY_SUPERVISED", "1", 1) != 0)
                 _exit(126);
             std::vector<char *> arguments;
             arguments.push_back(const_cast<char *>(player.c_str()));

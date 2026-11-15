@@ -2,16 +2,16 @@
 
 Ko Boy is the experimental Kobo Game Boy and Game Boy Color frontend in this
 repository. It is currently deployed as two adjacent executables: the player
-and a supervisor which owns Nickel suspension, framebuffer backup, crash
-recovery, and final restoration.
+and a supervisor which owns framebuffer backup, crash recovery, and final
+restoration. Nickel remains running while Ko Boy exclusively owns touch input.
 
 ## Device layout
 
 Install both ARM binaries together:
 
 ```text
-/mnt/onboard/.adds/koboy/kobo-gambatte-display
-/mnt/onboard/.adds/koboy/kobo-gambatte-supervisor
+/mnt/onboard/.adds/koboy/koboy
+/mnt/onboard/.adds/koboy/koboy-supervisor
 ```
 
 ROMs belong in `/mnt/onboard/KoBoy/Roms/`. Ko Boy scans that directory for
@@ -21,7 +21,7 @@ in `/mnt/onboard/KoBoy/States/` and keyed by ROM filename.
 Run the supervisor without a ROM to open the game browser:
 
 ```sh
-/mnt/onboard/.adds/koboy/kobo-gambatte-supervisor
+/mnt/onboard/.adds/koboy/koboy-supervisor
 ```
 
 Passing a ROM path bypasses the startup browser for development and testing.
@@ -33,7 +33,7 @@ documented in [Local Kobo toolchain](local-toolchain.md).
 Add this entry to `/mnt/onboard/.adds/nm/config`:
 
 ```text
-menu_item :main :Ko Boy :cmd_spawn :quiet:exec /mnt/onboard/.adds/koboy/kobo-gambatte-supervisor >>/mnt/onboard/.adds/koboy/koboy.log 2>&1
+menu_item :main :Ko Boy :cmd_spawn :quiet:exec /mnt/onboard/.adds/koboy/koboy-supervisor >>/mnt/onboard/.adds/koboy/koboy.log 2>&1
 ```
 
 NickelMenu monitors its configuration directory and reloads changes. Keep
@@ -47,8 +47,9 @@ play, the Menu button pauses emulation and offers Resume Game, Select Game,
 and Exit to Nickel. Selecting another game saves the current automatic state
 and clears the browser to a loading screen before loading the selected game's
 state. The first actual game frame is then presented with waited full GC16 so
-the loading text cannot bleed into the title screen. Exit also saves the current state before the supervisor restores the
-original framebuffer and resumes Nickel. During play, Ko Boy performs a
+the loading text cannot bleed into the title screen. Exit also saves the
+current state before the supervisor restores the original framebuffer and
+returns control to Nickel. During play, Ko Boy performs a
 waited, non-flashing partial GC16 cleanup every second by default. This uses
 GC16's higher-fidelity waveform without the disorienting inversion caused by
 the driver's full-update mode.
@@ -56,7 +57,7 @@ The default 6x integer scale produces a 960-by-864 game viewport on the Clara
 BW; `--scale 5` can be used when a smaller viewport is preferred.
 
 For the implementation history, device measurements, and remaining work, see
-the [Ko Boy port plan](gambatte-kobo-port-plan.md).
+the [Ko Boy port plan](koboy-port-plan.md).
 
 ## Developer refresh settings
 
@@ -96,14 +97,33 @@ available without adding gameplay logging. Release-style operation without the
 diagnostics flag avoids the additional VFAT writes, log growth, sysfs reads,
 and diagnostic timing changes.
 
-The menu itself uses waited, full-screen partial GC16 updates; changing a
-setting never applies the selected gameplay waveform inside the menu. Input
-events accumulated during an update are drained, and a new action requires a
-touch release followed by a fresh press. With diagnostics enabled, each menu
-update writes `begin` and `end` records, including its marker and elapsed time,
-to `refresh-active.log`. If a wait lasts at least 4.5 seconds—close to
-HWTCON's five-second timeout—Ko Boy closes the refresh settings instead of
-submitting another menu update.
+Entering and leaving the menu uses waited, full-screen full-update GC16 so the
+game and menu do not bleed into one another. Redraws within Refresh Settings
+use waited, full-screen partial GC16 and never apply the selected gameplay
+waveform inside the menu. Input accumulated during an update is drained, and
+all gameplay and UI actions remain blocked until every existing contact has
+been released. Exit to Nickel likewise waits for release before giving Nickel
+the touchscreen. With diagnostics enabled, each menu update writes `begin` and
+`end` records, including its marker and elapsed time, to `refresh-active.log`.
+If a wait lasts at least 4.5 seconds—close to HWTCON's five-second timeout—Ko
+Boy closes the refresh settings instead of submitting another menu update.
+
+Ko Boy leaves Nickel responsible for interpreting the sleep cover and power
+button and for performing system power management. The companion
+`libkoboylifecycle.so` NickelHook plugin observes Nickel's actual
+`aboutToSleep` and `resumedFromSleep` lifecycle transitions and signals the
+active player through `/tmp/koboy.pid`. A sleep transition pauses emulation
+immediately. After Nickel finishes waking, Ko Boy redraws the complete game
+viewport and controller panel and presents the whole screen with full-update
+GC16 before emulation continues. The sleep interval does not consume a
+configured timed test run or cause refresh catch-up bursts.
+
+Install the lifecycle bridge at
+`/usr/local/Kobo/imageformats/libkoboylifecycle.so` and restart the Kobo so
+Nickel loads it. It is intentionally separate from the player process and is a
+no-op whenever `/tmp/koboy.pid` is absent. Creating
+`/mnt/onboard/.adds/koboy/uninstall-lifecycle-hook` requests removal through
+NickelHook's failsafe mechanism.
 
 Before opening any menu, Ko Boy waits for the most recently submitted gameplay
 update to finish. Touches accumulated while draining that update are discarded,
@@ -161,3 +181,59 @@ Ko Boy leaves Nickel running. It exclusively grabs the touchscreen while active,
 saves the framebuffer before drawing, and restores it before returning to
 Nickel. Stopping Nickel is intentionally avoided: device testing showed that a
 `SIGSTOP` lasting roughly one watchdog interval can reboot the Kobo.
+
+## Proposed targeted cleanup refreshes
+
+This proposal is deferred for a future implementation pass. The goal is to
+reduce the area affected by slow and slowest gameplay refreshes without
+allowing ghosting to accumulate indefinitely.
+
+The framebuffer cannot reveal which physical e-ink pixels still retain a
+visible prior image; it contains only the image Ko Boy intended to display.
+Instead, Ko Boy can estimate a per-region "ghosting debt" from its frame
+history. Divide the scaled game viewport into tiles and increase each tile's
+debt according to the number and magnitude of pixel changes, repeated dark-to-
+light transitions, time since its last cleanup, and the waveform used for that
+cleanup. Stronger waveforms should reduce more debt than weaker ones.
+
+When a slow refresh becomes due, select the highest-debt neighboring tiles and
+combine them into a rectangular HWTCON update. HWTCON accepts rectangles rather
+than arbitrary sets of pixels, so selection should balance covering high-debt
+tiles against refreshing unchanged area. A slowest refresh can target a larger
+high-debt region or advance through a rolling sweep of the viewport.
+
+Initial implementation should retain an occasional full-viewport slowest
+refresh as a safety net. Its interval can be increased only after device tests
+show that targeted refreshes do not permit artifacts to accumulate over long
+sessions. Developer diagnostics should record the selected rectangle, its debt,
+and the waveform so the heuristic can be tuned from observed results.
+
+Before implementing debt tracking, run a visual device test with progressively
+smaller rectangular GL16 and GC16 updates. Determine the controller's practical
+minimum dimensions and alignment requirements, and look for edge artifacts or
+waveform spill beyond the requested rectangle. Those results should set the tile
+size and region-expansion rules used by the scheduler.
+
+## Deferred work
+
+- Implement the manual Save State and Load State menu entries. Keep these on
+  the existing per-game manual slot (`state1`), separate from the automatic
+  resume slot (`state0`).
+- Implement SRAM save support.
+- Evaluate armgba as an alternative emulator backend to Gambatte. In addition
+  to Game Boy compatibility and performance on the Kobo's ARMv7 CPU, compare
+  its licensing, integration surface, save-state behavior, and support for
+  other consoles that could be explored with the same Ko Boy frontend.
+- Implement the ability to load ROMs directly from ZIP archives.
+- Subfolder handling in the game library.
+- Implement reset game from menu.
+- Add (max) emulation speed setting.
+- Core options config, whether in-UI or just by editing a text file.
+- Bluetooth audio?
+- Bluetooth controllers?
+- Can Ko Boy become a libretro frontend and leverage existing cores for broader console support?
+- Update build scripts to call it by proper name, and output the full user-installable package.
+
+beyond koboy:
+- Whole LEGAL.md in the repo.
+- Special thanks section to upstream projects and contributors whose work has enabled or inspired Ko Boy.

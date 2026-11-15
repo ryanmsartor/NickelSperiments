@@ -45,7 +45,10 @@ const char *const kNoTouchFlag = "/mnt/onboard/KoBoy/isolate-no-touch";
 const char *const kRefreshConfig = "/mnt/onboard/KoBoy/refresh.conf";
 const char *const kRefreshBreadcrumb =
     "/mnt/onboard/KoBoy/refresh-active.log";
+const char *const kPidPath = "/tmp/koboy.pid";
 volatile sig_atomic_t interrupted = 0;
+volatile sig_atomic_t sleep_requested = 0;
+volatile sig_atomic_t wake_requested = 0;
 
 enum RefreshType {
     REFRESH_A2,
@@ -72,6 +75,37 @@ struct RefreshSettings {
 };
 
 void handle_signal(int) { interrupted = 1; }
+void handle_sleep_signal(int) { sleep_requested = 1; }
+void handle_wake_signal(int) { wake_requested = 1; }
+
+class PidFile {
+public:
+    PidFile() {
+        const int descriptor = open(kPidPath,
+                                    O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC,
+                                    0644);
+        if (descriptor < 0)
+            throw std::runtime_error(std::string("cannot create ") + kPidPath);
+        char text[32];
+        const int length = std::snprintf(text, sizeof(text), "%ld\n",
+                                         static_cast<long>(getpid()));
+        const ssize_t written = write(descriptor, text,
+                                      static_cast<size_t>(length));
+        const int saved_errno = errno;
+        close(descriptor);
+        if (written != length) {
+            unlink(kPidPath);
+            errno = saved_errno;
+            throw std::runtime_error(std::string("cannot write ") + kPidPath);
+        }
+    }
+
+    ~PidFile() { unlink(kPidPath); }
+
+private:
+    PidFile(const PidFile &);
+    PidFile &operator=(const PidFile &);
+};
 
 double monotonic_seconds() {
     timespec value;
@@ -697,7 +731,7 @@ void run_frame(gambatte::GB &gb,
                std::vector<gambatte::uint_least32_t> &sound) {
     for (;;) {
         unsigned samples = kSamplesPerCall;
-        if (gb.runFor(&video[0], gambatte_kobo::kGameBoyWidth, &sound[0],
+        if (gb.runFor(&video[0], koboy::kGameBoyWidth, &sound[0],
                       sound.size(), samples) >= 0)
             return;
     }
@@ -1064,8 +1098,8 @@ void draw_loading_screen(std::vector<uint32_t> &screen, unsigned width,
                title.c_str(), 3, dark);
 }
 
-std::string choose_game(gambatte_kobo::FramebufferBackend &framebuffer,
-                        gambatte_kobo::TouchInput &input,
+std::string choose_game(koboy::FramebufferBackend &framebuffer,
+                        koboy::TouchInput &input,
                         std::vector<uint32_t> &screen, uint32_t &marker,
                         bool allow_cancel) {
     const std::vector<std::string> roms = list_roms();
@@ -1079,27 +1113,28 @@ std::string choose_game(gambatte_kobo::FramebufferBackend &framebuffer,
                        allow_cancel);
         framebuffer.draw_screen(screen);
         framebuffer.refresh_screen_gc16(marker++, true);
+        input.suppress_input_until_release();
         for (;;) {
             if (interrupted)
                 return std::string();
-            const gambatte_kobo::UiAction action =
-                input.take_ui_action(gambatte_kobo::UI_SCREEN_GAME_LIST);
-            if (action == gambatte_kobo::UI_LIST_PREVIOUS) {
+            const koboy::UiAction action =
+                input.take_ui_action(koboy::UI_SCREEN_GAME_LIST);
+            if (action == koboy::UI_LIST_PREVIOUS) {
                 if (page > 0U)
                     --page;
                 break;
             }
-            if (action == gambatte_kobo::UI_LIST_NEXT) {
+            if (action == koboy::UI_LIST_NEXT) {
                 if (page + 1U < page_count)
                     ++page;
                 break;
             }
-            if (action == gambatte_kobo::UI_LIST_CANCEL)
+            if (action == koboy::UI_LIST_CANCEL)
                 return std::string();
-            if (action >= gambatte_kobo::UI_GAME_0 &&
-                action <= gambatte_kobo::UI_GAME_6) {
+            if (action >= koboy::UI_GAME_0 &&
+                action <= koboy::UI_GAME_6) {
                 const std::size_t row = static_cast<std::size_t>(
-                    action - gambatte_kobo::UI_GAME_0);
+                    action - koboy::UI_GAME_0);
                 const std::size_t index = page * page_size + row;
                 if (index < roms.size())
                     return roms[index];
@@ -1109,7 +1144,7 @@ std::string choose_game(gambatte_kobo::FramebufferBackend &framebuffer,
     }
 }
 
-double refresh_viewport(gambatte_kobo::FramebufferBackend &framebuffer,
+double refresh_viewport(koboy::FramebufferBackend &framebuffer,
                         RefreshType type, uint32_t marker,
                         bool wait_for_completion) {
     switch (type) {
@@ -1130,16 +1165,17 @@ double refresh_viewport(gambatte_kobo::FramebufferBackend &framebuffer,
 }
 
 bool refresh_menu_screen(
-        gambatte_kobo::FramebufferBackend &framebuffer,
-        gambatte_kobo::TouchInput &input, uint32_t marker,
-        bool diagnostics) {
+        koboy::FramebufferBackend &framebuffer,
+        koboy::TouchInput &input, uint32_t marker,
+        bool diagnostics, bool full_refresh) {
     if (diagnostics)
         record_menu_refresh("begin", marker, -1.0);
-    const double elapsed =
-        framebuffer.refresh_screen_gc16_partial(marker, true);
+    const double elapsed = full_refresh
+        ? framebuffer.refresh_screen_gc16(marker, true)
+        : framebuffer.refresh_screen_gc16_partial(marker, true);
     if (diagnostics)
         record_menu_refresh("end", marker, elapsed);
-    input.suppress_ui_input_until_release();
+    input.suppress_input_until_release();
     if (elapsed >= 4.5) {
         std::cerr << "warning: menu refresh approached HWTCON timeout ("
                   << elapsed << " seconds); closing refresh settings\n";
@@ -1149,15 +1185,15 @@ bool refresh_menu_screen(
 }
 
 bool drain_gameplay_refresh(
-        gambatte_kobo::FramebufferBackend &framebuffer,
-        gambatte_kobo::TouchInput &input, uint32_t marker,
+        koboy::FramebufferBackend &framebuffer,
+        koboy::TouchInput &input, uint32_t marker,
         bool diagnostics, double &elapsed) {
     if (diagnostics)
         record_menu_refresh("drain_begin", marker, -1.0);
     elapsed = framebuffer.wait_for_update(marker);
     if (diagnostics)
         record_menu_refresh("drain_end", marker, elapsed);
-    input.suppress_ui_input_until_release();
+    input.suppress_input_until_release();
     if (elapsed >= 4.5) {
         std::cerr << "warning: gameplay refresh drain approached HWTCON "
                   << "timeout; menu open cancelled\n";
@@ -1166,12 +1202,41 @@ bool drain_gameplay_refresh(
     return true;
 }
 
+double pause_for_sleep(
+        koboy::FramebufferBackend &framebuffer,
+        koboy::TouchInput &input,
+        const std::vector<uint32_t> &screen,
+        const std::vector<uint32_t> &scaled,
+        uint32_t marker, bool diagnostics) {
+    const double paused_at = monotonic_seconds();
+    if (diagnostics && sleep_requested)
+        record_simple_breadcrumb("sleep", marker);
+    input.suppress_input_until_release();
+    sleep_requested = 0;
+    while (!interrupted && !wake_requested)
+        usleep(20000);
+    if (interrupted)
+        return monotonic_seconds() - paused_at;
+    wake_requested = 0;
+
+    /* Let Nickel finish its wake transition before reclaiming the display. */
+    usleep(300000);
+    input.suppress_input_until_release();
+    framebuffer.draw_screen(screen);
+    if (!scaled.empty())
+        framebuffer.draw(scaled);
+    framebuffer.refresh_screen_gc16(marker, true);
+    if (diagnostics)
+        record_simple_breadcrumb("wake", marker);
+    return monotonic_seconds() - paused_at;
+}
+
 } // namespace
 
 int main(int argc, char **argv) {
     try {
         const Options options = parse_options(argc, argv);
-        const bool supervised = std::getenv("GAMBATTE_SUPERVISED") != 0;
+        const bool supervised = std::getenv("KOBOY_SUPERVISED") != 0;
         const bool developer = file_exists(kDeveloperFlag);
         const bool diagnostics = file_exists(kDiagnosticsFlag);
         const bool no_gameplay_refresh =
@@ -1186,19 +1251,21 @@ int main(int argc, char **argv) {
         std::signal(SIGINT, handle_signal);
         std::signal(SIGTERM, handle_signal);
         std::signal(SIGHUP, handle_signal);
+        std::signal(SIGUSR1, handle_sleep_signal);
+        std::signal(SIGUSR2, handle_wake_signal);
 
-        gambatte_kobo::TouchInput input(1072U, 1448U);
+        koboy::TouchInput input(1072U, 1448U);
         if (!no_touch)
             input.open_device();
-        gambatte_kobo::FramebufferBackend framebuffer;
+        koboy::FramebufferBackend framebuffer;
         framebuffer.open_device("/dev/fb0");
-        framebuffer.configure_viewport(gambatte_kobo::kGameBoyWidth * options.scale,
-                                       gambatte_kobo::kGameBoyHeight * options.scale);
+        framebuffer.configure_viewport(koboy::kGameBoyWidth * options.scale,
+                                       koboy::kGameBoyHeight * options.scale);
         if (!supervised)
             framebuffer.save_screen();
 
         std::vector<gambatte::video_pixel_t> video(
-            gambatte_kobo::kGameBoyWidth * gambatte_kobo::kGameBoyHeight);
+            koboy::kGameBoyWidth * koboy::kGameBoyHeight);
         std::vector<gambatte::uint_least32_t> sound(kSoundBufferSamples);
         std::vector<uint32_t> rgb(video.size());
         std::vector<uint32_t> scaled;
@@ -1207,6 +1274,7 @@ int main(int argc, char **argv) {
         const unsigned screen_height = framebuffer.variable_info().yres;
         std::vector<uint32_t> screen(
             static_cast<size_t>(screen_width) * screen_height, 0xFFFFFFFFU);
+        PidFile pid_file;
 
         std::string rom_path = options.rom;
         if (rom_path.empty())
@@ -1279,8 +1347,8 @@ int main(int argc, char **argv) {
             while (frames_this_update-- != 0U) {
                 input.advance_frame();
                 if (!no_gameplay_refresh &&
-                    input.take_ui_action(gambatte_kobo::UI_SCREEN_GAME) ==
-                    gambatte_kobo::UI_OPEN_MENU) {
+                    input.take_ui_action(koboy::UI_SCREEN_GAME) ==
+                    koboy::UI_OPEN_MENU) {
                     const double menu_started = monotonic_seconds();
                     if (diagnostics)
                         record_simple_breadcrumb("menu_press", marker - 1U);
@@ -1295,27 +1363,27 @@ int main(int argc, char **argv) {
                     last_wait_seconds = drain_elapsed;
                     draw_menu(screen, screen_width, screen_height, developer);
                     framebuffer.draw_screen(screen);
-                    gambatte_kobo::UiAction menu_action =
-                        gambatte_kobo::UI_NONE;
+                    koboy::UiAction menu_action =
+                        koboy::UI_NONE;
                     bool menu_refresh_healthy =
                         refresh_menu_screen(framebuffer, input, marker++,
-                                            diagnostics);
+                                            diagnostics, true);
                     if (!menu_refresh_healthy)
-                        menu_action = gambatte_kobo::UI_RESUME_GAME;
-                    while (!interrupted && menu_action == gambatte_kobo::UI_NONE) {
+                        menu_action = koboy::UI_RESUME_GAME;
+                    while (!interrupted && menu_action == koboy::UI_NONE) {
                         menu_action = input.take_ui_action(developer
-                            ? gambatte_kobo::UI_SCREEN_MENU_DEVELOPER
-                            : gambatte_kobo::UI_SCREEN_MENU);
-                        if (menu_action == gambatte_kobo::UI_NONE)
+                            ? koboy::UI_SCREEN_MENU_DEVELOPER
+                            : koboy::UI_SCREEN_MENU);
+                        if (menu_action == koboy::UI_NONE)
                             usleep(20000);
                     }
-                    if (menu_action == gambatte_kobo::UI_EXIT_TO_NICKEL) {
+                    if (menu_action == koboy::UI_EXIT_TO_NICKEL) {
                         exit_to_nickel = true;
                         break;
                     }
                     if (interrupted)
                         break;
-                    if (menu_action == gambatte_kobo::UI_SELECT_GAME) {
+                    if (menu_action == koboy::UI_SELECT_GAME) {
                         automatic_state_saved = save_state(gb, automatic_state);
                         const std::string selected = choose_game(
                             framebuffer, input, screen, marker, true);
@@ -1340,7 +1408,7 @@ int main(int argc, char **argv) {
                             force_first_frame_gc16 = true;
                         }
                     }
-                    if (menu_action == gambatte_kobo::UI_REFRESH_SETTINGS &&
+                    if (menu_action == koboy::UI_REFRESH_SETTINGS &&
                         developer) {
                         for (;;) {
                             draw_refresh_settings(screen, screen_width,
@@ -1348,36 +1416,37 @@ int main(int argc, char **argv) {
                                                   refresh_settings);
                             framebuffer.draw_screen(screen);
                             if (!refresh_menu_screen(framebuffer, input,
-                                                     marker++, diagnostics)) {
+                                                     marker++, diagnostics,
+                                                     false)) {
                                 menu_refresh_healthy = false;
                                 break;
                             }
-                            gambatte_kobo::UiAction setting_action =
-                                gambatte_kobo::UI_NONE;
+                            koboy::UiAction setting_action =
+                                koboy::UI_NONE;
                             while (!interrupted &&
-                                   setting_action == gambatte_kobo::UI_NONE) {
+                                   setting_action == koboy::UI_NONE) {
                                 setting_action = input.take_ui_action(
-                                    gambatte_kobo::UI_SCREEN_REFRESH_SETTINGS);
-                                if (setting_action == gambatte_kobo::UI_NONE)
+                                    koboy::UI_SCREEN_REFRESH_SETTINGS);
+                                if (setting_action == koboy::UI_NONE)
                                     usleep(20000);
                             }
                             if (interrupted ||
-                                setting_action == gambatte_kobo::UI_LIST_CANCEL)
+                                setting_action == koboy::UI_LIST_CANCEL)
                                 break;
                             if (setting_action ==
-                                gambatte_kobo::UI_SETTING_FAST_TYPE)
+                                koboy::UI_SETTING_FAST_TYPE)
                                 cycle_fast_type(refresh_settings);
                             else if (setting_action ==
-                                     gambatte_kobo::UI_SETTING_SLOW_TYPE)
+                                     koboy::UI_SETTING_SLOW_TYPE)
                                 cycle_slow_type(refresh_settings.slow_type);
                             else if (setting_action ==
-                                     gambatte_kobo::UI_SETTING_SLOWEST_TYPE)
+                                     koboy::UI_SETTING_SLOWEST_TYPE)
                                 cycle_slowest_type(refresh_settings);
                             else if (setting_action ==
-                                     gambatte_kobo::UI_SETTING_FAST_FREQUENCY)
+                                     koboy::UI_SETTING_FAST_FREQUENCY)
                                 cycle_fast_frequency(refresh_settings);
                             else if (setting_action ==
-                                     gambatte_kobo::UI_SETTING_SLOW_FREQUENCY)
+                                     koboy::UI_SETTING_SLOW_FREQUENCY)
                                 cycle_slow_frequency(refresh_settings);
                             save_refresh_settings(refresh_settings);
                         }
@@ -1405,8 +1474,22 @@ int main(int argc, char **argv) {
                         framebuffer.draw(scaled);
                     if (menu_refresh_healthy)
                         refresh_menu_screen(framebuffer, input, marker++,
-                                            diagnostics);
+                                            diagnostics, true);
                     next_display = monotonic_seconds();
+                }
+                if (sleep_requested || wake_requested) {
+                    frames_this_update = 0U;
+                    emulation_accumulator = 0.0;
+                    const double paused_for = pause_for_sleep(
+                        framebuffer, input, screen, scaled, marker++,
+                        diagnostics);
+                    if (options.seconds)
+                        deadline += paused_for;
+                    const double resumed_at = monotonic_seconds();
+                    next_display = resumed_at;
+                    next_cleanup = slow_interval
+                        ? resumed_at + slow_interval : 0.0;
+                    continue;
                 }
                 const unsigned current_buttons = input();
                 if (current_buttons != last_buttons) {
@@ -1422,7 +1505,7 @@ int main(int argc, char **argv) {
                 break;
             for (std::size_t i = 0; i < video.size(); ++i)
                 rgb[i] = static_cast<uint32_t>(video[i]);
-            gambatte_kobo::scale_rgb32_grayscale(rgb, options.scale, scaled);
+            koboy::scale_rgb32_grayscale(rgb, options.scale, scaled);
             framebuffer.draw(scaled);
 
             const double now = monotonic_seconds();
@@ -1503,6 +1586,8 @@ int main(int argc, char **argv) {
 
         const double elapsed = monotonic_seconds() - started;
         automatic_state_saved = save_state(gb, automatic_state);
+        if (exit_to_nickel)
+            input.wait_for_release();
         if (!supervised)
             framebuffer.restore(marker++);
         std::cout << "name=Ko Boy\n";

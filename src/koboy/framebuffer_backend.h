@@ -8,7 +8,7 @@
 #include <stdint.h>
 #include <vector>
 
-namespace gambatte_kobo {
+namespace koboy {
 
 struct Viewport {
     uint32_t x;
@@ -69,6 +69,6 @@ private:
     bool restored_;
 };
 
-} // namespace gambatte_kobo
+} // namespace koboy
 
 #endif

@@ -45,7 +45,7 @@ Ko Boy remains a developer prototype rather than an installable end-user
 package. No ROMs are included.
 
 - [Ko Boy usage and launcher setup](docs/koboy.md)
-- [Ko Boy port plan and technical details](docs/gambatte-kobo-port-plan.md)
+- [Ko Boy port plan and technical details](docs/koboy-port-plan.md)
 
 ## Building
 

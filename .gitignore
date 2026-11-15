@@ -1,5 +1,6 @@
 /KoboRoot.tgz
 /libnickelrefresh.so
+/libkoboylifecycle.so
 /deps/FBInk/Debug/
 /deps/FBInk/libi2c-staged/
 /deps/FBInk/libi2c.built

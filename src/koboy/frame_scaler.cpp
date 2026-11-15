@@ -7,7 +7,7 @@
 
 #include <stdexcept>
 
-namespace gambatte_kobo {
+namespace koboy {
 
 void render_test_pattern(std::vector<uint8_t> &frame, unsigned frame_number) {
     frame.resize(kGameBoyWidth * kGameBoyHeight);
@@ -89,4 +89,4 @@ void scale_rgb32_grayscale(const std::vector<uint32_t> &source,
     }
 }
 
-} // namespace gambatte_kobo
+} // namespace koboy

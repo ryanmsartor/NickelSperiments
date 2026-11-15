@@ -6,7 +6,7 @@
 #include <stdint.h>
 #include <vector>
 
-namespace gambatte_kobo {
+namespace koboy {
 
 enum {
     kGameBoyWidth = 160,
@@ -23,6 +23,6 @@ void scale_rgb32_grayscale(const std::vector<uint32_t> &source,
                            unsigned scale,
                            std::vector<uint32_t> &destination);
 
-} // namespace gambatte_kobo
+} // namespace koboy
 
 #endif

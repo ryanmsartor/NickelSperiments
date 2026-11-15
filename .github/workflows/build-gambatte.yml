@@ -1,4 +1,4 @@
-name: Build Gambatte Kobo prototypes
+name: Build Gambatte benchmark
 
 on:
   push:
@@ -10,8 +10,8 @@ permissions:
   contents: read
 
 jobs:
-  gambatte-prototypes:
-    name: Gambatte ARMv7 prototypes
+  gambatte-benchmark:
+    name: Gambatte ARMv7 benchmark
     runs-on: ubuntu-latest
     container: ghcr.io/pgaskin/nickeltc:1.0
     steps:
@@ -24,23 +24,15 @@ jobs:
       - name: Add NickelTC cross-toolchain to PATH
         run: echo "/tc/arm-nickel-linux-gnueabihf/bin" >> "$GITHUB_PATH"
 
-      - name: Build Gambatte prototypes
-        run: make gambatte-bench gambatte-display-test gambatte-display gambatte-supervisor
+      - name: Build Gambatte benchmark
+        run: make gambatte-bench
 
-      - name: Verify ARMv7 outputs
-        run: |
-          file build/kobo-gambatte-bench | grep -q 'ELF 32-bit.*ARM'
-          file build/kobo-gambatte-display-test | grep -q 'ELF 32-bit.*ARM'
-          file build/kobo-gambatte-display | grep -q 'ELF 32-bit.*ARM'
-          file build/kobo-gambatte-supervisor | grep -q 'ELF 32-bit.*ARM'
+      - name: Verify ARMv7 output
+        run: file build/gambatte-bench | grep -q 'ELF 32-bit.*ARM'
 
-      - name: Upload Gambatte prototypes
+      - name: Upload Gambatte benchmark
         uses: actions/upload-artifact@v4
         with:
-          name: Gambatte-Kobo-Prototypes
-          path: |
-            build/kobo-gambatte-bench
-            build/kobo-gambatte-display-test
-            build/kobo-gambatte-display
-            build/kobo-gambatte-supervisor
+          name: Gambatte-ARMv7-Benchmark
+          path: build/gambatte-bench
           if-no-files-found: error

@@ -1,8 +1,8 @@
-# Gambatte Kobo port plan
+# Ko Boy port plan
 
 ## Summary
 
-Gambatte is a strong emulator core for a lightweight Kobo Game Boy emulator,
+Ko Boy currently uses Gambatte as its Game Boy backend,
 but the Kobo display will define what is playable. The CPU should handle Game
 Boy emulation comfortably; e-ink cannot approach the Game Boy's native refresh
 rate. The initial target should be turn-based RPGs, puzzle games, and slower
@@ -156,7 +156,7 @@ A formal license review is still appropriate before publishing binaries.
 ### 1. Feasibility probe
 
 Implementation has begun with the `gambatte-bench` Make target and
-`build/kobo-gambatte-bench` headless runner. The runner measures emulation
+`build/gambatte-bench` headless runner. The runner measures emulation
 throughput and memory use and validates an in-memory save-state round trip.
 
 The first real-device ARMv7 test passed on a Kobo Clara BW on 2026-11-14 using
@@ -188,7 +188,7 @@ Go/no-go criterion: stable full-speed emulation with substantial CPU headroom.
 
 ### 2. Framebuffer prototype
 
-Implementation has begun with `make gambatte-display-test`. The current
+Implementation has begun with `make koboy-display-test`. The current
 prototype is intentionally synthetic: it writes a scaled, animated 160-by-144
 monochrome test pattern into a saved viewport of the Clara BW's 32-bit HWTCON
 framebuffer. It submits partial A2 updates at a configurable rate, periodically
@@ -208,7 +208,7 @@ cleanup. A separate SIGTERM test interrupted an active run after 20 frames and
 returned status 130 after restoring the viewport. Neither test logged an
 HWTCON/display-driver error.
 
-`make gambatte-display` now builds the next integration slice. It runs Gambatte
+`make koboy` now builds the next integration slice. It runs Gambatte
 at the Game Boy's native frame rate and presents only the latest completed
 frame through the tested backend. With the user-supplied US ROM for *Rolan's
 Curse II*, a five-second Clara BW run emulated 298 frames, presented 40 frames
@@ -291,9 +291,9 @@ Clara BW's 1072-by-1448 panel, the configured y=96 viewport ends at y=960 and
 remains above the lower control surface. `--scale 5` remains available for
 comparison.
 
-`make gambatte-supervisor` now builds an external lifecycle owner. The parent
+`make koboy-supervisor` now builds an external lifecycle owner. The parent
 suspends Nickel and retains the complete framebuffer backup in its own memory,
-then launches `kobo-gambatte-display` as a managed child. It forwards SIGINT,
+then launches `koboy` as a managed child. It forwards SIGINT,
 SIGTERM, and SIGHUP, waits for any child exit, restores the screen, and resumes
 Nickel before returning the child's status. The managed child still owns the
 exclusive touchscreen grab, which the kernel releases automatically if that

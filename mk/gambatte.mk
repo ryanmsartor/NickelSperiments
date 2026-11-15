@@ -1,20 +1,7 @@
 GAMBATTE_ROOT := deps/gambatte
 GAMBATTE_CORE := $(GAMBATTE_ROOT)/libgambatte
-GAMBATTE_BUILD_DIR := build/gambatte
-GAMBATTE_OUTPUT := build/kobo-gambatte-bench
-GAMBATTE_DISPLAY_OUTPUT := build/kobo-gambatte-display-test
-GAMBATTE_FB_ISOLATION_OUTPUT := build/kobo-framebuffer-isolation
-GAMBATTE_PLAYER_OUTPUT := build/kobo-gambatte-display
-GAMBATTE_SUPERVISOR_OUTPUT := build/kobo-gambatte-supervisor
-GAMBATTE_CROSS_COMPILE ?= arm-nickel-linux-gnueabihf-
-GAMBATTE_LOCAL_CXX := $(CURDIR)/.toolchains/bin/arm-nickel-linux-gnueabihf-g++
-ifneq ($(wildcard $(GAMBATTE_LOCAL_CXX)),)
-GAMBATTE_CXX ?= $(GAMBATTE_LOCAL_CXX)
-GAMBATTE_LINK ?= $(CURDIR)/scripts/nickeltc-link
-else
-GAMBATTE_CXX ?= $(GAMBATTE_CROSS_COMPILE)g++
-GAMBATTE_LINK ?= $(GAMBATTE_CXX)
-endif
+GAMBATTE_OBJ_DIR := build/obj/gambatte
+GAMBATTE_BENCH_OUTPUT := build/gambatte-bench
 
 GAMBATTE_CPPFLAGS := \
 	-D__LIBRETRO__ \
@@ -24,8 +11,6 @@ GAMBATTE_CPPFLAGS := \
 	-I$(GAMBATTE_CORE)/libretro \
 	-I$(GAMBATTE_CORE)/libretro-common/include \
 	-I$(GAMBATTE_ROOT)/common
-GAMBATTE_CXXFLAGS := -O3 -std=c++11 -Wall -Wextra -fomit-frame-pointer
-GAMBATTE_LDFLAGS := -static-libgcc -static-libstdc++
 
 GAMBATTE_CORE_SOURCES := \
 	libgambatte/src/bootloader.cpp \
@@ -58,70 +43,25 @@ GAMBATTE_CORE_SOURCES := \
 	libgambatte/src/video/sprite_mapper.cpp \
 	libgambatte/src/video_libretro.cpp
 
-GAMBATTE_CORE_OBJECTS := $(patsubst %.cpp,$(GAMBATTE_BUILD_DIR)/%.o,$(GAMBATTE_CORE_SOURCES))
-GAMBATTE_FRONTEND_OBJECTS := \
-	$(GAMBATTE_BUILD_DIR)/frontend/gambatte-bench.o \
-	$(GAMBATTE_BUILD_DIR)/frontend/gambatte-platform.o
-GAMBATTE_DISPLAY_OBJECTS := \
-	$(GAMBATTE_BUILD_DIR)/display/display_test.o \
-	$(GAMBATTE_BUILD_DIR)/display/frame_scaler.o \
-	$(GAMBATTE_BUILD_DIR)/display/framebuffer_backend.o
-GAMBATTE_FB_ISOLATION_OBJECTS := \
-	$(GAMBATTE_BUILD_DIR)/display/framebuffer_isolation.o \
-	$(GAMBATTE_BUILD_DIR)/display/framebuffer_backend.o
-GAMBATTE_PLAYER_OBJECTS := \
-	$(GAMBATTE_BUILD_DIR)/display/gambatte_display.o \
-	$(GAMBATTE_BUILD_DIR)/display/frame_scaler.o \
-	$(GAMBATTE_BUILD_DIR)/display/framebuffer_backend.o \
-	$(GAMBATTE_BUILD_DIR)/display/touch_input.o \
-	$(GAMBATTE_BUILD_DIR)/frontend/gambatte-platform.o
-GAMBATTE_SUPERVISOR_OBJECTS := \
-	$(GAMBATTE_BUILD_DIR)/display/supervisor.o \
-	$(GAMBATTE_BUILD_DIR)/display/framebuffer_backend.o
+GAMBATTE_CORE_OBJECTS := $(patsubst %.cpp,$(GAMBATTE_OBJ_DIR)/%.o,$(GAMBATTE_CORE_SOURCES))
+GAMBATTE_PLATFORM_OBJECT := $(GAMBATTE_OBJ_DIR)/frontend/gambatte-platform.o
+GAMBATTE_BENCH_OBJECT := $(GAMBATTE_OBJ_DIR)/frontend/gambatte-bench.o
 
-.PHONY: gambatte-bench gambatte-display-test gambatte-framebuffer-isolation gambatte-display gambatte-supervisor gambatte-clean
+.PHONY: gambatte-bench gambatte-clean
 
-gambatte-bench: $(GAMBATTE_OUTPUT)
+gambatte-bench: $(GAMBATTE_BENCH_OUTPUT)
 
-gambatte-display-test: $(GAMBATTE_DISPLAY_OUTPUT)
-
-gambatte-framebuffer-isolation: $(GAMBATTE_FB_ISOLATION_OUTPUT)
-
-gambatte-display: $(GAMBATTE_PLAYER_OUTPUT)
-
-gambatte-supervisor: $(GAMBATTE_SUPERVISOR_OUTPUT)
-
-$(GAMBATTE_OUTPUT): $(GAMBATTE_CORE_OBJECTS) $(GAMBATTE_FRONTEND_OBJECTS)
+$(GAMBATTE_BENCH_OUTPUT): $(GAMBATTE_CORE_OBJECTS) $(GAMBATTE_BENCH_OBJECT) $(GAMBATTE_PLATFORM_OBJECT)
 	@mkdir -p $(@D)
-	$(GAMBATTE_LINK) $(GAMBATTE_LDFLAGS) -o $@ $^
+	$(KOBO_LINK) $(KOBO_LDFLAGS) -o $@ $^
 
-$(GAMBATTE_DISPLAY_OUTPUT): $(GAMBATTE_DISPLAY_OBJECTS)
+$(GAMBATTE_OBJ_DIR)/%.o: $(GAMBATTE_ROOT)/%.cpp
 	@mkdir -p $(@D)
-	$(GAMBATTE_LINK) $(GAMBATTE_LDFLAGS) -o $@ $^
+	$(KOBO_CXX) $(GAMBATTE_CPPFLAGS) $(KOBO_CXXFLAGS) -c -o $@ $<
 
-$(GAMBATTE_FB_ISOLATION_OUTPUT): $(GAMBATTE_FB_ISOLATION_OBJECTS)
+$(GAMBATTE_OBJ_DIR)/frontend/%.o: src/%.cpp
 	@mkdir -p $(@D)
-	$(GAMBATTE_LINK) $(GAMBATTE_LDFLAGS) -o $@ $^
-
-$(GAMBATTE_PLAYER_OUTPUT): $(GAMBATTE_CORE_OBJECTS) $(GAMBATTE_PLAYER_OBJECTS)
-	@mkdir -p $(@D)
-	$(GAMBATTE_LINK) $(GAMBATTE_LDFLAGS) -o $@ $^
-
-$(GAMBATTE_SUPERVISOR_OUTPUT): $(GAMBATTE_SUPERVISOR_OBJECTS)
-	@mkdir -p $(@D)
-	$(GAMBATTE_LINK) $(GAMBATTE_LDFLAGS) -o $@ $^
-
-$(GAMBATTE_BUILD_DIR)/%.o: $(GAMBATTE_ROOT)/%.cpp
-	@mkdir -p $(@D)
-	$(GAMBATTE_CXX) $(GAMBATTE_CPPFLAGS) $(GAMBATTE_CXXFLAGS) -c -o $@ $<
-
-$(GAMBATTE_BUILD_DIR)/frontend/%.o: src/%.cpp
-	@mkdir -p $(@D)
-	$(GAMBATTE_CXX) $(GAMBATTE_CPPFLAGS) $(GAMBATTE_CXXFLAGS) -c -o $@ $<
-
-$(GAMBATTE_BUILD_DIR)/display/%.o: src/gambatte/%.cpp
-	@mkdir -p $(@D)
-	$(GAMBATTE_CXX) $(GAMBATTE_CPPFLAGS) $(GAMBATTE_CXXFLAGS) -c -o $@ $<
+	$(KOBO_CXX) $(GAMBATTE_CPPFLAGS) $(KOBO_CXXFLAGS) -c -o $@ $<
 
 gambatte-clean:
-	rm -rf $(GAMBATTE_BUILD_DIR) $(GAMBATTE_OUTPUT) $(GAMBATTE_DISPLAY_OUTPUT) $(GAMBATTE_FB_ISOLATION_OUTPUT) $(GAMBATTE_PLAYER_OUTPUT) $(GAMBATTE_SUPERVISOR_OUTPUT)
+	rm -rf $(GAMBATTE_OBJ_DIR) $(GAMBATTE_BENCH_OUTPUT)

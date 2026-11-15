@@ -97,13 +97,13 @@ int main(int argc, char **argv) {
         std::signal(SIGTERM, handle_signal);
         std::signal(SIGHUP, handle_signal);
 
-        gambatte_kobo::FramebufferBackend framebuffer;
+        koboy::FramebufferBackend framebuffer;
         framebuffer.open_device("/dev/fb0");
-        framebuffer.configure_viewport(gambatte_kobo::kGameBoyWidth * options.scale,
-                                       gambatte_kobo::kGameBoyHeight * options.scale);
+        framebuffer.configure_viewport(koboy::kGameBoyWidth * options.scale,
+                                       koboy::kGameBoyHeight * options.scale);
         framebuffer.save_viewport();
 
-        const gambatte_kobo::Viewport &viewport = framebuffer.viewport();
+        const koboy::Viewport &viewport = framebuffer.viewport();
         std::cout << "framebuffer=" << framebuffer.variable_info().xres << 'x'
                   << framebuffer.variable_info().yres << 'x'
                   << framebuffer.variable_info().bits_per_pixel << '\n';
@@ -134,8 +134,8 @@ int main(int argc, char **argv) {
             if (interrupted || monotonic_seconds() >= deadline)
                 break;
 
-            gambatte_kobo::render_test_pattern(source, submitted + dropped);
-            gambatte_kobo::scale_monochrome(source, options.scale, scaled);
+            koboy::render_test_pattern(source, submitted + dropped);
+            koboy::scale_monochrome(source, options.scale, scaled);
             framebuffer.draw(scaled);
 
             const double now = monotonic_seconds();

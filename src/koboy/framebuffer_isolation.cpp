@@ -56,7 +56,7 @@ int main(int argc, char **argv) {
         std::signal(SIGTERM, handle_signal);
         std::signal(SIGHUP, handle_signal);
 
-        gambatte_kobo::FramebufferBackend framebuffer;
+        koboy::FramebufferBackend framebuffer;
         framebuffer.open_device("/dev/fb0");
         framebuffer.configure_viewport(framebuffer.variable_info().xres,
                                        framebuffer.variable_info().yres);

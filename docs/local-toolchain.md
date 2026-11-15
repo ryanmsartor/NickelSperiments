@@ -28,41 +28,46 @@ GCC normally launches several child programs. The installed copies of
 is therefore unnecessary.
 
 The kernel on this workstation does not permit the PRoot-based alternative.
-For Gambatte links, `scripts/nickeltc-link` invokes NickelTC's BFD linker
+For Gambatte and Ko Boy links, `scripts/nickeltc-link` invokes NickelTC's BFD linker
 directly with the same startup objects, sysroot, static C++ runtime, and Kobo
 dynamic loader selected by GCC. Gambatte does not use LTO, so it does not need
 GCC's otherwise nested `collect2` process.
 
 ## Building
 
-`mk/gambatte.mk` detects the workspace compiler automatically. Normal targets
-need no environment setup:
+`mk/kobo-toolchain.mk` detects the workspace compiler automatically.
+`mk/gambatte.mk` owns the emulator backend and benchmark, while `mk/koboy.mk`
+owns the application and its diagnostics. Normal targets need no environment
+setup:
 
 ```sh
 make gambatte-bench
-make gambatte-display-test
-make gambatte-display
-make gambatte-supervisor
+make koboy-display-test
+make koboy-framebuffer-isolation
+make koboy
+make koboy-supervisor
+make koboy-lifecycle
 ```
 
-To rebuild every Gambatte object after changing toolchains, use:
+To rebuild every Gambatte and Ko Boy object after changing toolchains, use:
 
 ```sh
-make gambatte-clean
-make gambatte-bench gambatte-display-test gambatte-display gambatte-supervisor
+make gambatte-clean koboy-clean
+make gambatte-bench koboy-display-test koboy-framebuffer-isolation koboy koboy-supervisor
+make koboy-lifecycle
 ```
 
 Confirm that an output is for the Kobo rather than the workstation:
 
 ```sh
-file build/kobo-gambatte-display
-readelf -h build/kobo-gambatte-display
-readelf --version-info build/kobo-gambatte-display
+file build/koboy
+readelf -h build/koboy
+readelf --version-info build/koboy
 ```
 
 The expected result is a 32-bit ARM EABI5 hard-float executable using
-`/lib/ld-linux-armhf.so.3`. At the time of setup, all four Gambatte outputs
-required no libc symbol newer than `GLIBC_2.17`.
+`/lib/ld-linux-armhf.so.3`. At the time of setup, the Gambatte benchmark and
+all Ko Boy outputs required no libc symbol newer than `GLIBC_2.17`.
 
 ## CI and other hosts
 
