@@ -50,6 +50,7 @@ make koboy-lifecycle
 make armgba-adapter-check
 make armgba-core-check
 make armgba-libretro-check
+make armgba-probe
 ```
 
 The armGBA checks also use NickelTC's C compiler through

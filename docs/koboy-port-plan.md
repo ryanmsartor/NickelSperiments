@@ -350,10 +350,12 @@ adapter covers video, input, reset, state serialization, and save RAM. Both the
 adapter and armGBA's ARMv7/NEON/JIT machine core compile with NickelTC. The
 libretro support layer also compiles except its optional CPU LCD-effects
 source, which uses `__builtin_convertvector` newer than NickelTC GCC 4.9. Ko
-Boy already owns display processing, so a no-effects compatibility shim is
-planned instead of modifying the pinned submodule. The final link and device
-tests are still required. The current Gambatte adapter remains selected
-through the core factory until the armGBA path passes those tests.
+Boy already owns display processing, so a no-effects compatibility shim passes
+native frames through instead of modifying the pinned submodule. The embedded
+Gambatte and archive dependencies compile, and a standalone `armgba-probe`
+links successfully for ARM. Device tests are still required. The current
+Gambatte adapter remains selected through the core factory until the armGBA
+path passes those tests.
 
 - Connect Gambatte video to the display backend.
 - Add touch D-pad, A, B, Start, Select, and Menu controls.

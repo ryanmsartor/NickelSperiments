@@ -78,9 +78,11 @@ video formats, input, reset, states, and save RAM. The adapter and armGBA's
 ARMv7/NEON/JIT core compile with NickelTC; the remaining libretro support
 sources also compile except optional CPU LCD effects. That source requires a
 newer compiler's `__builtin_convertvector`; Ko Boy does its own display
-processing, so the intended resolution is a no-effects compatibility shim
-rather than modifying the pinned dependency. A final link and device probe are
-still required before the new adapter can run on-device.
+processing, so `armgba_lcd_compat.c` supplies a no-effects pass-through layer
+rather than modifying the pinned dependency. The embedded Gambatte and archive
+dependencies now compile, and `make armgba-probe` links a standalone ARM test
+executable. An on-device probe is still required before the new adapter can be
+enabled in Ko Boy.
 
 ## Developer refresh settings
 

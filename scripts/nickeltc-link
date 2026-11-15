@@ -8,6 +8,7 @@ sysroot="$target/arm-nickel-linux-gnueabihf/sysroot"
 tools="$target/arm-nickel-linux-gnueabihf/bin"
 output=a.out
 objects=
+libraries=
 
 while [ "$#" -gt 0 ]; do
     case "$1" in
@@ -20,6 +21,10 @@ while [ "$#" -gt 0 ]; do
             ;;
         *.o|*.a)
             objects="$objects $1"
+            shift
+            ;;
+        -lpthread|-lz)
+            libraries="$libraries $1"
             shift
             ;;
         *)
@@ -39,5 +44,5 @@ exec "$workspace/scripts/nickeltc-exec" "$tools/ld.bfd.x86_64" \
     "$sysroot/usr/lib/crt1.o" "$sysroot/usr/lib/crti.o" "$gcc/crtbegin.o" \
     -L"$gcc" -L"$target/arm-nickel-linux-gnueabihf/lib" \
     -L"$sysroot/lib" -L"$sysroot/usr/lib" \
-    $objects -Bstatic -lstdc++ -Bdynamic -lm -lgcc -lgcc_eh -lc \
+    $objects -Bstatic -lstdc++ -Bdynamic $libraries -lm -lgcc -lgcc_eh -lc \
     -lgcc -lgcc_eh "$gcc/crtend.o" "$sysroot/usr/lib/crtn.o"
