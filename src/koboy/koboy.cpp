@@ -63,112 +63,126 @@ const double kFastRefreshInterval = 0.1;
 const double kCleanupRefreshInterval = 1.0;
 const unsigned kDamageTileSize = 32U;
 
-struct DamageRegion {
-    bool valid;
-    koboy::Viewport rectangle;
-    DamageRegion() : valid(false) {
-        rectangle.x = rectangle.y = rectangle.width = rectangle.height = 0U;
+class TileDamageTracker {
+public:
+    TileDamageTracker() : width_(0U), height_(0U), columns_(0U), rows_(0U) {}
+
+    void reset(const std::vector<uint32_t> &frame,
+               unsigned width, unsigned height) {
+        width_ = width;
+        height_ = height;
+        columns_ = (width + kDamageTileSize - 1U) / kDamageTileSize;
+        rows_ = (height + kDamageTileSize - 1U) / kDamageTileSize;
+        previous_ = frame;
+        debt_.assign(static_cast<std::size_t>(columns_) * rows_, 0ULL);
     }
+
+    void observe(const std::vector<uint32_t> &frame,
+                 unsigned width, unsigned height) {
+        if (frame.size() != static_cast<std::size_t>(width) * height)
+            throw std::runtime_error("damage frame dimensions do not match data");
+        if (width != width_ || height != height_ ||
+            previous_.size() != frame.size()) {
+            reset(frame, width, height);
+            return;
+        }
+        for (unsigned y = 0U; y < height; ++y) {
+            for (unsigned x = 0U; x < width; ++x) {
+                const std::size_t pixel = static_cast<std::size_t>(y) * width + x;
+                const unsigned before = previous_[pixel] & 0xFFU;
+                const unsigned after = frame[pixel] & 0xFFU;
+                if (before == after)
+                    continue;
+                const std::size_t tile =
+                    static_cast<std::size_t>(y / kDamageTileSize) * columns_ +
+                    x / kDamageTileSize;
+                debt_[tile] += 1ULL +
+                    (before > after ? before - after : after - before);
+            }
+        }
+        previous_ = frame;
+    }
+
+    std::vector<koboy::Viewport> take_highest(unsigned maximum) {
+        std::vector<koboy::Viewport> selected;
+        for (unsigned count = 0U; count < maximum; ++count) {
+            std::size_t best = debt_.size();
+            for (std::size_t index = 0U; index < debt_.size(); ++index)
+                if (debt_[index] &&
+                    (best == debt_.size() || debt_[index] > debt_[best]))
+                    best = index;
+            if (best == debt_.size())
+                break;
+            const unsigned tile_x = static_cast<unsigned>(best % columns_);
+            const unsigned tile_y = static_cast<unsigned>(best / columns_);
+            koboy::Viewport region = {
+                tile_x * kDamageTileSize, tile_y * kDamageTileSize,
+                std::min(kDamageTileSize,
+                         width_ - tile_x * kDamageTileSize),
+                std::min(kDamageTileSize,
+                         height_ - tile_y * kDamageTileSize)
+            };
+            selected.push_back(region);
+            debt_[best] = 0ULL;
+        }
+        return selected;
+    }
+
+private:
+    unsigned width_;
+    unsigned height_;
+    unsigned columns_;
+    unsigned rows_;
+    std::vector<uint32_t> previous_;
+    std::vector<unsigned long long> debt_;
 };
 
-DamageRegion calculate_damage(const std::vector<uint32_t> &current,
-                              const std::vector<uint32_t> &previous,
-                              unsigned width, unsigned height) {
-    DamageRegion damage;
-    if (current.size() != static_cast<std::size_t>(width) * height)
-        throw std::runtime_error("damage frame dimensions do not match data");
-    if (previous.size() != current.size()) {
-        damage.valid = true;
-        damage.rectangle.x = 0U;
-        damage.rectangle.y = 0U;
-        damage.rectangle.width = width;
-        damage.rectangle.height = height;
-        return damage;
+std::vector<koboy::Viewport> regions_outside_tiles(
+        unsigned width, unsigned height,
+        const std::vector<koboy::Viewport> &locked) {
+    const unsigned columns =
+        (width + kDamageTileSize - 1U) / kDamageTileSize;
+    const unsigned rows =
+        (height + kDamageTileSize - 1U) / kDamageTileSize;
+    std::vector<bool> blocked(static_cast<std::size_t>(columns) * rows, false);
+    for (std::size_t i = 0U; i < locked.size(); ++i) {
+        const unsigned column = locked[i].x / kDamageTileSize;
+        const unsigned row = locked[i].y / kDamageTileSize;
+        if (column < columns && row < rows)
+            blocked[static_cast<std::size_t>(row) * columns + column] = true;
     }
 
-    unsigned left = width;
-    unsigned top = height;
-    unsigned right = 0U;
-    unsigned bottom = 0U;
-    for (unsigned y = 0U; y < height; ++y) {
-        for (unsigned x = 0U; x < width; ++x) {
-            const std::size_t index = static_cast<std::size_t>(y) * width + x;
-            if (current[index] == previous[index])
-                continue;
-            left = std::min(left, x);
-            top = std::min(top, y);
-            right = std::max(right, x + 1U);
-            bottom = std::max(bottom, y + 1U);
-        }
-    }
-    if (left == width)
-        return damage;
-
-    left = left / kDamageTileSize * kDamageTileSize;
-    top = top / kDamageTileSize * kDamageTileSize;
-    right = std::min(width,
-        (right + kDamageTileSize - 1U) / kDamageTileSize * kDamageTileSize);
-    bottom = std::min(height,
-        (bottom + kDamageTileSize - 1U) / kDamageTileSize * kDamageTileSize);
-    damage.valid = true;
-    damage.rectangle.x = left;
-    damage.rectangle.y = top;
-    damage.rectangle.width = right - left;
-    damage.rectangle.height = bottom - top;
-    return damage;
-}
-
-void accumulate_damage(DamageRegion &accumulated,
-                       const DamageRegion &addition) {
-    if (!addition.valid)
-        return;
-    if (!accumulated.valid) {
-        accumulated = addition;
-        return;
-    }
-    const unsigned left = std::min(accumulated.rectangle.x,
-                                   addition.rectangle.x);
-    const unsigned top = std::min(accumulated.rectangle.y,
-                                  addition.rectangle.y);
-    const unsigned right = std::max(
-        accumulated.rectangle.x + accumulated.rectangle.width,
-        addition.rectangle.x + addition.rectangle.width);
-    const unsigned bottom = std::max(
-        accumulated.rectangle.y + accumulated.rectangle.height,
-        addition.rectangle.y + addition.rectangle.height);
-    accumulated.rectangle.x = left;
-    accumulated.rectangle.y = top;
-    accumulated.rectangle.width = right - left;
-    accumulated.rectangle.height = bottom - top;
-}
-
-std::vector<koboy::Viewport> regions_outside(
-        unsigned width, unsigned height, const koboy::Viewport &excluded) {
     std::vector<koboy::Viewport> regions;
-    if (excluded.y > 0U) {
-        koboy::Viewport top = {0U, 0U, width, excluded.y};
-        regions.push_back(top);
-    }
-    const unsigned excluded_bottom = excluded.y + excluded.height;
-    if (excluded_bottom < height) {
-        koboy::Viewport bottom = {
-            0U, excluded_bottom, width, height - excluded_bottom
-        };
-        regions.push_back(bottom);
-    }
-    if (excluded.x > 0U) {
-        koboy::Viewport left = {
-            0U, excluded.y, excluded.x, excluded.height
-        };
-        regions.push_back(left);
-    }
-    const unsigned excluded_right = excluded.x + excluded.width;
-    if (excluded_right < width) {
-        koboy::Viewport right = {
-            excluded_right, excluded.y, width - excluded_right,
-            excluded.height
-        };
-        regions.push_back(right);
+    for (unsigned row = 0U; row < rows; ++row) {
+        unsigned column = 0U;
+        while (column < columns) {
+            while (column < columns &&
+                   blocked[static_cast<std::size_t>(row) * columns + column])
+                ++column;
+            const unsigned first = column;
+            while (column < columns &&
+                   !blocked[static_cast<std::size_t>(row) * columns + column])
+                ++column;
+            if (first == column)
+                continue;
+            const unsigned x = first * kDamageTileSize;
+            const unsigned right = std::min(width, column * kDamageTileSize);
+            const unsigned y = row * kDamageTileSize;
+            const unsigned row_height = std::min(kDamageTileSize, height - y);
+            bool extended = false;
+            for (std::size_t i = 0U; i < regions.size(); ++i) {
+                if (regions[i].x == x && regions[i].width == right - x &&
+                    regions[i].y + regions[i].height == y) {
+                    regions[i].height += row_height;
+                    extended = true;
+                    break;
+                }
+            }
+            if (!extended) {
+                koboy::Viewport region = {x, y, right - x, row_height};
+                regions.push_back(region);
+            }
+        }
     }
     return regions;
 }
@@ -1609,8 +1623,7 @@ int main(int argc, char **argv) {
 
         std::vector<uint32_t> rgb;
         std::vector<uint32_t> scaled;
-        std::vector<uint32_t> refreshed_frame;
-        DamageRegion cleanup_damage;
+        TileDamageTracker damage_tracker;
         uint32_t marker = 1U;
         const unsigned screen_width = framebuffer.variable_info().xres;
         const unsigned screen_height = framebuffer.variable_info().yres;
@@ -1693,9 +1706,9 @@ int main(int argc, char **argv) {
         bool force_first_frame_gc16 = !no_gameplay_refresh;
         std::vector<uint32_t> a2_markers;
         bool gc16_in_flight = false;
-        uint32_t gc16_marker = 0U;
+        std::vector<uint32_t> gc16_markers;
         double gc16_submitted_at = 0.0;
-        koboy::Viewport gc16_region = {0U, 0U, 0U, 0U};
+        std::vector<koboy::Viewport> gc16_regions;
 
         while (!interrupted &&
                (!options.seconds || monotonic_seconds() < deadline)) {
@@ -1724,9 +1737,13 @@ int main(int argc, char **argv) {
                     last_wait_seconds = drain_elapsed;
                     a2_markers.clear();
                     if (gc16_in_flight) {
-                        last_wait_seconds =
-                            framebuffer.wait_for_update(gc16_marker);
-                        last_completed_marker = gc16_marker;
+                        for (std::size_t i = 0; i < gc16_markers.size(); ++i) {
+                            last_wait_seconds =
+                                framebuffer.wait_for_update(gc16_markers[i]);
+                            last_completed_marker = gc16_markers[i];
+                        }
+                        gc16_markers.clear();
+                        gc16_regions.clear();
                         gc16_in_flight = false;
                     }
                     draw_menu(screen, screen_width, screen_height, developer);
@@ -1828,8 +1845,9 @@ int main(int argc, char **argv) {
                     if (menu_refresh_healthy)
                         refresh_menu_screen(framebuffer, input, marker++,
                                             diagnostics, true);
-                    refreshed_frame = scaled;
-                    cleanup_damage = DamageRegion();
+                    damage_tracker.reset(
+                        scaled, framebuffer.viewport().width,
+                        framebuffer.viewport().height);
                     const double menu_resumed = monotonic_seconds();
                     next_display = menu_resumed;
                     last_emulation_time = menu_resumed;
@@ -1843,7 +1861,10 @@ int main(int argc, char **argv) {
                         framebuffer.wait_for_update(a2_markers[i]);
                     a2_markers.clear();
                     if (gc16_in_flight) {
-                        framebuffer.wait_for_update(gc16_marker);
+                        for (std::size_t i = 0; i < gc16_markers.size(); ++i)
+                            framebuffer.wait_for_update(gc16_markers[i]);
+                        gc16_markers.clear();
+                        gc16_regions.clear();
                         gc16_in_flight = false;
                     }
                     const double paused_for = pause_for_sleep(
@@ -1852,8 +1873,9 @@ int main(int argc, char **argv) {
                     if (options.seconds)
                         deadline += paused_for;
                     const double resumed_at = monotonic_seconds();
-                    refreshed_frame = scaled;
-                    cleanup_damage = DamageRegion();
+                    damage_tracker.reset(
+                        scaled, framebuffer.viewport().width,
+                        framebuffer.viewport().height);
                     last_emulation_time = resumed_at;
                     next_display = resumed_at;
                     next_cleanup = resumed_at + slow_interval;
@@ -1884,23 +1906,26 @@ int main(int argc, char **argv) {
 
             double now = monotonic_seconds();
             if (gc16_in_flight && now - gc16_submitted_at >= 0.30) {
-                last_wait_seconds = framebuffer.wait_for_update(gc16_marker);
-                last_completed_marker = gc16_marker;
+                for (std::size_t i = 0; i < gc16_markers.size(); ++i) {
+                    last_wait_seconds =
+                        framebuffer.wait_for_update(gc16_markers[i]);
+                    last_completed_marker = gc16_markers[i];
+                }
+                gc16_markers.clear();
+                gc16_regions.clear();
                 gc16_in_flight = false;
                 now = monotonic_seconds();
             }
 
-            const DamageRegion frame_damage = calculate_damage(
-                scaled, refreshed_frame, framebuffer.viewport().width,
+            damage_tracker.observe(
+                scaled, framebuffer.viewport().width,
                 framebuffer.viewport().height);
-            accumulate_damage(cleanup_damage, frame_damage);
-            refreshed_frame = scaled;
 
             std::vector<koboy::Viewport> a2_regions;
             if (gc16_in_flight) {
-                a2_regions = regions_outside(
+                a2_regions = regions_outside_tiles(
                     framebuffer.viewport().width,
-                    framebuffer.viewport().height, gc16_region);
+                    framebuffer.viewport().height, gc16_regions);
                 for (std::size_t i = 0; i < a2_regions.size(); ++i)
                     framebuffer.draw_region(scaled, a2_regions[i]);
             } else {
@@ -1929,8 +1954,9 @@ int main(int argc, char **argv) {
                 force_first_frame_gc16 = false;
                 last_emulation_time = monotonic_seconds();
                 emulation_accumulator = 0.0;
-                refreshed_frame = scaled;
-                cleanup_damage = DamageRegion();
+                damage_tracker.reset(
+                    scaled, framebuffer.viewport().width,
+                    framebuffer.viewport().height);
                 next_cleanup = last_emulation_time + slow_interval;
                 submitted_refresh = true;
             } else if (no_gameplay_refresh) {
@@ -1941,20 +1967,26 @@ int main(int argc, char **argv) {
                  */
             } else {
                 if (now >= next_cleanup) {
-                    if (!gc16_in_flight && cleanup_damage.valid) {
-                        gc16_region = cleanup_damage.rectangle;
-                        gc16_marker = marker++;
-                        last_submitted_marker = gc16_marker;
-                        last_submitted_type = REFRESH_GC16_FULL;
-                        ++refresh_counts[REFRESH_GC16_FULL];
-                        last_wait_seconds = framebuffer.refresh_gc16_region(
-                            gc16_region, gc16_marker, false);
+                    if (!gc16_in_flight) {
+                        gc16_regions = damage_tracker.take_highest(4U);
+                    }
+                    if (!gc16_regions.empty()) {
+                        gc16_markers.clear();
+                        for (std::size_t i = 0; i < gc16_regions.size(); ++i) {
+                            const uint32_t gc16_marker = marker++;
+                            last_submitted_marker = gc16_marker;
+                            last_submitted_type = REFRESH_GC16_FULL;
+                            ++refresh_counts[REFRESH_GC16_FULL];
+                            last_wait_seconds =
+                                framebuffer.refresh_gc16_region(
+                                    gc16_regions[i], gc16_marker, false);
+                            gc16_markers.push_back(gc16_marker);
+                        }
                         gc16_in_flight = true;
                         gc16_submitted_at = now;
-                        cleanup_damage = DamageRegion();
-                        a2_regions = regions_outside(
+                        a2_regions = regions_outside_tiles(
                             framebuffer.viewport().width,
-                            framebuffer.viewport().height, gc16_region);
+                            framebuffer.viewport().height, gc16_regions);
                         ++cleanups;
                         submitted_refresh = true;
                     }
@@ -1995,7 +2027,10 @@ int main(int argc, char **argv) {
             framebuffer.wait_for_update(a2_markers[i]);
         a2_markers.clear();
         if (gc16_in_flight) {
-            framebuffer.wait_for_update(gc16_marker);
+            for (std::size_t i = 0; i < gc16_markers.size(); ++i)
+                framebuffer.wait_for_update(gc16_markers[i]);
+            gc16_markers.clear();
+            gc16_regions.clear();
             gc16_in_flight = false;
         }
         const double elapsed = monotonic_seconds() - started;

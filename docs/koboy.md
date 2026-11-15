@@ -95,11 +95,12 @@ integration is ready for release.
 ## Refresh scheduling
 
 Gameplay uses only A2 and full GC16. A2 targets a steady 10 Hz cadence across
-the game viewport. Once per second, Ko Boy selects a 32-pixel-aligned rectangle
-covering accumulated frame changes and starts a full-waveform GC16 cleanup for
-that region. While GC16 owns that rectangle, the newest A2 frame continues in
-up to four non-overlapping strips around it. Framebuffer writes follow the same
-partition so an active GC16 region is not modified underneath the controller.
+the game viewport. Ko Boy measures frame-change debt independently for each
+32-by-32 cell. Once per second it selects up to four individual highest-debt
+cells and starts full-waveform GC16 cleanups for only those cells. While GC16
+owns them, the newest A2 frame continues through coalesced rectangles covering
+the remaining cells. Framebuffer writes follow the same partition so active
+GC16 cells are not modified underneath the controller.
 
 This replaces the former developer-configurable fast, slow, and slowest tiers.
 Menus, loading, wake, and exit retain full-screen GC16 boundaries.
@@ -213,10 +214,10 @@ Nickel. Stopping Nickel is intentionally avoided: device testing showed that a
 
 ## Targeted cleanup refreshes
 
-The initial implementation uses aligned rectangular damage accumulated from
-scaled frame differences. It is intentionally conservative while device tests
-establish the controller's behavior for simultaneous non-overlapping A2 and
-GC16 regions.
+The implementation accumulates debt independently for aligned 32-by-32 cells
+from scaled frame differences. It is intentionally conservative while device
+tests establish the controller's behavior for simultaneous non-overlapping A2
+and GC16 regions.
 
 The framebuffer cannot reveal which physical e-ink pixels still retain a
 visible prior image; it contains only the image Ko Boy intended to display.
@@ -226,20 +227,17 @@ debt according to the number and magnitude of pixel changes, repeated dark-to-
 light transitions, time since its last cleanup, and the waveform used for that
 cleanup. Stronger waveforms should reduce more debt than weaker ones.
 
-When a slow refresh becomes due, select the highest-debt neighboring tiles and
-combine them into a rectangular HWTCON update. HWTCON accepts rectangles rather
-than arbitrary sets of pixels, so selection should balance covering high-debt
-tiles against refreshing unchanged area. A slowest refresh can target a larger
-high-debt region or advance through a rolling sweep of the viewport.
+When a cleanup becomes due, Ko Boy selects up to four highest-debt cells and
+issues a separate rectangular HWTCON update for each. The cap limits concurrent
+controller work while avoiding the unchanged area that would be included by a
+single bounding rectangle. Cells not selected retain their debt for later
+cleanup.
 
 Initial implementation should retain an occasional full-viewport slowest
 refresh as a safety net. Its interval can be increased only after device tests
 show that targeted refreshes do not permit artifacts to accumulate over long
-sessions. Developer diagnostics should record the selected rectangle, its debt,
-and the waveform so the heuristic can be tuned from observed results.
-
-The next refinement is tile-level debt weighting so cleanup can prioritize the
-worst subregion instead of taking the bounding rectangle of all recent motion.
+sessions. Developer diagnostics should eventually record each selected cell,
+its debt, and the waveform so the heuristic can be tuned from observed results.
 Device testing must also confirm minimum dimensions, alignment requirements,
 edge artifacts, and whether waveforms spill beyond their requested rectangles.
 
