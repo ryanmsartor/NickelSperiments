@@ -34,6 +34,8 @@ const char *const kKoBoyRoot = "/mnt/onboard/KoBoy";
 const char *const kKoBoyRomDirectory = "/mnt/onboard/KoBoy/Roms";
 const char *const kKoBoyStateDirectory = "/mnt/onboard/KoBoy/States";
 const char *const kKoBoySaveDirectory = "/mnt/onboard/KoBoy/Saves";
+const char *const kSystemFoldersInitialized =
+    "/mnt/onboard/KoBoy/.system-folders-initialized";
 const char *const kDeveloperFlag = "/mnt/onboard/KoBoy/developer";
 const char *const kDiagnosticsFlag = "/mnt/onboard/KoBoy/diagnostics";
 const char *const kNoGameplayRefreshFlag =
@@ -627,20 +629,110 @@ std::string lowercase(std::string value) {
     return value;
 }
 
-std::vector<std::string> list_roms() {
-    std::vector<std::string> roms;
+std::string uppercase(std::string value) {
+    for (std::string::size_type i = 0; i < value.size(); ++i)
+        value[i] = static_cast<char>(std::toupper(
+            static_cast<unsigned char>(value[i])));
+    return value;
+}
+
+struct SystemFolder {
+    std::string name;
+    std::string path;
+};
+
+bool is_directory(const std::string &path) {
+    struct stat information;
+    return stat(path.c_str(), &information) == 0 &&
+           S_ISDIR(information.st_mode);
+}
+
+void initialize_system_folders() {
+    if (file_exists(kSystemFoldersInitialized))
+        return;
+    if (!ensure_directory(kKoBoyRoot) ||
+        !ensure_directory(kKoBoyRomDirectory))
+        return;
+    const char *const names[] = {
+        "Game Boy", "Game Boy Color", "Game Boy Advance", "Mega Duck"
+    };
+    for (unsigned i = 0; i < sizeof(names) / sizeof(names[0]); ++i) {
+        const std::string path = std::string(kKoBoyRomDirectory) + "/" +
+                                 names[i];
+        ensure_directory(path.c_str());
+    }
+    std::ofstream marker(kSystemFoldersInitialized,
+                         std::ios::out | std::ios::trunc);
+    marker << "Ko Boy system folders initialized\n";
+}
+
+std::vector<SystemFolder> list_systems() {
+    initialize_system_folders();
+    std::vector<SystemFolder> systems;
     DIR *directory = opendir(kKoBoyRomDirectory);
+    if (!directory)
+        return systems;
+    for (dirent *entry = readdir(directory); entry; entry = readdir(directory)) {
+        const std::string name(entry->d_name);
+        if (name.empty() || name[0] == '.')
+            continue;
+        const std::string path = std::string(kKoBoyRomDirectory) + "/" + name;
+        if (is_directory(path)) {
+            SystemFolder system;
+            system.name = name;
+            system.path = path;
+            systems.push_back(system);
+        }
+    }
+    closedir(directory);
+    std::sort(systems.begin(), systems.end(),
+              [](const SystemFolder &left, const SystemFolder &right) {
+                  const char *const stock[] = {
+                      "game boy", "game boy color", "game boy advance",
+                      "mega duck"
+                  };
+                  unsigned left_rank = 4U;
+                  unsigned right_rank = 4U;
+                  const std::string left_name = lowercase(left.name);
+                  const std::string right_name = lowercase(right.name);
+                  for (unsigned i = 0; i < 4U; ++i) {
+                      if (left_name == stock[i]) left_rank = i;
+                      if (right_name == stock[i]) right_rank = i;
+                  }
+                  if (left_rank != right_rank)
+                      return left_rank < right_rank;
+                  return lowercase(left.name) < lowercase(right.name);
+              });
+    return systems;
+}
+
+bool is_supported_rom(const std::string &name) {
+    const std::string folded = lowercase(name);
+    const char *const extensions[] = {
+        ".gb", ".gbc", ".gb2", ".gba", ".gba2", ".bin", ".duck",
+        ".md0", ".md1", ".md2", ".md20s", ".md25s"
+    };
+    for (unsigned i = 0; i < sizeof(extensions) / sizeof(extensions[0]); ++i) {
+        const std::string extension(extensions[i]);
+        if (folded.size() >= extension.size() &&
+            folded.substr(folded.size() - extension.size()) == extension)
+            return true;
+    }
+    return false;
+}
+
+std::vector<std::string> list_roms(const std::string &system_path) {
+    std::vector<std::string> roms;
+    DIR *directory = opendir(system_path.c_str());
     if (!directory)
         return roms;
     for (dirent *entry = readdir(directory); entry; entry = readdir(directory)) {
         const std::string name(entry->d_name);
-        const std::string folded = lowercase(name);
-        if (folded.size() < 3U ||
-            (folded.substr(folded.size() - 3U) != ".gb" &&
-             (folded.size() < 4U ||
-              folded.substr(folded.size() - 4U) != ".gbc")))
+        if (!is_supported_rom(name))
             continue;
-        roms.push_back(std::string(kKoBoyRomDirectory) + "/" + name);
+        const std::string path = system_path + "/" + name;
+        if (!is_directory(path))
+            roms.push_back(path);
     }
     closedir(directory);
     std::sort(roms.begin(), roms.end(),
@@ -655,20 +747,26 @@ std::string rom_title(const std::string &path) {
     const std::string::size_type slash = title.rfind('/');
     if (slash != std::string::npos)
         title.erase(0, slash + 1U);
-    const std::string folded = lowercase(title);
-    if (folded.size() >= 4U && folded.substr(folded.size() - 4U) == ".gbc")
-        title.erase(title.size() - 4U);
-    else if (folded.size() >= 3U && folded.substr(folded.size() - 3U) == ".gb")
-        title.erase(title.size() - 3U);
+    const std::string::size_type dot = title.rfind('.');
+    if (dot != std::string::npos)
+        title.erase(dot);
     return title;
 }
 
 std::string storage_name(const char *rom_path) {
     std::string name(rom_path);
+    const std::string prefix = std::string(kKoBoyRomDirectory) + "/";
+    if (name.compare(0, prefix.size(), prefix) == 0)
+        name.erase(0, prefix.size());
+    else {
+        const std::string::size_type slash = name.rfind('/');
+        if (slash != std::string::npos)
+            name.erase(0, slash + 1U);
+    }
     const std::string::size_type slash = name.rfind('/');
-    if (slash != std::string::npos)
-        name.erase(0, slash + 1U);
-    for (std::string::size_type index = 0; index < name.size(); ++index) {
+    const std::string::size_type filename = slash == std::string::npos
+        ? 0U : slash + 1U;
+    for (std::string::size_type index = filename; index < name.size(); ++index) {
         const unsigned char character = static_cast<unsigned char>(name[index]);
         if (!((character >= 'a' && character <= 'z') ||
               (character >= 'A' && character <= 'Z') ||
@@ -677,6 +775,12 @@ std::string storage_name(const char *rom_path) {
             name[index] = '_';
     }
     return name;
+}
+
+bool ensure_parent_directory(const std::string &path) {
+    const std::string::size_type slash = path.rfind('/');
+    return slash == std::string::npos ||
+           ensure_directory(path.substr(0, slash).c_str());
 }
 
 std::string state_path(const char *rom_path, unsigned slot) {
@@ -709,7 +813,8 @@ bool load_state(koboy::EmulatorCore &core, const std::string &path) {
 
 bool save_state(koboy::EmulatorCore &core, const std::string &path) {
     if (!ensure_directory(kKoBoyRoot) ||
-        !ensure_directory(kKoBoyStateDirectory))
+        !ensure_directory(kKoBoyStateDirectory) ||
+        !ensure_parent_directory(path))
         return false;
     const std::size_t size = core.state_size();
     if (!size)
@@ -765,7 +870,8 @@ bool save_sram(koboy::EmulatorCore &core, const std::string &path) {
     if (!size || !data)
         return true;
     if (!ensure_directory(kKoBoyRoot) ||
-        !ensure_directory(kKoBoySaveDirectory))
+        !ensure_directory(kKoBoySaveDirectory) ||
+        !ensure_parent_directory(path))
         return false;
     const std::string temporary = path + ".tmp";
     std::ofstream output(temporary.c_str(),
@@ -1104,13 +1210,16 @@ void draw_refresh_settings(std::vector<uint32_t> &screen, unsigned width,
 
 void draw_game_list(std::vector<uint32_t> &screen, unsigned width,
                     unsigned height, const std::vector<std::string> &roms,
-                    std::size_t page, bool allow_cancel) {
+                    const std::string &system_name, std::size_t page) {
     const uint32_t dark = 0xFF202020U;
     const uint32_t light = 0xFFFFFFFFU;
     const std::size_t page_size = 7U;
     screen.assign(static_cast<size_t>(width) * height, light);
+    std::string heading = uppercase(system_name);
+    if (heading.size() > 36U)
+        heading = heading.substr(0, 33U) + "...";
     draw_label(screen, width, height, width / 2, height * 8 / 100,
-               "SELECT GAME", 7, dark);
+               heading.c_str(), 6, dark);
 
     const int left = width * 6 / 100;
     const int right = width * 94 / 100;
@@ -1118,8 +1227,11 @@ void draw_game_list(std::vector<uint32_t> &screen, unsigned width,
     const int row_height = height * 9 / 100;
     const std::size_t first = page * page_size;
     if (roms.empty()) {
+        std::string message = "NO " + uppercase(system_name) + " GAMES FOUND";
+        if (message.size() > 44U)
+            message = message.substr(0, 41U) + "...";
         draw_label(screen, width, height, width / 2, height * 48 / 100,
-                   "NO GAMES FOUND", 6, dark);
+                   message.c_str(), 4, dark);
     } else {
         for (std::size_t row = 0; row < page_size && first + row < roms.size();
              ++row) {
@@ -1136,6 +1248,47 @@ void draw_game_list(std::vector<uint32_t> &screen, unsigned width,
         }
     }
 
+    const int footer_y = height * 91 / 100;
+    draw_label(screen, width, height, width / 6, footer_y,
+               "PREVIOUS", 4, dark);
+    draw_label(screen, width, height, width / 2, footer_y,
+               "BACK", 4, dark);
+    draw_label(screen, width, height, width * 5 / 6, footer_y,
+               "NEXT", 4, dark);
+}
+
+void draw_system_list(std::vector<uint32_t> &screen, unsigned width,
+                      unsigned height,
+                      const std::vector<SystemFolder> &systems,
+                      std::size_t page, bool allow_cancel) {
+    const uint32_t dark = 0xFF202020U;
+    const uint32_t light = 0xFFFFFFFFU;
+    const std::size_t page_size = 7U;
+    screen.assign(static_cast<size_t>(width) * height, light);
+    draw_label(screen, width, height, width / 2, height * 8 / 100,
+               "SELECT SYSTEM", 7, dark);
+    const int left = width * 6 / 100;
+    const int right = width * 94 / 100;
+    const int row_top = height * 16 / 100;
+    const int row_height = height * 9 / 100;
+    const std::size_t first = page * page_size;
+    if (systems.empty()) {
+        draw_label(screen, width, height, width / 2, height * 48 / 100,
+                   "NO SYSTEM FOLDERS FOUND", 5, dark);
+    } else {
+        for (std::size_t row = 0;
+             row < page_size && first + row < systems.size(); ++row) {
+            const int top = row_top + static_cast<int>(row) * row_height;
+            const int bottom = top + row_height - height / 100;
+            fill_rectangle(screen, width, height, left, top, right, bottom,
+                           dark);
+            std::string name = systems[first + row].name;
+            if (name.size() > 48U)
+                name = name.substr(0, 45U) + "...";
+            draw_label(screen, width, height, width / 2,
+                       top + (bottom - top) / 2, name.c_str(), 4, light);
+        }
+    }
     const int footer_y = height * 91 / 100;
     draw_label(screen, width, height, width / 6, footer_y,
                "PREVIOUS", 4, dark);
@@ -1164,44 +1317,97 @@ std::string choose_game(koboy::FramebufferBackend &framebuffer,
                         koboy::TouchInput &input,
                         std::vector<uint32_t> &screen, uint32_t &marker,
                         bool allow_cancel) {
-    const std::vector<std::string> roms = list_roms();
     const std::size_t page_size = 7U;
-    const std::size_t page_count = roms.empty()
-        ? 1U : (roms.size() + page_size - 1U) / page_size;
-    std::size_t page = 0U;
     for (;;) {
-        draw_game_list(screen, framebuffer.variable_info().xres,
-                       framebuffer.variable_info().yres, roms, page,
-                       allow_cancel);
-        framebuffer.draw_screen(screen);
-        framebuffer.refresh_screen_gc16(marker++, true);
-        input.suppress_input_until_release();
+        const std::vector<SystemFolder> systems = list_systems();
+        const std::size_t system_page_count = systems.empty() ? 1U :
+            (systems.size() + page_size - 1U) / page_size;
+        std::size_t system_page = 0U;
+        std::size_t selected_system = systems.size();
         for (;;) {
             if (interrupted)
                 return std::string();
-            const koboy::UiAction action =
-                input.take_ui_action(koboy::UI_SCREEN_GAME_LIST);
-            if (action == koboy::UI_LIST_PREVIOUS) {
-                if (page > 0U)
-                    --page;
+            draw_system_list(screen, framebuffer.variable_info().xres,
+                             framebuffer.variable_info().yres, systems,
+                             system_page, allow_cancel);
+            framebuffer.draw_screen(screen);
+            framebuffer.refresh_screen_gc16(marker++, true);
+            input.suppress_input_until_release();
+            for (;;) {
+                if (interrupted)
+                    return std::string();
+                const koboy::UiAction action =
+                    input.take_ui_action(koboy::UI_SCREEN_GAME_LIST);
+                if (action == koboy::UI_LIST_PREVIOUS) {
+                    if (system_page > 0U)
+                        --system_page;
+                    break;
+                }
+                if (action == koboy::UI_LIST_NEXT) {
+                    if (system_page + 1U < system_page_count)
+                        ++system_page;
+                    break;
+                }
+                if (action == koboy::UI_LIST_CANCEL)
+                    return std::string();
+                if (action >= koboy::UI_GAME_0 &&
+                    action <= koboy::UI_GAME_6) {
+                    const std::size_t row = static_cast<std::size_t>(
+                        action - koboy::UI_GAME_0);
+                    const std::size_t index = system_page * page_size + row;
+                    if (index < systems.size()) {
+                        selected_system = index;
+                        break;
+                    }
+                }
+                usleep(20000);
+            }
+            if (selected_system < systems.size())
                 break;
+        }
+
+        const SystemFolder &system = systems[selected_system];
+        const std::vector<std::string> roms = list_roms(system.path);
+        const std::size_t game_page_count = roms.empty() ? 1U :
+            (roms.size() + page_size - 1U) / page_size;
+        std::size_t game_page = 0U;
+        bool return_to_systems = false;
+        while (!return_to_systems) {
+            draw_game_list(screen, framebuffer.variable_info().xres,
+                           framebuffer.variable_info().yres, roms,
+                           system.name, game_page);
+            framebuffer.draw_screen(screen);
+            framebuffer.refresh_screen_gc16(marker++, true);
+            input.suppress_input_until_release();
+            for (;;) {
+                if (interrupted)
+                    return std::string();
+                const koboy::UiAction action =
+                    input.take_ui_action(koboy::UI_SCREEN_GAME_LIST);
+                if (action == koboy::UI_LIST_PREVIOUS) {
+                    if (game_page > 0U)
+                        --game_page;
+                    break;
+                }
+                if (action == koboy::UI_LIST_NEXT) {
+                    if (game_page + 1U < game_page_count)
+                        ++game_page;
+                    break;
+                }
+                if (action == koboy::UI_LIST_CANCEL) {
+                    return_to_systems = true;
+                    break;
+                }
+                if (action >= koboy::UI_GAME_0 &&
+                    action <= koboy::UI_GAME_6) {
+                    const std::size_t row = static_cast<std::size_t>(
+                        action - koboy::UI_GAME_0);
+                    const std::size_t index = game_page * page_size + row;
+                    if (index < roms.size())
+                        return roms[index];
+                }
+                usleep(20000);
             }
-            if (action == koboy::UI_LIST_NEXT) {
-                if (page + 1U < page_count)
-                    ++page;
-                break;
-            }
-            if (action == koboy::UI_LIST_CANCEL)
-                return std::string();
-            if (action >= koboy::UI_GAME_0 &&
-                action <= koboy::UI_GAME_6) {
-                const std::size_t row = static_cast<std::size_t>(
-                    action - koboy::UI_GAME_0);
-                const std::size_t index = page * page_size + row;
-                if (index < roms.size())
-                    return roms[index];
-            }
-            usleep(20000);
         }
     }
 }

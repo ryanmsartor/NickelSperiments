@@ -334,14 +334,17 @@ Game, Save State, Load State, Reset Game, and Exit to Nickel are implemented:
 5. Select Game
 6. Exit to Nickel
 
-Select Game opens a scrollable list populated from the ROM directory. The
+Startup and Select Game first open a dynamic list of the top-level system
+folders under the ROM directory, then a scrollable game list for the selected
+system. Empty systems retain a Back action. The
 initial state model has exactly two per-game slots. `state0` is automatic: Ko
 Boy saves it when returning to Nickel and loads it when that game is selected.
 `state1` is manual and is used exclusively by the menu's Save State and Load
 State entries. State files live under `/mnt/onboard/KoBoy/States/`; they are
-kept separate from ROMs and keyed by the ROM filename. Battery-backed SRAM is
-loaded from `/mnt/onboard/KoBoy/Saves/` after loading a ROM and flushed
-atomically on manual save, game switch, and normal exit.
+kept separate from ROMs and mirror the ROM library's system folders.
+Battery-backed SRAM uses the same mirrored layout under
+`/mnt/onboard/KoBoy/Saves/`, and is flushed atomically on manual save, game
+switch, and normal exit.
 
 The frontend now reaches Gambatte through a core-neutral interface covering
 ROM loading, video frames, input, reset, state serialization, and save RAM.

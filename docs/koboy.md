@@ -14,10 +14,16 @@ Install both ARM binaries together:
 /mnt/onboard/.adds/koboy/koboy-supervisor
 ```
 
-ROMs belong in `/mnt/onboard/KoBoy/Roms/`. Ko Boy scans that directory for
-case-insensitive `.gb` and `.gbc` extensions. Automatic save states are kept
-in `/mnt/onboard/KoBoy/States/` and keyed by ROM filename. Battery-backed game
-saves are kept as `.sav` files in `/mnt/onboard/KoBoy/Saves/`.
+ROMs belong in system folders immediately below `/mnt/onboard/KoBoy/Roms/`.
+On first use Ko Boy creates Game Boy, Game Boy Color, Game Boy Advance, and
+Mega Duck folders. The system browser is otherwise dynamic: adding, renaming,
+or removing a top-level folder changes the systems shown without Ko Boy
+recreating intentionally removed folders. Games live directly inside their
+system folder. Automatic save states are kept in `/mnt/onboard/KoBoy/States/`
+with the same system folders as the ROM library. Battery-backed game saves use
+the same mirrored layout under `/mnt/onboard/KoBoy/Saves/`. For example,
+`Roms/Game Boy/Tetris.gb` maps to `States/Game Boy/Tetris.gb.state0` and
+`Saves/Game Boy/Tetris.gb.sav`.
 
 Run the supervisor without a ROM to open the game browser:
 
@@ -43,7 +49,10 @@ directory as configuration.
 
 ## Player flow
 
-The startup browser shows seven alphabetically sorted games per page. During
+The startup browser first shows up to seven system folders per page, followed
+by the selected system's alphabetically sorted games. An empty system reports
+that no games were found and retains a Back action to the system browser.
+During
 play, the Menu button pauses emulation and offers Resume Game, Save State,
 Load State, Reset Game, Select Game, and Exit to Nickel. Reset Game restarts
 the emulated system without reading or writing any state files. The manual
