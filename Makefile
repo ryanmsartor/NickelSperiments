@@ -23,6 +23,7 @@ help:
 	@echo "  gambatte-bench         Build the headless ARMv7 Gambatte benchmark"
 	@echo "  armgba-adapter-check   Compile the in-progress armGBA frontend adapter"
 	@echo "  armgba-core-check      Compile armGBA's ARMv7/NEON/JIT core"
+	@echo "  armgba-libretro-check  Compile armGBA's libretro support layer"
 	@echo "  koboy                  Build the Ko Boy player"
 	@echo "  koboy-supervisor       Build the Ko Boy crash-recovery supervisor"
 	@echo "  koboy-display-test     Build the Ko Boy synthetic display diagnostic"

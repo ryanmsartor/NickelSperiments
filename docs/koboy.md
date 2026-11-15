@@ -76,7 +76,11 @@ not linked into the player yet. An initial `ArmGbaCore` adapter now implements
 the same interface through armGBA's libretro API, including dynamic GB/GBA
 video formats, input, reset, states, and save RAM. The adapter and armGBA's
 ARMv7/NEON/JIT core compile with NickelTC; the remaining libretro support
-sources must be built and linked before the new adapter can run on-device.
+sources also compile except optional CPU LCD effects. That source requires a
+newer compiler's `__builtin_convertvector`; Ko Boy does its own display
+processing, so the intended resolution is a no-effects compatibility shim
+rather than modifying the pinned dependency. A final link and device probe are
+still required before the new adapter can run on-device.
 
 ## Developer refresh settings
 

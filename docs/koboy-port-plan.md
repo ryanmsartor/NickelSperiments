@@ -348,9 +348,12 @@ ROM loading, video frames, input, reset, state serialization, and save RAM.
 armGBA is pinned at revision `e099bbf9` in `deps/armgba`. Its initial libretro
 adapter covers video, input, reset, state serialization, and save RAM. Both the
 adapter and armGBA's ARMv7/NEON/JIT machine core compile with NickelTC. The
-remaining libretro support layer, final link, and device tests are still
-required. The current Gambatte adapter remains selected through the core
-factory until the armGBA path passes those tests.
+libretro support layer also compiles except its optional CPU LCD-effects
+source, which uses `__builtin_convertvector` newer than NickelTC GCC 4.9. Ko
+Boy already owns display processing, so a no-effects compatibility shim is
+planned instead of modifying the pinned submodule. The final link and device
+tests are still required. The current Gambatte adapter remains selected
+through the core factory until the armGBA path passes those tests.
 
 - Connect Gambatte video to the display backend.
 - Add touch D-pad, A, B, Start, Select, and Menu controls.

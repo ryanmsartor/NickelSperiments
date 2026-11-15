@@ -49,6 +49,7 @@ make koboy-supervisor
 make koboy-lifecycle
 make armgba-adapter-check
 make armgba-core-check
+make armgba-libretro-check
 ```
 
 The armGBA checks also use NickelTC's C compiler through
