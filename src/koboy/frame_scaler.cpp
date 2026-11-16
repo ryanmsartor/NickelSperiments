@@ -5,6 +5,7 @@
 
 #include "frame_scaler.h"
 
+#include <cstring>
 #include <stdexcept>
 
 namespace koboy {
@@ -64,13 +65,28 @@ void scale_rgb32_dithered_bichrome(const std::vector<uint32_t> &source,
                                    unsigned source_height,
                                    unsigned scale,
                                    std::vector<uint32_t> &destination,
+                                   std::vector<uint32_t> &previous_source,
                                    bool grid_effect) {
-    static const unsigned bayer[4][4] = {
-        { 0U,  8U,  2U, 10U},
-        {12U,  4U, 14U,  6U},
-        { 3U, 11U,  1U,  9U},
-        {15U,  7U, 13U,  5U},
+    struct DitherTable {
+        uint32_t pixel[256][4][4];
+        DitherTable() {
+            static const unsigned bayer[4][4] = {
+                { 0U,  8U,  2U, 10U},
+                {12U,  4U, 14U,  6U},
+                { 3U, 11U,  1U,  9U},
+                {15U,  7U, 13U,  5U},
+            };
+            for (unsigned gray = 0U; gray < 256U; ++gray)
+                for (unsigned y = 0U; y < 4U; ++y)
+                    for (unsigned x = 0U; x < 4U; ++x) {
+                        const unsigned cutoff =
+                            (2U * bayer[y][x] + 1U) * 255U;
+                        pixel[gray][y][x] = gray * 32U > cutoff ?
+                            0xFFFFFFFFU : 0xFF000000U;
+                    }
+        }
     };
+    static const DitherTable dither;
     if (source_width == 0U || source_height == 0U ||
         source.size() != static_cast<std::size_t>(source_width) * source_height)
         throw std::runtime_error("source frame dimensions do not match data");
@@ -79,30 +95,42 @@ void scale_rgb32_dithered_bichrome(const std::vector<uint32_t> &source,
 
     const unsigned width = source_width * scale;
     const unsigned height = source_height * scale;
+    const bool redraw_all =
+        destination.size() != static_cast<std::size_t>(width) * height ||
+        previous_source.size() != source.size();
     destination.resize(width * height);
+    previous_source.resize(source.size());
 
     for (unsigned source_y = 0; source_y < source_height; ++source_y) {
         for (unsigned source_x = 0; source_x < source_width; ++source_x) {
-            const uint32_t rgb = source[source_y * source_width + source_x];
+            const std::size_t source_index =
+                static_cast<std::size_t>(source_y) * source_width + source_x;
+            const uint32_t rgb = source[source_index];
+            if (!redraw_all && previous_source[source_index] == rgb)
+                continue;
+            previous_source[source_index] = rgb;
             const unsigned red = (rgb >> 16U) & 0xFFU;
             const unsigned green = (rgb >> 8U) & 0xFFU;
             const unsigned blue = rgb & 0xFFU;
             const uint32_t gray = (red * 54U + green * 183U + blue * 19U) >> 8U;
+            const unsigned output_x = source_x * scale;
             for (unsigned dy = 0; dy < scale; ++dy) {
                 const unsigned output_y = source_y * scale + dy;
-                uint32_t *row = &destination[output_y * width +
-                                             source_x * scale];
-                const unsigned *thresholds = bayer[output_y & 3U];
+                uint32_t *row = &destination[
+                    static_cast<std::size_t>(output_y) * width + output_x];
+                const uint32_t *pattern = dither.pixel[gray][output_y & 3U];
+                if (!grid_effect && scale == 4U) {
+                    std::memcpy(row, pattern, 4U * sizeof(*row));
+                    continue;
+                }
                 for (unsigned dx = 0; dx < scale; ++dx) {
                     const bool vertical_grid = grid_effect &&
                         dx + 1U == scale && source_x + 1U < source_width;
                     const bool horizontal_grid = grid_effect &&
                         dy + 1U == scale && source_y + 1U < source_height;
-                    const unsigned output_x = source_x * scale + dx;
-                    const unsigned cutoff =
-                        (2U * thresholds[output_x & 3U] + 1U) * 255U;
                     row[dx] = vertical_grid || horizontal_grid ||
-                        gray * 32U > cutoff ? 0xFFFFFFFFU : 0xFF000000U;
+                        pattern[(output_x + dx) & 3U] == 0xFFFFFFFFU ?
+                        0xFFFFFFFFU : 0xFF000000U;
                 }
             }
         }

@@ -24,6 +24,7 @@ void scale_rgb32_dithered_bichrome(const std::vector<uint32_t> &source,
                                    unsigned source_height,
                                    unsigned scale,
                                    std::vector<uint32_t> &destination,
+                                   std::vector<uint32_t> &previous_source,
                                    bool grid_effect = false);
 
 } // namespace koboy

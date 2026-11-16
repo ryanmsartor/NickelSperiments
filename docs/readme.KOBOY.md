@@ -88,7 +88,7 @@ The install package creates the BIOS directory but does not distribute proprieta
 
 ## Display settings
 
-Gameplay uses steady full-viewport A2 updates at 6.5 Hz by default, dithered bichrome output, and a full-screen GC16 every 60 seconds. Display settings persist globally in `/mnt/onboard/KoBoy/display.conf` rather than per game.
+Gameplay uses steady full-viewport A2 updates at 9 Hz by default, dithered bichrome output, and a full-screen GC16 every 60 seconds. Display settings persist globally in `/mnt/onboard/KoBoy/display.conf` rather than per game.
 
 The normal Display Settings menu exposes:
 
@@ -97,7 +97,7 @@ The normal Display Settings menu exposes:
 
 Creating `/mnt/onboard/KoBoy/developer` additionally exposes:
 
-- **Target Refresh Rate:** 5 through 8 Hz in quarter-Hz increments. The default is 6.5 Hz.
+- **Target Refresh Rate:** 8 through 12 Hz in quarter-Hz increments. The default is 9 Hz.
 
 Ko Boy always uses a stable 4-by-4 ordered pattern of physical panel pixels to represent intermediate shades without temporal noise. Menus use a black-and-white palette and waited full-screen updates: GC16 when entering or leaving the menu and DU between menu screens. Returning from the menu first clears the panel through a waited white-screen GC16, then presents the restored game and controls through a second waited GC16. Loading, wake, and exit also use full-screen GC16 where a clean visual boundary matters more than uninterrupted animation.
 

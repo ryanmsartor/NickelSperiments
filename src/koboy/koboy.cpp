@@ -66,7 +66,7 @@ struct DisplaySettings {
     unsigned target_refresh_quarters;
     DisplaySettings()
         : full_refresh_seconds(60U), grid_effect(false),
-          target_refresh_quarters(26U) {}
+          target_refresh_quarters(36U) {}
 };
 
 void handle_signal(int) { interrupted = 1; }
@@ -225,7 +225,7 @@ bool valid_full_refresh_seconds(unsigned value) {
 }
 
 bool valid_target_refresh_quarters(unsigned value) {
-    return value >= 20U && value <= 32U;
+    return value >= 32U && value <= 48U;
 }
 
 void load_display_settings(DisplaySettings &settings) {
@@ -314,8 +314,8 @@ void cycle_full_refresh_frequency(DisplaySettings &settings) {
 
 void cycle_target_refresh_rate(DisplaySettings &settings) {
     const unsigned values[] = {
-        20U, 21U, 22U, 23U, 24U, 25U, 26U,
-        27U, 28U, 29U, 30U, 31U, 32U
+        32U, 33U, 34U, 35U, 36U, 37U, 38U, 39U, 40U,
+        41U, 42U, 43U, 44U, 45U, 46U, 47U, 48U
     };
     unsigned index = 0U;
     while (index + 1U < sizeof(values) / sizeof(values[0]) &&
@@ -1536,6 +1536,7 @@ int main(int argc, char **argv) {
 
         std::vector<uint32_t> rgb;
         std::vector<uint32_t> scaled;
+        std::vector<uint32_t> previous_rgb;
         uint32_t marker = 1U;
         const unsigned screen_width = framebuffer.variable_info().xres;
         const unsigned screen_height = framebuffer.variable_info().yres;
@@ -1860,7 +1861,8 @@ int main(int argc, char **argv) {
                 break;
             koboy::scale_rgb32_dithered_bichrome(
                 rgb, core.video_width(), core.video_height(),
-                effective_scale, scaled, display_settings.grid_effect);
+                effective_scale, scaled, previous_rgb,
+                display_settings.grid_effect);
             for (std::size_t i = 0; i < a2_markers.size(); ++i) {
                 last_wait_seconds =
                     framebuffer.wait_for_update(a2_markers[i]);
