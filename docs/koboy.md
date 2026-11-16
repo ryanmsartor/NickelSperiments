@@ -1,10 +1,6 @@
 # Ko Boy
 
-Ko Boy is a Kobo Game Boy, Game Boy Color, Game Boy Advance, and Mega Duck
-player built around armGBA. It is currently deployed as two adjacent
-executables: the player and a supervisor which owns framebuffer backup, crash
-recovery, and final restoration. Nickel remains running while Ko Boy
-exclusively owns touch input.
+Ko Boy is a Kobo Game Boy, Game Boy Color, Game Boy Advance, and Mega Duck player built around armGBA. It is currently deployed as two adjacent executables: the player and a supervisor which owns framebuffer backup, crash recovery, and final restoration. Nickel remains running while Ko Boy exclusively owns touch input.
 
 ## Device layout
 
@@ -15,16 +11,7 @@ Install both ARM binaries together:
 /mnt/onboard/.adds/koboy/koboy-supervisor
 ```
 
-ROMs belong in system folders immediately below `/mnt/onboard/KoBoy/Roms/`.
-On first use Ko Boy creates Game Boy, Game Boy Color, Game Boy Advance, and
-Mega Duck folders. The system browser is otherwise dynamic: adding, renaming,
-or removing a top-level folder changes the systems shown without Ko Boy
-recreating intentionally removed folders. Games live directly inside their
-system folder. Automatic save states are kept in `/mnt/onboard/KoBoy/States/`
-with the same system folders as the ROM library. Battery-backed game saves use
-the same mirrored layout under `/mnt/onboard/KoBoy/Saves/`. For example,
-`Roms/Game Boy/Tetris.gb` maps to `States/Game Boy/Tetris.gb.state0` and
-`Saves/Game Boy/Tetris.gb.sav`.
+ROMs belong in system folders immediately below `/mnt/onboard/KoBoy/Roms/`. On first use Ko Boy creates Game Boy, Game Boy Color, Game Boy Advance, and Mega Duck folders. The system browser is otherwise dynamic: adding, renaming, or removing a top-level folder changes the systems shown without Ko Boy recreating intentionally removed folders. Games live directly inside their system folder. Automatic save states are kept in `/mnt/onboard/KoBoy/States/` with the same system folders as the ROM library. Battery-backed game saves use the same mirrored layout under `/mnt/onboard/KoBoy/Saves/`. For example, `Roms/Game Boy/Tetris.gb` maps to `States/Game Boy/Tetris.gb.state0` and `Saves/Game Boy/Tetris.gb.sav`.
 
 Run the supervisor without a ROM to open the game browser:
 
@@ -32,103 +19,39 @@ Run the supervisor without a ROM to open the game browser:
 /mnt/onboard/.adds/koboy/koboy-supervisor
 ```
 
-Passing a ROM path bypasses the startup browser for development and testing.
-Local compilation, including the ARM64-hosted NickelTC arrangement, is
-documented in [Local Kobo toolchain](local-toolchain.md).
+Passing a ROM path bypasses the startup browser for development and testing. Local compilation, including the ARM64-hosted NickelTC arrangement, is documented in [Local Kobo toolchain](local-toolchain.md).
 
 ## Nickel launcher
 
-The combined launcher/lifecycle plugin adds a **Ko Boy** row to Nickel's
-**More** screen near Help, using the same stock anchor as NickelModManager.
-Tapping it starts the supervisor asynchronously and writes player output to
-`/mnt/onboard/.adds/koboy/koboy.log`. A running player or a supervisor which is
-still starting prevents a second launch. Other mods may affect the relative
-order of rows which use that anchor, but do not replace the Ko Boy entry.
+The combined launcher/lifecycle plugin adds a **Ko Boy** row to Nickel's **More** screen near Help, using the same stock anchor as NickelModManager. Tapping it starts the supervisor asynchronously and writes player output to `/mnt/onboard/.adds/koboy/koboy.log`. A running player or a supervisor which is still starting prevents a second launch. Other mods may affect the relative order of rows which use that anchor, but do not replace the Ko Boy entry.
 
-This launcher is built into Ko Boy and does not require NickelMenu. Users who
-already have NickelMenu may still create their own entry, but doing so produces
-a second route to the same supervisor and is unnecessary.
+This launcher is built into Ko Boy and does not require NickelMenu. Users who already have NickelMenu may still create their own entry, but doing so produces a second route to the same supervisor and is unnecessary.
 
 ## Player flow
 
-The startup browser first shows up to seven system folders per page, followed
-by the selected system's alphabetically sorted games. An empty system reports
-that no games were found and retains a Back action to the system browser.
-During
-play, the Menu button pauses emulation and offers Resume Game, Save State,
-Load State, Reset Game, Select Game, Display Settings, and Exit to Nickel.
-Reset Game restarts the emulated system without reading or writing any state
-files. The manual entries use each game's `state1` slot, independently of its
-automatic `state0` resume slot.
-Selecting another game saves the current automatic state and SRAM, then clears
-the browser to a loading screen before loading the selected game's saves. The
-first actual game frame is then presented with waited full GC16 so the loading
-text cannot bleed into the title screen. Manual Save State, game switching,
-and normal exit atomically flush battery-backed SRAM to the game's `.sav`
-file. Exit also saves the current automatic state before the supervisor
-restores the original framebuffer and returns control to Nickel.
-The default 6x integer scale produces a 960-by-864 game viewport on the Clara
-BW; `--scale 5` can be used when a smaller viewport is preferred.
+The startup browser first shows up to seven system folders per page, followed by the selected system's alphabetically sorted games. An empty system reports that no games were found and retains a Back action to the system browser. During play, the Menu button pauses emulation and offers Resume Game, Save State, Load State, Reset Game, Select Game, Display Settings, and Exit to Nickel. Reset Game restarts the emulated system without reading or writing any state files. The manual entries use each game's `state1` slot,  ndependently of its automatic `state0` resume slot. Selecting another game saves the current automatic state and SRAM, then clears the browser to a loading screen before loading the selected game's saves. The first actual game frame is then presented with waited full GC16 so the loading text cannot bleed into the title screen. Manual Save State, game switching, and normal exit atomically flush battery-backed SRAM to the game's `.sav` file. Exit also saves the current automatic state before the supervisor restores the original framebuffer and returns control to Nickel. The default 6x integer scale produces a 960-by-864 game viewport on the Clara BW; `--scale 5` can be used when a smaller viewport is preferred.
 
-For the implementation history, device measurements, and remaining work, see
-the [Ko Boy port plan](koboy-port-plan.md).
+For the implementation history, device measurements, and remaining work, see the [Ko Boy port plan](koboy-port-plan.md).
 
 ## Emulator core boundary
 
-Ko Boy's frontend depends on a small core-neutral interface for ROM loading,
-frame production, input, reset, save states, and battery-backed save RAM. Core
-types stay out of the display, touch, menu, and lifecycle code, and the player
-obtains its backend through a factory.
+Ko Boy's frontend depends on a small core-neutral interface for ROM loading, frame production, input, reset, save states, and battery-backed save RAM. Core types stay out of the display, touch, menu, and lifecycle code, and the player obtains its backend through a factory.
 
-armGBA is pinned as the `deps/armgba` submodule at revision `6deb8f84`. The
-`ArmGbaCore` adapter implements
-the same interface through armGBA's libretro API, including dynamic GB/GBA
-video formats, input, reset, states, and save RAM. The adapter and armGBA's
-ARMv7/NEON/JIT core compile with NickelTC; the remaining libretro support
-sources also compile except optional CPU LCD effects. That source requires a
-newer compiler's `__builtin_convertvector`; Ko Boy does its own display
-processing, so `armgba_lcd_compat.c` supplies a no-effects pass-through layer
-rather than modifying the pinned dependency. armGBA's bundled GB/GBC backend
-and archive dependencies compile as part of the player. Ko Boy links the
-complete backend and obtains it through the core factory. GB, Mega Duck, and
-GBA games have all reached on-device execution; broader GBC/GBA compatibility
-and long-session GBA stability remain release-validation work.
+armGBA is pinned as the `deps/armgba` submodule at revision `6deb8f84`. The `ArmGbaCore` adapter implements the same interface through armGBA's libretro API, including dynamic GB/GBA video formats, input, reset, states, and save RAM. The adapter and armGBA's ARMv7/NEON/JIT core compile with NickelTC; the remaining libretro support sources also compile except optional CPU LCD effects. That source requires a newer compiler's `__builtin_convertvector`; Ko Boy does its own display processing, so `armgba_lcd_compat.c` supplies a no-effects pass-through layer rather than modifying the pinned dependency. armGBA's bundled GB/GBC backend and archive dependencies compile as part of the player. Ko Boy links the complete backend and obtains it through the core factory. GB, Mega Duck, and GBA games have all reached on-device execution; broader GBC/GBA compatibility and long-session GBA stability remain release-validation work.
 
 ## Refresh scheduling
 
-Gameplay uses A2 at a steady 10 Hz cadence plus one of four global cleanup
-policies selected from the in-game Display Settings submenu. Settings persist
-in `KoBoy/display.conf` and currently apply to every game.
+Gameplay uses A2 at a steady 10 Hz cadence plus one of four global cleanup policies selected from the in-game Display Settings submenu. Settings persist in `KoBoy/display.conf` and currently apply to every game.
 
-Adaptive is the default. Ko Boy measures frame-change debt independently in
-fixed 24-by-24 framebuffer cells. On each 10 Hz display tick it may start
-full-waveform GC16
-or DU cleanups for up to five highest-debt contiguous rectangles of dirty
-cells, with at most twenty cleanups active at once. This staggers cleanup starts
-instead of blinking a whole batch simultaneously. While a cleanup owns those
-cells, the newest A2 frame continues through coalesced rectangles covering the
-remainder. Framebuffer writes follow the same partition so active cleanup cells
-are not modified underneath the controller.
+Adaptive is the default. Ko Boy measures frame-change debt independently in fixed 24-by-24 framebuffer cells. On each 10 Hz display tick it may start full-waveform GC16 or DU cleanups for up to eight highest-debt contiguous rectangles of dirty cells, with at most thirty-two cleanups active at once. This staggers cleanup starts instead of blinking a whole batch simultaneously. While a cleanup owns those cells, the newest A2 frame continues through coalesced rectangles covering the remainder. Framebuffer writes follow the same partition so active cleanup cells are not modified underneath the controller.
 
-Intermediate issues up to ten GC16 or DU cleanups across the highest-debt
-contiguous rectangles at 2 Hz, combining adjacent dirty 24-by-24 cells. It uses
-GC16 for gray destinations and DU for gray-to-black/white transitions.
-Aggressive accumulates all
-affected cells into one aligned bounding rectangle and issues one GC16 at 1 Hz.
-Intermediate ignores pure black-to-white and white-to-black motion so A2 can
-continue covering those cells without GC16. Its cleanup debt includes only
-transitions involving gray. Aggressive remains intentionally broad and does
-not use DU.
+Intermediate issues up to ten GC16 or DU cleanups across the highest-debt contiguous rectangles at 2 Hz, combining adjacent dirty 24-by-24 cells. It uses GC16 for gray destinations and DU for gray-to-black/white transitions.
 
-Lazy schedules only the steady A2 updates. It performs no regional cleanup, so
-any cleanup beyond A2 comes exclusively from Full Refresh Frequency. With full
-refresh set to Off, Lazy deliberately permits artifacts to accumulate.
+Aggressive accumulates all affected cells into one aligned bounding rectangle and issues one GC16 at 1 Hz. Intermediate ignores pure black-to-white and white-to-black motion so A2 can continue covering those cells without GC16. Its cleanup debt includes only transitions involving gray. Aggressive remains intentionally broad and does not use DU.
 
-Full Refresh Frequency can be Off, 2, 5, 10, 15, 30, or 60 seconds. When due,
-the full-screen GC16 drains active cleanups and replaces that tick's policy
-cleanup. Grid Effect draws a one-pixel white divider between logical emulated
-pixels before output reaches the framebuffer. Both default to Off. Menus,
-loading, wake, and exit retain full-screen GC16 boundaries.
+Lazy schedules only the steady A2 updates. It performs no regional cleanup, so any cleanup beyond A2 comes exclusively from Full Refresh Frequency. With full refresh set to Off, Lazy deliberately permits artifacts to accumulate.
+
+Full Refresh Frequency can be Off, 2, 5, 10, 15, 30, or 60 seconds. When due, the full-screen GC16 drains active cleanups and replaces that tick's policy cleanup. Grid Effect draws a one-pixel white divider between logical emulated pixels before output reaches the framebuffer. Both default to Off. Menus, loading, wake, and exit retain full-screen GC16 boundaries.
 
 
 | Behavior | Adaptive | Intermediate | Aggressive | Lazy |
@@ -136,8 +59,8 @@ loading, wake, and exit retain full-screen GC16 boundaries.
 | Normal display | A2 at 10 Hz | A2 at 10 Hz | A2 at 10 Hz | A2 at 10 Hz |
 | Cleanup cell size | 24×24 physical pixels | 24×24 physical pixels | Tracks 24×24 cells, then bounds all affected cells | None |
 | Cleanup cadence | Every 10 Hz display tick | 2 Hz | 1 Hz | Never |
-| Maximum starts per cleanup opportunity | 5 rectangles | 10 total GC16/DU rectangles | 1 rectangle | 0 |
-| Maximum concurrently active | 20 | 20, though the 0.5-second cadence normally lets the previous batch finish | 1 in normal operation | 0 |
+| Maximum starts per cleanup opportunity | 8 rectangles | 10 total GC16/DU rectangles | 1 rectangle | 0 |
+| Maximum concurrently active | 32 | 20, though the 0.5-second cadence normally lets the previous batch finish | 1 in normal operation | 0 |
 | Rectangle construction | Combines adjacent eligible cells | Combines adjacent eligible cells | One bounding rectangle containing every affected cell | None |
 | Cleanup waveforms | GC16 and DU | GC16 and DU | GC16 only | None |
 | Gray destination | GC16 debt | GC16 cleanup debt | Included | Ignored until full refresh |
@@ -149,142 +72,45 @@ loading, wake, and exit retain full-screen GC16 boundaries.
 | Primary goal | Targeted quality with limited flashing | Predictable, moderately aggressive grayscale cleanup | Broad and simple cleanup | Maximum smoothness between full refreshes |
 
 
-Create `/mnt/onboard/KoBoy/diagnostics` to enable durable refresh diagnostics.
-Display Settings remain available without this flag. Release-style operation
-without diagnostics avoids the additional VFAT writes, log growth, sysfs
-reads, and diagnostic timing changes.
+Create `/mnt/onboard/KoBoy/diagnostics` to enable durable refresh diagnostics. Display Settings remain available without this flag. Release-style operation without diagnostics avoids the additional VFAT writes, log growth, sysfs reads, and diagnostic timing changes.
 
-Entering and leaving the menu uses waited, full-screen full-update GC16 so the
-game and menu do not bleed into one another. Redraws within Display Settings
-use waited, full-screen partial GC16 and never apply the selected gameplay
-waveform inside the menu. Input accumulated during an update is drained, and
-all gameplay and UI actions remain blocked until every existing contact has
-been released. Exit to Nickel likewise waits for release before giving Nickel
-the touchscreen. With diagnostics enabled, each menu update writes `begin` and
-`end` records, including its marker and elapsed time, to `refresh-active.log`.
-If a wait lasts at least 4.5 seconds—close to HWTCON's five-second timeout—Ko
-Boy closes Display Settings instead of submitting another menu update.
+Entering and leaving the menu uses waited, full-screen full-update GC16 so the game and menu do not bleed into one another. Transitions between menu screens use waited, full-screen DU over a strictly black-and-white palette and never apply the selected gameplay waveform inside the menu. Input accumulated during an update is drained, and all gameplay and UI actions remain blocked until every existing contact has been released. Exit to Nickel likewise waits for release before giving Nickel the touchscreen. With diagnostics enabled, each menu update writes `begin` and `end` records, including its marker and elapsed time, to `refresh-active.log`. If a wait lasts at least 4.5 seconds—close to HWTCON's five-second timeout—Ko Boy closes Display Settings instead of submitting another menu update.
 
-Ko Boy leaves Nickel responsible for interpreting the sleep cover and power
-button and for performing system power management. The companion
-`libkoboylifecycle.so` NickelHook plugin observes Nickel's actual
-`aboutToSleep` and `resumedFromSleep` lifecycle transitions and signals the
-active player through `/tmp/koboy.pid`. A sleep transition pauses emulation
-immediately. After Nickel finishes waking, Ko Boy redraws the complete game
-viewport and controller panel and presents the whole screen with full-update
-GC16 before emulation continues. The sleep interval does not consume a
-configured timed test run or cause refresh catch-up bursts.
+Ko Boy leaves Nickel responsible for interpreting the sleep cover and power button and for performing system power management. The companion `libkoboylifecycle.so` NickelHook plugin observes Nickel's actual `aboutToSleep` and `resumedFromSleep` lifecycle transitions and signals the active player through `/tmp/koboy.pid`. A sleep transition pauses emulation immediately. After Nickel finishes waking, Ko Boy redraws the complete game viewport and controller panel and presents the whole screen with full-update GC16 before emulation continues. The sleep interval does not consume a configured timed test run or cause refresh catch-up bursts.
 
-Install the launcher/lifecycle plugin at
-`/usr/local/Kobo/imageformats/libkoboylifecycle.so` and restart the Kobo so
-Nickel loads it. Its lifecycle hooks are inactive whenever `/tmp/koboy.pid` is
-absent, while its More-screen launcher remains available. Creating
-`/mnt/onboard/.adds/koboy/uninstall-lifecycle-hook` requests removal through
-NickelHook's failsafe mechanism.
+Install the launcher/lifecycle plugin at `/usr/local/Kobo/imageformats/libkoboylifecycle.so` and restart the Kobo so Nickel loads it. Its lifecycle hooks are inactive whenever `/tmp/koboy.pid` is absent, while its More-screen launcher remains available. Creating `/mnt/onboard/.adds/koboy/uninstall-lifecycle-hook` requests removal through NickelHook's failsafe mechanism.
 
-Before opening any menu, Ko Boy waits for the most recently submitted gameplay
-update to finish. Touches accumulated while draining that update are discarded,
-so repeated Menu presses cannot enqueue multiple menu transitions. Drain start,
-completion, marker, and elapsed time are included in the diagnostic log; a
-near-timeout cancels the menu opening.
+Before opening any menu, Ko Boy waits for the most recently submitted gameplay update to finish. Touches accumulated while draining that update are discarded, so repeated Menu presses cannot enqueue multiple menu transitions. Drain start, completion, marker, and elapsed time are included in the diagnostic log; a near-timeout cancels the menu opening.
 
-An accepted Menu press first writes a minimal, metrics-free `menu_press`
-breadcrumb. During gameplay, a heartbeat is written every five seconds with
-the latest submitted and known-completed markers, the most recent waited
-duration, cumulative counts for each waveform, total CPU utilization, and Ko
-Boy's CPU utilization. CPU percentages are calculated from `/proc/stat` and
-`/proc/self/stat` deltas over the heartbeat interval rather than inferred from
-clock frequency. Together these distinguish
-a failure in input handling or diagnostic collection from an HWTCON update
-which was submitted earlier and never completed.
+An accepted Menu press first writes a minimal, metrics-free `menu_press` breadcrumb. During gameplay, a heartbeat is written every five seconds with the latest submitted and known-completed markers, the most recent waited duration, cumulative counts for each waveform, total CPU utilization, and Ko Boy's CPU utilization. CPU percentages are calculated from `/proc/stat` and `/proc/self/stat` deltas over the heartbeat interval rather than inferred from clock frequency. Together these distinguish a failure in input handling or diagnostic collection from an HWTCON update which was submitted earlier and never completed.
 
-Every slow and slowest gameplay update also receives durable
-`gameplay_refresh begin` and `end` records containing its marker, waveform, and
-elapsed time. To observe the fast path without synchronizing VFAT on every
-frame, Ko Boy records the same pair for every fiftieth fast update. An unmatched
-`begin` after a watchdog reset identifies the request which entered HWTCON and
-did not return.
+Every slow and slowest gameplay update also receives durable `gameplay_refresh begin` and `end` records containing its marker, waveform, and elapsed time. To observe the fast path without synchronizing VFAT on every frame, Ko Boy records the same pair for every fiftieth fast update. An unmatched `begin` after a watchdog reset identifies the request which entered HWTCON and did not return.
 
-Active-settings records and both sides of each menu refresh also capture
-available system memory, Ko Boy's resident memory, CPU0's current clock, and
-the CPU, battery, and application-processor thermal-zone readings. Memory is
-reported in KiB, the clock in kHz, and temperatures in thousandths of a degree
-Celsius. A zero indicates that the corresponding kernel interface could not
-be read.
+Active-settings records and both sides of each menu refresh also capture available system memory, Ko Boy's resident memory, CPU0's current clock, and the CPU, battery, and application-processor thermal-zone readings. Memory is reported in KiB, the clock in kHz, and temperatures in thousandths of a degree Celsius. A zero indicates that the corresponding kernel interface could not be read.
 
-Every gameplay refresh—including fast A2 and DU—waits for completion before
-another update is submitted. Slow and slowest updates therefore cannot collide
-with a preceding fast update, and fast updates remain blocked until a slower
-waveform completes. If a waited update exceeds its target cadence, Ko Boy
-advances the scheduling baseline instead of issuing catch-up bursts.
+Every gameplay refresh—including fast A2 and DU—waits for completion before another update is submitted. Slow and slowest updates therefore cannot collide with a preceding fast update, and fast updates remain blocked until a slower waveform completes. If a waited update exceeds its target cadence, Ko Boy advances the scheduling baseline instead of issuing catch-up bursts.
 
 ## Display isolation
 
-Create `/mnt/onboard/KoBoy/isolate-no-gameplay-refresh` to diagnose hard
-resets. When a ROM is supplied directly, Ko Boy continues emulation, touch
-polling, scaling, timing, and framebuffer writes without issuing any HWTCON
-update, including during startup and the first game frame. Menu opening is
-disabled in this mode so it cannot introduce a display ioctl. The game browser
-still requires display updates, so bypass it for a strict zero-HWTCON test.
-Remove the flag afterward to restore normal display behavior.
+Create `/mnt/onboard/KoBoy/isolate-no-gameplay-refresh` to diagnose hard resets. When a ROM is supplied directly, Ko Boy continues emulation, touch polling, scaling, timing, and framebuffer writes without issuing any HWTCON update, including during startup and the first game frame. Menu opening is disabled in this mode so it cannot introduce a display ioctl. The game browser still requires display updates, so bypass it for a strict zero-HWTCON test. Remove the flag afterward to restore normal display behavior.
 
-Add `/mnt/onboard/KoBoy/isolate-no-touch` to the display-isolation flag to
-leave the touchscreen unopened and ungrabbed while the rest of the player
-continues. This distinguishes touchscreen input from supervisor, Nickel, and
-framebuffer interactions. Direct ROM launch is required because neither the
-game browser nor in-game controls can be operated in this mode.
+Add `/mnt/onboard/KoBoy/isolate-no-touch` to the display-isolation flag to leave the touchscreen unopened and ungrabbed while the rest of the player continues. This distinguishes touchscreen input from supervisor, Nickel, and framebuffer interactions. Direct ROM launch is required because neither the game browser nor in-game controls can be operated in this mode.
 
-Ko Boy leaves Nickel running. It exclusively grabs the touchscreen while active,
-saves the framebuffer before drawing, and restores it before returning to
-Nickel. Stopping Nickel is intentionally avoided: device testing showed that a
-`SIGSTOP` lasting roughly one watchdog interval can reboot the Kobo.
+Ko Boy leaves Nickel running. It exclusively grabs the touchscreen while active, saves the framebuffer before drawing, and restores it before returning to Nickel. Stopping Nickel is intentionally avoided: device testing showed that a `SIGSTOP` lasting roughly one watchdog interval can reboot the Kobo.
 
 ## Targeted cleanup refreshes
 
-Adaptive and Intermediate accumulate debt in fixed aligned 24-by-24 framebuffer
-cells. Device tests establish the controller's behavior for simultaneous
-non-overlapping A2, DU, and GC16 regions at these boundaries.
+Adaptive and Intermediate accumulate debt in fixed aligned 24-by-24 framebuffer cells. Device tests establish the controller's behavior for simultaneous non-overlapping A2, DU, and GC16 regions at these boundaries.
 
-The framebuffer cannot reveal which physical e-ink pixels still retain a
-visible prior image; it contains only the image Ko Boy intended to display.
-Instead, Ko Boy can estimate a per-region "ghosting debt" from its frame
-history. Divide the scaled game viewport into tiles and increase each tile's
-debt according to the number and magnitude of pixel changes, repeated dark-to-
-light transitions, time since its last cleanup, and the waveform used for that
-cleanup. Stronger waveforms should reduce more debt than weaker ones.
+The framebuffer cannot reveal which physical e-ink pixels still retain a visible prior image; it contains only the image Ko Boy intended to display. Instead, Ko Boy can estimate a per-region "ghosting debt" from its frame history. Divide the scaled game viewport into tiles and increase each tile's debt according to the number and magnitude of pixel changes, repeated dark-to-light transitions, time since its last cleanup, and the waveform used for that cleanup. Stronger waveforms should reduce more debt than weaker ones.
 
-On each display tick, Ko Boy finds the highest-debt rectangles composed
-entirely of adjacent dirty cells and starts up to five rectangular HWTCON
-updates while fewer than twenty older cleanups remain active. This lets one
-update clean a large contiguous changed area without bridging clean gaps merely
-because they lie inside a global bounding rectangle. Active rectangles cannot
-be selected again, and cells not selected retain their debt for later cleanup.
+On each display tick, Ko Boy finds the highest-debt rectangles composed entirely of adjacent dirty cells and starts up to eight rectangular HWTCON updates while fewer than thirty-two older cleanups remain active. This lets one update clean a large contiguous changed area without bridging clean gaps merely because they lie inside a global bounding rectangle. Active rectangles cannot be selected again, and cells not selected retain their debt for later cleanup.
 
-Debt is classified by the intended grayscale transition. A destination gray
-level requires GC16. A transition from gray to pure black or white requires DU.
-Pure black/white motion under A2, such as a black sprite crossing a white
-background, accumulates only a low aging charge and does not immediately
-request cleanup. Eight tile-equivalents of such endpoint motion make a cell
-eligible for an eventual DU cleanup. GC16 rectangles are selected before DU
-rectangles because they require accurate grayscale output; either waveform
-clears the weaker debt it supersedes in the cells it cleans.
+Debt is classified by the intended grayscale transition. A destination gray level requires GC16. A transition from gray to pure black or white requires DU. Pure black/white motion under A2, such as a black sprite crossing a white background, accumulates only a low aging charge and does not immediately request cleanup. Eight tile-equivalents of such endpoint motion make a cell eligible for an eventual DU cleanup. GC16 rectangles are selected before DU rectangles because they require accurate grayscale output; either waveform clears the weaker debt it supersedes in the cells it cleans.
 
-GC16 cleanup is also stability-gated. Debt continues accumulating while a cell
-is changing, but the cell normally becomes eligible only after remaining
-unchanged for two 10 Hz display snapshots. This lets scrolling finish before
-GC16 cleans the settled image instead of repeatedly flashing background
-segments that immediately move again. A debt equivalent to four complete
-maximum-range tile transitions bypasses the stability gate so sustained motion
-cannot defer cleanup indefinitely. DU does not use the stability gate because
-its endpoint repair is less visually disruptive.
+GC16 cleanup is also stability-gated. Debt continues accumulating while a cell is changing, but the cell normally becomes eligible only after remaining unchanged for two 10 Hz display snapshots. This lets scrolling finish before GC16 cleans the settled image instead of repeatedly flashing background segments that immediately move again. A debt equivalent to four complete maximum-range tile transitions bypasses the stability gate so sustained motion cannot defer cleanup indefinitely. DU does not use the stability gate because its endpoint repair is less visually disruptive.
 
-Initial implementation should retain an occasional full-viewport slowest
-refresh as a safety net. Its interval can be increased only after device tests
-show that targeted refreshes do not permit artifacts to accumulate over long
-sessions. Developer diagnostics should eventually record each selected cell,
-its debt, and the waveform so the heuristic can be tuned from observed results.
-Device testing must also confirm minimum dimensions, alignment requirements,
-edge artifacts, and whether waveforms spill beyond their requested rectangles.
+Initial implementation should retain an occasional full-viewport slowest refresh as a safety net. Its interval can be increased only after device tests show that targeted refreshes do not permit artifacts to accumulate over long sessions. Developer diagnostics should eventually record each selected cell, its debt, and the waveform so the heuristic can be tuned from observed results. Device testing must also confirm minimum dimensions, alignment requirements, edge artifacts, and whether waveforms spill beyond their requested rectangles.
 
 ## Remaining release work
 

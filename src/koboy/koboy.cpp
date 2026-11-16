@@ -68,6 +68,8 @@ const unsigned kCleanupStableTicks = 2U;
 const unsigned kUrgentCleanupTileEquivalents = 4U;
 const unsigned kCleanupStartsPerTick = 5U;
 const unsigned kMaximumConcurrentCleanups = 20U;
+const unsigned kAdaptiveCleanupStartsPerTick = 8U;
+const unsigned kAdaptiveMaximumConcurrentCleanups = 32U;
 const double kCleanupRetirementAge = 0.30;
 
 struct ActiveCleanup {
@@ -1533,7 +1535,7 @@ void draw_controls(std::vector<uint32_t> &screen, unsigned width,
 void draw_menu(std::vector<uint32_t> &screen, unsigned width,
                unsigned height, bool developer) {
     (void)developer;
-    const uint32_t dark = 0xFF202020U;
+    const uint32_t dark = 0xFF000000U;
     const uint32_t light = 0xFFFFFFFFU;
     screen.assign(static_cast<size_t>(width) * height, light);
     draw_label(screen, width, height, width / 2, height * 12 / 100,
@@ -1600,7 +1602,7 @@ std::string full_refresh_frequency_name(unsigned seconds) {
 void draw_display_settings(std::vector<uint32_t> &screen, unsigned width,
                            unsigned height,
                            const DisplaySettings &settings) {
-    const uint32_t dark = 0xFF202020U;
+    const uint32_t dark = 0xFF000000U;
     const uint32_t light = 0xFFFFFFFFU;
     screen.assign(static_cast<size_t>(width) * height, light);
     draw_label(screen, width, height, width / 2, height * 10 / 100,
@@ -1643,7 +1645,7 @@ std::string frequency_name(unsigned tenths_hz) {
 void draw_refresh_settings(std::vector<uint32_t> &screen, unsigned width,
                            unsigned height,
                            const RefreshSettings &settings) {
-    const uint32_t dark = 0xFF202020U;
+    const uint32_t dark = 0xFF000000U;
     const uint32_t light = 0xFFFFFFFFU;
     screen.assign(static_cast<size_t>(width) * height, light);
     draw_label(screen, width, height, width / 2, height * 10 / 100,
@@ -1673,7 +1675,7 @@ void draw_refresh_settings(std::vector<uint32_t> &screen, unsigned width,
 void draw_game_list(std::vector<uint32_t> &screen, unsigned width,
                     unsigned height, const std::vector<std::string> &roms,
                     const std::string &system_name, std::size_t page) {
-    const uint32_t dark = 0xFF202020U;
+    const uint32_t dark = 0xFF000000U;
     const uint32_t light = 0xFFFFFFFFU;
     const std::size_t page_size = 7U;
     screen.assign(static_cast<size_t>(width) * height, light);
@@ -1723,7 +1725,7 @@ void draw_system_list(std::vector<uint32_t> &screen, unsigned width,
                       unsigned height,
                       const std::vector<SystemFolder> &systems,
                       std::size_t page, bool allow_cancel) {
-    const uint32_t dark = 0xFF202020U;
+    const uint32_t dark = 0xFF000000U;
     const uint32_t light = 0xFFFFFFFFU;
     const std::size_t page_size = 7U;
     screen.assign(static_cast<size_t>(width) * height, light);
@@ -1780,6 +1782,16 @@ std::string choose_game(koboy::FramebufferBackend &framebuffer,
                         std::vector<uint32_t> &screen, uint32_t &marker,
                         bool allow_cancel) {
     const std::size_t page_size = 7U;
+    bool entering_menu = !allow_cancel;
+    const auto present_browser_screen = [&]() {
+        framebuffer.draw_screen(screen);
+        if (entering_menu)
+            framebuffer.refresh_screen_gc16(marker++, true);
+        else
+            framebuffer.refresh_screen_du(marker++, true);
+        entering_menu = false;
+        input.suppress_input_until_release();
+    };
     for (;;) {
         const std::vector<SystemFolder> systems = list_systems();
         const std::size_t system_page_count = systems.empty() ? 1U :
@@ -1792,9 +1804,7 @@ std::string choose_game(koboy::FramebufferBackend &framebuffer,
             draw_system_list(screen, framebuffer.variable_info().xres,
                              framebuffer.variable_info().yres, systems,
                              system_page, allow_cancel);
-            framebuffer.draw_screen(screen);
-            framebuffer.refresh_screen_gc16(marker++, true);
-            input.suppress_input_until_release();
+            present_browser_screen();
             for (;;) {
                 if (interrupted)
                     return std::string();
@@ -1810,8 +1820,10 @@ std::string choose_game(koboy::FramebufferBackend &framebuffer,
                         ++system_page;
                     break;
                 }
-                if (action == koboy::UI_LIST_CANCEL)
+                if (action == koboy::UI_LIST_CANCEL) {
+                    input.wait_for_release();
                     return std::string();
+                }
                 if (action >= koboy::UI_GAME_0 &&
                     action <= koboy::UI_GAME_6) {
                     const std::size_t row = static_cast<std::size_t>(
@@ -1838,9 +1850,7 @@ std::string choose_game(koboy::FramebufferBackend &framebuffer,
             draw_game_list(screen, framebuffer.variable_info().xres,
                            framebuffer.variable_info().yres, roms,
                            system.name, game_page);
-            framebuffer.draw_screen(screen);
-            framebuffer.refresh_screen_gc16(marker++, true);
-            input.suppress_input_until_release();
+            present_browser_screen();
             for (;;) {
                 if (interrupted)
                     return std::string();
@@ -1902,7 +1912,7 @@ bool refresh_menu_screen(
         record_menu_refresh("begin", marker, -1.0);
     const double elapsed = full_refresh
         ? framebuffer.refresh_screen_gc16(marker, true)
-        : framebuffer.refresh_screen_gc16_partial(marker, true);
+        : framebuffer.refresh_screen_du(marker, true);
     if (diagnostics)
         record_menu_refresh("end", marker, elapsed);
     input.suppress_input_until_release();
@@ -2145,7 +2155,7 @@ int main(int argc, char **argv) {
                                                   display_settings);
                             framebuffer.draw_screen(screen);
                             refresh_menu_screen(framebuffer, input, marker++,
-                                                diagnostics, true);
+                                                diagnostics, false);
                             settings_action = koboy::UI_NONE;
                             while (!interrupted &&
                                    settings_action == koboy::UI_NONE) {
@@ -2428,11 +2438,17 @@ int main(int argc, char **argv) {
                     submitted_refresh = true;
                     a2_regions.clear();
                 }
+                const bool adaptive = display_settings.refresh_policy ==
+                    DISPLAY_REFRESH_ADAPTIVE;
+                const unsigned maximum_concurrent = adaptive ?
+                    kAdaptiveMaximumConcurrentCleanups :
+                    kMaximumConcurrentCleanups;
                 const unsigned available = active_cleanups.size() >=
-                    kMaximumConcurrentCleanups ? 0U :
-                    static_cast<unsigned>(kMaximumConcurrentCleanups -
+                    maximum_concurrent ? 0U :
+                    static_cast<unsigned>(maximum_concurrent -
                                           active_cleanups.size());
-                unsigned starts = std::min(
+                unsigned starts = std::min(adaptive ?
+                    kAdaptiveCleanupStartsPerTick :
                     kCleanupStartsPerTick, available);
                 std::vector<koboy::Viewport> new_gc16_cleanups;
                 std::vector<koboy::Viewport> new_du_cleanups;

@@ -32,6 +32,8 @@ public:
     void draw_region(const std::vector<uint32_t> &pixels,
                      const Viewport &region);
     void draw_screen(const std::vector<uint32_t> &pixels);
+    double refresh_screen_du(uint32_t marker,
+                             bool wait_for_completion = false);
     double refresh_a2(uint32_t marker, bool wait_for_completion = false);
     double refresh_a2_region(const Viewport &region, uint32_t marker,
                              bool wait_for_completion = false);

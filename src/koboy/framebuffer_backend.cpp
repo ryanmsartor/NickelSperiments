@@ -222,6 +222,13 @@ double FramebufferBackend::refresh_a2(uint32_t marker,
                   wait_for_completion, viewport_);
 }
 
+double FramebufferBackend::refresh_screen_du(
+        uint32_t marker, bool wait_for_completion) {
+    Viewport screen = { 0U, 0U, variable_.xres, variable_.yres };
+    return submit(HWTCON_WAVEFORM_DU, HWTCON_UPDATE_PARTIAL, marker,
+                  wait_for_completion, screen);
+}
+
 Viewport FramebufferBackend::absolute_region(const Viewport &region) const {
     if (region.width == 0U || region.height == 0U ||
         region.x + region.width > viewport_.width ||
