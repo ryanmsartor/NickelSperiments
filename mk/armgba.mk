@@ -62,7 +62,7 @@ ARMGBA_CORE_CPPFLAGS := \
 	-I$(ARMGBA_ROOT)/libretro/deps/libretro-common/include \
 	-I$(ARMGBA_ROOT)/src
 ARMGBA_CFLAGS := -O3 -std=gnu11 -Wall -Wextra -fwrapv \
-	-march=armv7-a -mfpu=neon -mfloat-abi=hard
+	$(KOBO_CPU_FLAGS)
 ARMGBA_GAMBATTE_CPPFLAGS := \
 	-I$(ARMGBA_ROOT)/gambatte/libgambatte/include \
 	-I$(ARMGBA_ROOT)/gambatte/libgambatte/src \
