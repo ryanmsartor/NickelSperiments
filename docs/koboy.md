@@ -29,7 +29,7 @@ This launcher is built into Ko Boy and does not require NickelMenu. Users who al
 
 ## Player flow
 
-The startup browser first shows up to seven system folders per page, followed by the selected system's alphabetically sorted games. An empty system reports that no games were found and retains a Back action to the system browser. During play, the Menu button pauses emulation and offers Resume Game, Save State, Load State, Reset Game, Select Game, Display Settings, and Exit to Nickel. Reset Game restarts the emulated system without reading or writing any state files. The manual entries use each game's `state1` slot,  ndependently of its automatic `state0` resume slot. Selecting another game saves the current automatic state and SRAM, then clears the browser to a loading screen before loading the selected game's saves. The first actual game frame is then presented with waited full GC16 so the loading text cannot bleed into the title screen. Manual Save State, game switching, and normal exit atomically flush battery-backed SRAM to the game's `.sav` file. Exit also saves the current automatic state before the supervisor restores the original framebuffer and returns control to Nickel. The default 6x integer scale produces a 960-by-864 game viewport on the Clara BW; `--scale 5` can be used when a smaller viewport is preferred.
+The startup browser first shows up to seven system folders per page, followed by the selected system's alphabetically sorted games. An empty system reports that no games were found and retains a Back action to the system browser. During play, the Menu button pauses emulation and offers Resume Game; a split Load State and Save State row; Display Settings; software volume; Reset Game; Change Game; and Exit to Nickel. Reset Game restarts the emulated system without reading or writing any state files. The manual entries use each game's `state1` slot independently of its automatic `state0` resume slot. Changing games saves the current automatic state and SRAM, then clears the browser to a loading screen before loading the selected game's saves. The first actual game frame is then presented with waited full GC16 so the loading text cannot bleed into the title screen. Manual Save State, game switching, and normal exit atomically flush battery-backed SRAM to the game's `.sav` file. Exit also saves the current automatic state before the supervisor restores the original framebuffer and returns control to Nickel. The default 6x integer scale produces a 960-by-864 game viewport on the Clara BW; `--scale 5` can be used when a smaller viewport is preferred.
 
 For the implementation history, device measurements, and remaining work, see the [Ko Boy port plan](koboy-port-plan.md).
 
@@ -41,41 +41,23 @@ armGBA is pinned as the `deps/armgba` submodule at revision `42f7903f`. The `Arm
 
 ## BIOS selection
 
-Ko Boy deterministically enables boot ROMs and asks armGBA to use recognized
-external images from `/mnt/onboard/KoBoy/BIOS/`. When an appropriate image is
-missing or unusable, armGBA's built-in open-source boot ROM is used instead.
-There is no UI setting and BIOS intros are not skipped.
+Ko Boy deterministically enables boot ROMs and asks armGBA to use recognized external images from `/mnt/onboard/KoBoy/BIOS/`. When an appropriate image is missing or unusable, armGBA's built-in open-source boot ROM is used instead. There is no UI setting and BIOS intros are not skipped.
 
 Recognized filenames are:
 
 - `gba_bios.bin` for Game Boy Advance.
 - `gb_bios.bin` or `dmg_boot.bin` for Game Boy.
 - `gbc_bios.bin` or `cgb_boot.bin` for Game Boy Color.
-- `cgb_agb_boot.bin`, `cgb_agb0_boot.bin`, or `agb_boot.bin` for Game Boy
-  games running in the Game Boy Advance model.
+- `cgb_agb_boot.bin`, `cgb_agb0_boot.bin`, or `agb_boot.bin` for Game Boy games running in the Game Boy Advance model.
 - `mgb_boot.bin` for Game Boy Pocket.
 
-The install package creates the BIOS directory but does not distribute any
-proprietary BIOS images.
+The install package creates the BIOS directory but does not distribute any proprietary BIOS images.
 
 ## Bluetooth audio
 
-Ko Boy streams armGBA's 32,768 Hz stereo PCM through a bounded, non-blocking
-queue to one persistent stock GStreamer pipeline. The Kobo pipeline converts
-the stream to 48 kHz stereo and sends it to the firmware's
-`mtkbtmwrpcaudiosink`. The emulation thread never waits for Bluetooth: if the
-audio consumer falls behind, new audio frames are dropped instead of slowing
-the game. Queued audio is discarded when menus open or the device sleeps, and
-the pipeline is released on exit.
+Ko Boy streams armGBA's 32,768 Hz stereo PCM through a bounded, non-blocking queue to one persistent stock GStreamer pipeline. The Kobo pipeline converts the stream to 48 kHz stereo and sends it to the firmware's `mtkbtmwrpcaudiosink`. The emulation thread never waits for Bluetooth: if the audio consumer falls behind, new audio frames are dropped instead of slowing the game. Queued audio is discarded when menus open or the device sleeps, and the pipeline is released on exit.
 
-This initial implementation targets the Clara BW's MediaTek audio stack and
-expects headphones to have already been paired and connected through Nickel.
-Ko Boy queries the firmware Bluetooth service when a game loads and starts no
-audio process when an output device is not connected. The main menu provides
-software volume from 0 through 20; the value persists in `KoBoy/audio.conf`,
-defaults to 10, and volume 0 releases the audio pipeline entirely.
-Developer diagnostics record cumulative queued and dropped audio frames in
-the gameplay heartbeat for performance and stability comparisons.
+This initial implementation targets the Clara BW's MediaTek audio stack and expects headphones to have already been paired and connected through Nickel. Ko Boy queries the firmware Bluetooth service when a game loads and starts no audio process when an output device is not connected. The main menu provides software volume from 0 through 20; the value persists in `KoBoy/audio.conf`, defaults to 10, and volume 0 releases the audio pipeline entirely. Developer diagnostics record cumulative queued and dropped audio frames in the gameplay heartbeat for performance and stability comparisons.
 
 ## Refresh scheduling
 
@@ -139,21 +121,6 @@ Create `/mnt/onboard/KoBoy/isolate-no-gameplay-refresh` to diagnose hard resets.
 Add `/mnt/onboard/KoBoy/isolate-no-touch` to the display-isolation flag to leave the touchscreen unopened and ungrabbed while the rest of the player continues. This distinguishes touchscreen input from supervisor, Nickel, and framebuffer interactions. Direct ROM launch is required because neither the game browser nor in-game controls can be operated in this mode.
 
 Ko Boy leaves Nickel running. It exclusively grabs the touchscreen while active, saves the framebuffer before drawing, and restores it before returning to Nickel. Stopping Nickel is intentionally avoided: device testing showed that a `SIGSTOP` lasting roughly one watchdog interval can reboot the Kobo.
-
-## Targeted cleanup refreshes
-
-Progressive and Moderate accumulate debt in fixed aligned 24-by-24 framebuffer cells. Device tests establish the controller's behavior for simultaneous non-overlapping A2, DU, and GC16 regions at these boundaries.
-
-The framebuffer cannot reveal which physical e-ink pixels still retain a visible prior image; it contains only the image Ko Boy intended to display. Instead, Ko Boy can estimate a per-region "ghosting debt" from its frame history. Divide the scaled game viewport into tiles and increase each tile's debt according to the number and magnitude of pixel changes, repeated dark-to-light transitions, time since its last cleanup, and the waveform used for that cleanup. Stronger waveforms should reduce more debt than weaker ones.
-
-On each display tick, Ko Boy finds the highest-debt rectangles composed entirely of adjacent dirty cells and starts up to eight rectangular HWTCON updates while fewer than thirty-two older cleanups remain active. This lets one update clean a large contiguous changed area without bridging clean gaps merely because they lie inside a global bounding rectangle. Active rectangles cannot be selected again, and cells not selected retain their debt for later cleanup.
-
-Debt is classified by the intended grayscale transition. A destination gray level requires GC16. A transition from gray to pure black or white requires DU. Pure black/white motion under A2, such as a black sprite crossing a white background, accumulates only a low aging charge and does not immediately request cleanup. Eight tile-equivalents of such endpoint motion make a cell eligible for an eventual DU cleanup. GC16 rectangles are selected before DU rectangles because they require accurate grayscale output; either waveform clears the weaker debt it supersedes in the cells it cleans.
-
-GC16 cleanup is also stability-gated. Debt continues accumulating while a cell is changing, but the cell normally becomes eligible only after remaining unchanged for two display snapshots. This lets scrolling finish before GC16 cleans the settled image instead of repeatedly flashing background segments that immediately move again. A debt equivalent to four complete maximum-range tile transitions bypasses the stability gate so sustained motion cannot defer cleanup indefinitely. DU does not use the stability gate because its endpoint repair is less visually disruptive.
-
-Initial implementation should retain an occasional full-viewport slowest refresh as a safety net. Its interval can be increased only after device tests show that targeted refreshes do not permit artifacts to accumulate over long sessions. Developer diagnostics should eventually record each selected cell, its debt, and the waveform so the heuristic can be tuned from observed results. Device testing must also confirm minimum dimensions, alignment requirements, edge artifacts, and whether waveforms spill beyond their requested rectangles.
-
 
 ## Deferred enhancements
 

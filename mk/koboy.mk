@@ -53,7 +53,10 @@ koboy-package: koboy koboy-supervisor
 		$(KOBOY_PACKAGE_ROOT)/usr/local/Kobo/imageformats/libkoboylifecycle.so
 	install -m644 package/koboy/README.txt \
 		$(KOBOY_PACKAGE_ROOT)/mnt/onboard/.adds/koboy/README.txt
-	install -m644 LICENSES/* \
+	install -m644 LICENSES/KOBOY/KOBOY-LICENSES.md \
+		LICENSES/KOBOY/GPL-2.0.txt LICENSES/KOBOY/MPL-2.0.txt \
+		LICENSES/KOBOY/MIT.txt LICENSES/KOBOY/EXPAT.txt \
+		LICENSES/KOBOY/PUBLIC-DOMAIN-NOTICES.txt \
 		$(KOBOY_PACKAGE_ROOT)/mnt/onboard/.adds/koboy/LICENSES/
 	tar --owner=0 --group=0 --numeric-owner -C $(KOBOY_PACKAGE_ROOT) \
 		-czf $(KOBOY_PACKAGE) .
