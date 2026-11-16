@@ -88,7 +88,7 @@ The install package creates the BIOS directory but does not distribute proprieta
 
 ## Display settings
 
-Gameplay defaults to a steady 10 Hz A2 update, Dithered bichrome output, Lazy regional cleanup, and a full-screen GC16 every 60 seconds. Display settings persist globally in `/mnt/onboard/KoBoy/display.conf` rather than per game.
+Gameplay uses steady full-viewport A2 updates at 10 Hz by default, Dithered bichrome output, and a full-screen GC16 every 60 seconds. Display settings persist globally in `/mnt/onboard/KoBoy/display.conf` rather than per game.
 
 The normal Display Settings menu exposes:
 
@@ -97,29 +97,12 @@ The normal Display Settings menu exposes:
 
 Creating `/mnt/onboard/KoBoy/developer` additionally exposes:
 
-- **Refresh Type:** Progressive, Lazy, Moderate, or Aggressive.
 - **Bichrome:** Off, Dithered, or a fixed 25%, 50%, or 75% luminance split.
 - **Target Refresh Rate:** 10, 10.25, 10.5, 10.75, 11, 11.25, or 11.5 Hz, or Unlimited.
 
 Dithered bichrome uses a stable 4-by-4 pattern of physical panel pixels to represent intermediate shades without temporal noise. Menus use a black-and-white palette and waited full-screen updates: GC16 when entering or leaving the menu and DU between menu screens. Loading, wake, and exit also use full-screen GC16 where a clean visual boundary matters more than uninterrupted animation.
 
-### Regional cleanup modes
-
-| Behavior | Progressive | Lazy | Moderate | Aggressive |
-|---|---|---|---|---|
-| Normal display | Paced A2 | Paced A2 | Paced A2 | Paced A2 |
-| Cleanup cell size | 24×24 physical pixels | None | 24×24 physical pixels | Tracks 24×24 cells, then bounds eligible cells |
-| Cleanup cadence | Every display tick | Never | 2 Hz | 1 Hz |
-| Maximum starts per opportunity | 8 rectangles | 0 | 10 GC16/DU rectangles | 2 rectangles |
-| Maximum active cleanups | 32 | 0 | 20 | 2 normally |
-| Rectangle construction | Adjacent eligible cells are combined | None | Adjacent eligible cells are combined | Up to two area-minimizing bounding rectangles |
-| Cleanup waveforms | GC16 and DU | None | GC16 and DU | GC16 only |
-| Pure black/white motion | Low aging debt; eventually DU | A2 only | A2 only | A2 only |
-| Primary goal | Targeted quality with limited flashing | Maximum smoothness between full refreshes | Predictable grayscale cleanup | Broader cleanup in small affected areas |
-
-Progressive tracks approximate ghosting debt in fixed cells, classifies grayscale transitions, and stability-gates GC16 until changed regions settle. Moderate combines adjacent dirty cells at a fixed cadence and uses DU where gray resolves to black or white. Aggressive considers only transitions involving gray and splits the affected area into at most two bounding rectangles. A full-screen refresh, when configured, drains active regional cleanups and replaces that tick's policy cleanup.
-
-Every gameplay refresh waits for completion before another update is submitted. Slow updates cannot collide with preceding fast updates, and fast updates remain blocked until a slower waveform completes. Missed cadence deadlines advance the scheduling baseline instead of causing catch-up bursts.
+Each display tick draws the complete latest frame and submits one A2 update. Before submitting the next update, Ko Boy waits for the previous marker to complete. A configured full-screen refresh replaces its scheduled A2 update, and missed cadence deadlines advance the scheduling baseline instead of causing catch-up bursts.
 
 ## Diagnostics and recovery
 
@@ -147,7 +130,7 @@ ROM + SRAM + save states
           |
  scaling + grayscale classification + touch overlay
           |
- A2 presentation + optional DU/GC16 cleanup
+ full-viewport A2 presentation + periodic GC16
           |
  MediaTek framebuffer and HWTCON interface
 ```

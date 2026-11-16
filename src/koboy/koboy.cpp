@@ -45,7 +45,6 @@ const char *const kDiagnosticsFlag = "/mnt/onboard/KoBoy/diagnostics";
 const char *const kNoGameplayRefreshFlag =
     "/mnt/onboard/KoBoy/isolate-no-gameplay-refresh";
 const char *const kNoTouchFlag = "/mnt/onboard/KoBoy/isolate-no-touch";
-const char *const kRefreshConfig = "/mnt/onboard/KoBoy/refresh.conf";
 const char *const kDisplayConfig = "/mnt/onboard/KoBoy/display.conf";
 const char *const kAudioConfig = "/mnt/onboard/KoBoy/audio.conf";
 const char *const kRefreshBreadcrumb =
@@ -57,462 +56,19 @@ volatile sig_atomic_t wake_requested = 0;
 
 enum RefreshType {
     REFRESH_A2,
-    REFRESH_DU,
-    REFRESH_GL16,
-    REFRESH_GC16_PARTIAL,
     REFRESH_GC16_FULL,
     REFRESH_TYPE_COUNT
 };
 
-const unsigned kSlowRefreshTypeCount = 4U;
-const unsigned kDamageTileSize = 24U;
-const unsigned kIntermediateTileSize = 24U;
-const unsigned kA2AgingTileEquivalents = 8U;
-const unsigned kCleanupStableTicks = 2U;
-const unsigned kUrgentCleanupTileEquivalents = 4U;
-const unsigned kCleanupStartsPerTick = 5U;
-const unsigned kMaximumConcurrentCleanups = 20U;
-const unsigned kProgressiveCleanupStartsPerTick = 8U;
-const unsigned kProgressiveMaximumConcurrentCleanups = 32U;
 const unsigned kBichromeDithered = 100U;
-const double kCleanupRetirementAge = 0.30;
-
-struct ActiveCleanup {
-    uint32_t marker;
-    double submitted_at;
-    koboy::Viewport region;
-    RefreshType type;
-};
-
-class TileDamageTracker {
-public:
-    TileDamageTracker()
-        : width_(0U), height_(0U), columns_(0U), rows_(0U),
-          tile_size_(kDamageTileSize) {}
-
-    void set_tile_size(unsigned tile_size) {
-        tile_size_ = tile_size ? tile_size : 1U;
-        width_ = height_ = columns_ = rows_ = 0U;
-        previous_.clear();
-    }
-
-    unsigned tile_size() const { return tile_size_; }
-
-    void reset(const std::vector<uint32_t> &frame,
-               unsigned width, unsigned height) {
-        width_ = width;
-        height_ = height;
-        columns_ = (width + tile_size_ - 1U) / tile_size_;
-        rows_ = (height + tile_size_ - 1U) / tile_size_;
-        previous_ = frame;
-        gc16_debt_.assign(
-            static_cast<std::size_t>(columns_) * rows_, 0ULL);
-        du_debt_.assign(static_cast<std::size_t>(columns_) * rows_, 0ULL);
-        a2_aging_debt_.assign(
-            static_cast<std::size_t>(columns_) * rows_, 0ULL);
-        stable_ticks_.assign(
-            static_cast<std::size_t>(columns_) * rows_, 0U);
-    }
-
-    void observe(const std::vector<uint32_t> &frame,
-                 unsigned width, unsigned height) {
-        if (frame.size() != static_cast<std::size_t>(width) * height)
-            throw std::runtime_error("damage frame dimensions do not match data");
-        if (width != width_ || height != height_ ||
-            previous_.size() != frame.size()) {
-            reset(frame, width, height);
-            return;
-        }
-        std::vector<bool> changed(
-            static_cast<std::size_t>(columns_) * rows_, false);
-        for (unsigned y = 0U; y < height; ++y) {
-            for (unsigned x = 0U; x < width; ++x) {
-                const std::size_t pixel = static_cast<std::size_t>(y) * width + x;
-                const unsigned before = previous_[pixel] & 0xFFU;
-                const unsigned after = frame[pixel] & 0xFFU;
-                if (before == after)
-                    continue;
-                const std::size_t tile =
-                    static_cast<std::size_t>(y / tile_size_) * columns_ +
-                    x / tile_size_;
-                changed[tile] = true;
-                const bool before_endpoint = before == 0U || before == 255U;
-                const bool after_endpoint = after == 0U || after == 255U;
-                const unsigned magnitude = 1U +
-                    (before > after ? before - after : after - before);
-                if (!after_endpoint)
-                    gc16_debt_[tile] += magnitude;
-                else if (!before_endpoint)
-                    du_debt_[tile] += magnitude;
-                else
-                    a2_aging_debt_[tile] += 1ULL;
-            }
-        }
-        for (std::size_t tile = 0U; tile < changed.size(); ++tile) {
-            if (changed[tile])
-                stable_ticks_[tile] = 0U;
-            else if (stable_ticks_[tile] < kCleanupStableTicks)
-                ++stable_ticks_[tile];
-        }
-        previous_ = frame;
-    }
-
-    std::vector<koboy::Viewport> take_highest_rectangles(
-            unsigned maximum,
-            const std::vector<koboy::Viewport> &excluded,
-            RefreshType type, bool combined_debt = false,
-            bool ignore_stability = false,
-            bool include_a2_aging = true) {
-        std::vector<bool> blocked(
-            static_cast<std::size_t>(columns_) * rows_, false);
-        for (std::size_t i = 0U; i < excluded.size(); ++i) {
-            const unsigned first_column =
-                excluded[i].x / tile_size_;
-            const unsigned first_row = excluded[i].y / tile_size_;
-            const unsigned last_column = std::min(
-                columns_,
-                (excluded[i].x + excluded[i].width + tile_size_ - 1U) /
-                    tile_size_);
-            const unsigned last_row = std::min(
-                rows_,
-                (excluded[i].y + excluded[i].height + tile_size_ - 1U) /
-                    tile_size_);
-            for (unsigned row = first_row; row < last_row; ++row)
-                for (unsigned column = first_column;
-                     column < last_column; ++column)
-                    blocked[static_cast<std::size_t>(row) * columns_ +
-                            column] = true;
-        }
-        std::vector<koboy::Viewport> selected;
-        for (unsigned count = 0U; count < maximum; ++count) {
-            struct Candidate {
-                bool valid;
-                unsigned left;
-                unsigned top;
-                unsigned right;
-                unsigned bottom;
-                unsigned long long score;
-            };
-            Candidate best = {false, 0U, 0U, 0U, 0U, 0ULL};
-            std::vector<bool> usable(columns_);
-            std::vector<unsigned long long> column_debt(columns_);
-            for (unsigned top = 0U; top < rows_; ++top) {
-                std::fill(usable.begin(), usable.end(), true);
-                std::fill(column_debt.begin(), column_debt.end(), 0ULL);
-                for (unsigned bottom = top; bottom < rows_; ++bottom) {
-                    for (unsigned column = 0U; column < columns_; ++column) {
-                        const std::size_t cell =
-                            static_cast<std::size_t>(bottom) * columns_ +
-                            column;
-                        const unsigned long long aging_debt =
-                            include_a2_aging && a2_aging_debt_[cell] >=
-                                static_cast<unsigned long long>(tile_size_) *
-                                tile_size_ * kA2AgingTileEquivalents ?
-                            a2_aging_debt_[cell] : 0ULL;
-                        const unsigned long long waveform_debt =
-                            combined_debt ?
-                                gc16_debt_[cell] + du_debt_[cell] :
-                            type == REFRESH_GC16_FULL ? gc16_debt_[cell] :
-                            du_debt_[cell] + aging_debt;
-                        const unsigned long long cell_debt =
-                            blocked[cell] ||
-                            (!combined_debt && type == REFRESH_DU &&
-                             gc16_debt_[cell]) ||
-                            (!combined_debt && !ignore_stability &&
-                             type == REFRESH_GC16_FULL &&
-                             stable_ticks_[cell] < kCleanupStableTicks &&
-                             waveform_debt <
-                                static_cast<unsigned long long>(tile_size_) *
-                                tile_size_ * 256ULL *
-                                kUrgentCleanupTileEquivalents) ?
-                            0ULL : waveform_debt;
-                        if (!cell_debt)
-                            usable[column] = false;
-                        if (usable[column])
-                            column_debt[column] += cell_debt;
-                    }
-                    unsigned column = 0U;
-                    while (column < columns_) {
-                        while (column < columns_ && !usable[column])
-                            ++column;
-                        const unsigned left = column;
-                        unsigned long long score = 0ULL;
-                        while (column < columns_ && usable[column]) {
-                            score += column_debt[column];
-                            ++column;
-                        }
-                        if (left != column &&
-                            (!best.valid || score > best.score)) {
-                            best.valid = true;
-                            best.left = left;
-                            best.top = top;
-                            best.right = column;
-                            best.bottom = bottom + 1U;
-                            best.score = score;
-                        }
-                    }
-                }
-            }
-            if (!best.valid)
-                break;
-            const unsigned x = best.left * tile_size_;
-            const unsigned y = best.top * tile_size_;
-            koboy::Viewport region = {
-                x, y,
-                std::min(width_, best.right * tile_size_) - x,
-                std::min(height_, best.bottom * tile_size_) - y
-            };
-            selected.push_back(region);
-            for (unsigned row = best.top; row < best.bottom; ++row)
-                for (unsigned column = best.left;
-                     column < best.right; ++column)
-                    {
-                        const std::size_t cell =
-                            static_cast<std::size_t>(row) * columns_ + column;
-                        if (type == REFRESH_GC16_FULL) {
-                            gc16_debt_[cell] = 0ULL;
-                            du_debt_[cell] = 0ULL;
-                            a2_aging_debt_[cell] = 0ULL;
-                        } else {
-                            du_debt_[cell] = 0ULL;
-                            a2_aging_debt_[cell] = 0ULL;
-                        }
-                    }
-        }
-        return selected;
-    }
-
-    std::vector<koboy::Viewport> take_affected_rectangles() {
-        struct Bounds {
-            bool valid;
-            unsigned left;
-            unsigned top;
-            unsigned right;
-            unsigned bottom;
-        };
-        const auto find_bounds = [&](bool split_columns, unsigned split,
-                                     bool lower) {
-            Bounds bounds = {false, columns_, rows_, 0U, 0U};
-            for (unsigned row = 0U; row < rows_; ++row)
-                for (unsigned column = 0U; column < columns_; ++column) {
-                    const bool selected = split_columns ?
-                        (lower ? column < split : column >= split) :
-                        (lower ? row < split : row >= split);
-                    const std::size_t cell =
-                        static_cast<std::size_t>(row) * columns_ + column;
-                    /* Pure black/white motion remains A2-only. */
-                    if (!selected ||
-                        (!gc16_debt_[cell] && !du_debt_[cell]))
-                        continue;
-                    bounds.valid = true;
-                    bounds.left = std::min(bounds.left, column);
-                    bounds.top = std::min(bounds.top, row);
-                    bounds.right = std::max(bounds.right, column + 1U);
-                    bounds.bottom = std::max(bounds.bottom, row + 1U);
-                }
-            return bounds;
-        };
-        const auto area = [](const Bounds &bounds) {
-            return bounds.valid ?
-                static_cast<unsigned long long>(bounds.right - bounds.left) *
-                    (bounds.bottom - bounds.top) : 0ULL;
-        };
-
-        Bounds best_first = find_bounds(true, columns_, true);
-        if (!best_first.valid)
-            return std::vector<koboy::Viewport>();
-        Bounds best_second = {false, 0U, 0U, 0U, 0U};
-        unsigned long long best_area = area(best_first);
-        for (unsigned axis = 0U; axis < 2U; ++axis) {
-            const bool split_columns = axis == 0U;
-            const unsigned limit = split_columns ? columns_ : rows_;
-            for (unsigned split = 1U; split < limit; ++split) {
-                const Bounds first =
-                    find_bounds(split_columns, split, true);
-                const Bounds second =
-                    find_bounds(split_columns, split, false);
-                if (!first.valid || !second.valid)
-                    continue;
-                const unsigned long long combined = area(first) + area(second);
-                if (combined < best_area) {
-                    best_area = combined;
-                    best_first = first;
-                    best_second = second;
-                }
-            }
-        }
-
-        std::vector<koboy::Viewport> regions;
-        const Bounds bounds[] = {best_first, best_second};
-        for (unsigned i = 0U; i < 2U; ++i) {
-            if (!bounds[i].valid)
-                continue;
-            const unsigned x = bounds[i].left * tile_size_;
-            const unsigned y = bounds[i].top * tile_size_;
-            regions.push_back(koboy::Viewport{
-                x, y,
-                std::min(width_, bounds[i].right * tile_size_) - x,
-                std::min(height_, bounds[i].bottom * tile_size_) - y
-            });
-            for (unsigned row = bounds[i].top;
-                 row < bounds[i].bottom; ++row)
-                for (unsigned column = bounds[i].left;
-                     column < bounds[i].right; ++column) {
-                    const std::size_t cell =
-                        static_cast<std::size_t>(row) * columns_ + column;
-                    gc16_debt_[cell] = du_debt_[cell] =
-                        a2_aging_debt_[cell] = 0ULL;
-                }
-        }
-        return regions;
-    }
-
-    std::vector<koboy::Viewport> take_highest_cells(
-            unsigned maximum,
-            const std::vector<koboy::Viewport> &excluded) {
-        std::vector<bool> blocked(
-            static_cast<std::size_t>(columns_) * rows_, false);
-        for (std::size_t i = 0U; i < excluded.size(); ++i) {
-            const unsigned left = excluded[i].x / tile_size_;
-            const unsigned top = excluded[i].y / tile_size_;
-            const unsigned right = std::min(
-                columns_, (excluded[i].x + excluded[i].width +
-                           tile_size_ - 1U) / tile_size_);
-            const unsigned bottom = std::min(
-                rows_, (excluded[i].y + excluded[i].height +
-                        tile_size_ - 1U) / tile_size_);
-            for (unsigned row = top; row < bottom; ++row)
-                for (unsigned column = left; column < right; ++column)
-                    blocked[static_cast<std::size_t>(row) * columns_ +
-                            column] = true;
-        }
-        std::vector<koboy::Viewport> selected;
-        while (selected.size() < maximum) {
-            std::size_t best = blocked.size();
-            unsigned long long best_debt = 0ULL;
-            for (std::size_t cell = 0U; cell < blocked.size(); ++cell) {
-                const unsigned long long debt = gc16_debt_[cell] +
-                    du_debt_[cell] + a2_aging_debt_[cell];
-                if (!blocked[cell] && debt > best_debt) {
-                    best = cell;
-                    best_debt = debt;
-                }
-            }
-            if (best == blocked.size())
-                break;
-            const unsigned column = static_cast<unsigned>(best % columns_);
-            const unsigned row = static_cast<unsigned>(best / columns_);
-            const unsigned x = column * tile_size_;
-            const unsigned y = row * tile_size_;
-            selected.push_back(koboy::Viewport{
-                x, y, std::min(tile_size_, width_ - x),
-                std::min(tile_size_, height_ - y)
-            });
-            gc16_debt_[best] = du_debt_[best] =
-                a2_aging_debt_[best] = 0ULL;
-            blocked[best] = true;
-        }
-        return selected;
-    }
-
-private:
-    unsigned width_;
-    unsigned height_;
-    unsigned columns_;
-    unsigned rows_;
-    unsigned tile_size_;
-    std::vector<uint32_t> previous_;
-    std::vector<unsigned long long> gc16_debt_;
-    std::vector<unsigned long long> du_debt_;
-    std::vector<unsigned long long> a2_aging_debt_;
-    std::vector<unsigned> stable_ticks_;
-};
-
-std::vector<koboy::Viewport> regions_outside_tiles(
-        unsigned width, unsigned height,
-        const std::vector<koboy::Viewport> &locked, unsigned tile_size) {
-    const unsigned columns =
-        (width + tile_size - 1U) / tile_size;
-    const unsigned rows =
-        (height + tile_size - 1U) / tile_size;
-    std::vector<bool> blocked(static_cast<std::size_t>(columns) * rows, false);
-    for (std::size_t i = 0U; i < locked.size(); ++i) {
-        const unsigned first_column = locked[i].x / tile_size;
-        const unsigned first_row = locked[i].y / tile_size;
-        const unsigned last_column = std::min(
-            columns, (locked[i].x + locked[i].width + tile_size - 1U) /
-                     tile_size);
-        const unsigned last_row = std::min(
-            rows, (locked[i].y + locked[i].height + tile_size - 1U) /
-                  tile_size);
-        for (unsigned row = first_row; row < last_row; ++row)
-            for (unsigned column = first_column;
-                 column < last_column; ++column)
-                blocked[static_cast<std::size_t>(row) * columns + column] =
-                    true;
-    }
-
-    std::vector<koboy::Viewport> regions;
-    for (unsigned row = 0U; row < rows; ++row) {
-        unsigned column = 0U;
-        while (column < columns) {
-            while (column < columns &&
-                   blocked[static_cast<std::size_t>(row) * columns + column])
-                ++column;
-            const unsigned first = column;
-            while (column < columns &&
-                   !blocked[static_cast<std::size_t>(row) * columns + column])
-                ++column;
-            if (first == column)
-                continue;
-            const unsigned x = first * tile_size;
-            const unsigned right = std::min(width, column * tile_size);
-            const unsigned y = row * tile_size;
-            const unsigned row_height = std::min(tile_size, height - y);
-            bool extended = false;
-            for (std::size_t i = 0U; i < regions.size(); ++i) {
-                if (regions[i].x == x && regions[i].width == right - x &&
-                    regions[i].y + regions[i].height == y) {
-                    regions[i].height += row_height;
-                    extended = true;
-                    break;
-                }
-            }
-            if (!extended) {
-                koboy::Viewport region = {x, y, right - x, row_height};
-                regions.push_back(region);
-            }
-        }
-    }
-    return regions;
-}
-
-struct RefreshSettings {
-    RefreshType slow_type;
-    RefreshType slowest_type;
-    unsigned slow_tenths_hz;
-    RefreshSettings()
-        : slow_type(REFRESH_DU), slowest_type(REFRESH_GC16_FULL),
-          slow_tenths_hz(20U) {}
-};
-
-enum DisplayRefreshPolicy {
-    DISPLAY_REFRESH_PROGRESSIVE,
-    DISPLAY_REFRESH_INTERMEDIATE,
-    DISPLAY_REFRESH_AGGRESSIVE,
-    DISPLAY_REFRESH_LAZY,
-    DISPLAY_REFRESH_POLICY_COUNT
-};
 
 struct DisplaySettings {
-    DisplayRefreshPolicy refresh_policy;
     unsigned full_refresh_seconds;
     bool grid_effect;
     unsigned bichrome_threshold;
     unsigned target_refresh_quarters;
     DisplaySettings()
-        : refresh_policy(DISPLAY_REFRESH_LAZY),
-          full_refresh_seconds(60U), grid_effect(false),
+        : full_refresh_seconds(60U), grid_effect(false),
           bichrome_threshold(kBichromeDithered),
           target_refresh_quarters(40U) {}
 };
@@ -644,57 +200,9 @@ bool file_exists(const char *path) {
 const char *refresh_type_name(RefreshType type) {
     switch (type) {
         case REFRESH_A2: return "A2";
-        case REFRESH_DU: return "DU";
-        case REFRESH_GL16: return "GL16";
-        case REFRESH_GC16_PARTIAL: return "GC16 PARTIAL";
         case REFRESH_GC16_FULL: return "GC16 FULL FLASH";
         default: return "UNKNOWN";
     }
-}
-
-bool load_refresh_settings_file(const char *path, RefreshSettings &settings) {
-    std::ifstream input(path);
-    if (!input)
-        return false;
-    std::string line;
-    unsigned recognized = 0U;
-    while (std::getline(input, line)) {
-        const std::string::size_type equals = line.find('=');
-        if (equals == std::string::npos)
-            continue;
-        const std::string key = line.substr(0, equals);
-        const std::string encoded = line.substr(equals + 1U);
-        char *end = 0;
-        errno = 0;
-        const unsigned long parsed = std::strtoul(encoded.c_str(), &end, 10);
-        if (errno || !end || *end != '\0' || parsed > UINT_MAX)
-            continue;
-        const unsigned value = static_cast<unsigned>(parsed);
-        if (key == "slow_type" && value < kSlowRefreshTypeCount) {
-            settings.slow_type = static_cast<RefreshType>(value);
-            recognized |= 1U;
-        } else if (key == "slowest_type" &&
-                   value >= REFRESH_GL16 && value <= REFRESH_GC16_FULL) {
-            settings.slowest_type = static_cast<RefreshType>(value);
-            recognized |= 2U;
-        } else if (key == "slow_tenths_hz" &&
-                 (value == 0U || value == 1U || value == 2U ||
-                  value == 5U || value == 10U || value == 20U)) {
-            settings.slow_tenths_hz = value;
-            recognized |= 4U;
-        }
-    }
-    return recognized == 7U;
-}
-
-void load_refresh_settings(RefreshSettings &settings) {
-    const std::string temporary = std::string(kRefreshConfig) + ".tmp";
-    const std::string backup = std::string(kRefreshConfig) + ".bak";
-    RefreshSettings candidate;
-    if (load_refresh_settings_file(kRefreshConfig, candidate) ||
-        load_refresh_settings_file(temporary.c_str(), candidate) ||
-        load_refresh_settings_file(backup.c_str(), candidate))
-        settings = candidate;
 }
 
 bool write_all(int descriptor, const std::string &contents) {
@@ -744,9 +252,7 @@ void load_display_settings(DisplaySettings &settings) {
         const std::string key = line.substr(0U, equals);
         const unsigned value = static_cast<unsigned>(
             std::strtoul(line.substr(equals + 1U).c_str(), 0, 10));
-        if (key == "refresh_policy" && value < DISPLAY_REFRESH_POLICY_COUNT)
-            settings.refresh_policy = static_cast<DisplayRefreshPolicy>(value);
-        else if (key == "full_refresh_seconds" &&
+        if (key == "full_refresh_seconds" &&
                  valid_full_refresh_seconds(value))
             settings.full_refresh_seconds = value;
         else if (key == "grid_effect" && value <= 1U)
@@ -766,9 +272,8 @@ void save_display_settings(const DisplaySettings &settings) {
     char text[192];
     const int length = std::snprintf(
         text, sizeof(text),
-        "refresh_policy=%u\nfull_refresh_seconds=%u\ngrid_effect=%u\n"
+        "full_refresh_seconds=%u\ngrid_effect=%u\n"
         "bichrome_threshold=%u\ntarget_refresh_quarters=%u\n",
-        static_cast<unsigned>(settings.refresh_policy),
         settings.full_refresh_seconds, settings.grid_effect ? 1U : 0U,
         settings.bichrome_threshold, settings.target_refresh_quarters);
     const std::string temporary = std::string(kDisplayConfig) + ".tmp";
@@ -812,23 +317,6 @@ void save_audio_volume(unsigned volume) {
         saved = false;
     if (!saved || rename(temporary.c_str(), kAudioConfig) != 0)
         std::cerr << "warning: cannot save audio volume\n";
-}
-
-void cycle_display_refresh_policy(DisplaySettings &settings) {
-    switch (settings.refresh_policy) {
-        case DISPLAY_REFRESH_PROGRESSIVE:
-            settings.refresh_policy = DISPLAY_REFRESH_LAZY;
-            break;
-        case DISPLAY_REFRESH_LAZY:
-            settings.refresh_policy = DISPLAY_REFRESH_INTERMEDIATE;
-            break;
-        case DISPLAY_REFRESH_INTERMEDIATE:
-            settings.refresh_policy = DISPLAY_REFRESH_AGGRESSIVE;
-            break;
-        default:
-            settings.refresh_policy = DISPLAY_REFRESH_PROGRESSIVE;
-            break;
-    }
 }
 
 void cycle_full_refresh_frequency(DisplaySettings &settings) {
@@ -1024,84 +512,6 @@ private:
     unsigned long long process_;
 };
 
-std::string serialize_refresh_settings(const RefreshSettings &settings) {
-    char contents[128];
-    const int length = std::snprintf(
-        contents, sizeof(contents),
-        "slow_type=%u\nslowest_type=%u\nslow_tenths_hz=%u\n",
-        static_cast<unsigned>(settings.slow_type),
-        static_cast<unsigned>(settings.slowest_type),
-        settings.slow_tenths_hz);
-    return length > 0 ? std::string(contents, static_cast<std::size_t>(length))
-                      : std::string();
-}
-
-void sync_koboy_directory() {
-    const int directory = open(kKoBoyRoot, O_RDONLY | O_DIRECTORY);
-    if (directory >= 0) {
-        fsync(directory);
-        close(directory);
-    }
-}
-
-void save_refresh_settings(const RefreshSettings &settings) {
-    if (!ensure_directory(kKoBoyRoot))
-        return;
-    const std::string temporary = std::string(kRefreshConfig) + ".tmp";
-    const std::string backup = std::string(kRefreshConfig) + ".bak";
-    const std::string contents = serialize_refresh_settings(settings);
-    const int output = open(temporary.c_str(), O_WRONLY | O_CREAT | O_TRUNC,
-                            0644);
-    bool durable = output >= 0 && write_all(output, contents) &&
-                   fsync(output) == 0;
-    if (output >= 0 && close(output) != 0)
-        durable = false;
-    if (!durable) {
-        std::cerr << "warning: cannot durably write refresh settings\n";
-        return;
-    }
-    unlink(backup.c_str());
-    if (rename(kRefreshConfig, backup.c_str()) != 0 && errno != ENOENT) {
-        std::cerr << "warning: cannot back up refresh settings: "
-                  << std::strerror(errno) << '\n';
-        return;
-    }
-    if (rename(temporary.c_str(), kRefreshConfig) != 0) {
-        std::cerr << "warning: cannot install refresh settings: "
-                  << std::strerror(errno) << '\n';
-        rename(backup.c_str(), kRefreshConfig);
-        return;
-    }
-    sync_koboy_directory();
-}
-
-void record_active_refresh_settings(const RefreshSettings &settings) {
-    if (!ensure_directory(kKoBoyRoot))
-        return;
-    const SystemMetrics metrics = read_system_metrics();
-    char entry[384];
-    const int length = std::snprintf(
-        entry, sizeof(entry),
-        "active pid=%ld uptime=%.3f fast=A2 fast_hz=10.0 slow=%s "
-        "slow_hz=%.1f slowest=%s mem_available_kb=%llu rss_kb=%llu cpu_khz=%llu "
-        "cpu_temp_mc=%lld battery_temp_mc=%lld ap_temp_mc=%lld\n",
-        static_cast<long>(getpid()), monotonic_seconds(),
-        refresh_type_name(settings.slow_type),
-        static_cast<double>(settings.slow_tenths_hz) / 10.0,
-        refresh_type_name(settings.slowest_type),
-        metrics.memory_available_kb, metrics.resident_kb,
-        metrics.cpu_frequency_khz, metrics.cpu_temperature_mc,
-        metrics.battery_temperature_mc, metrics.ap_temperature_mc);
-    const int output = open(kRefreshBreadcrumb,
-                            O_WRONLY | O_CREAT | O_APPEND, 0644);
-    if (output < 0 || length <= 0 ||
-        !write_all(output, std::string(entry, static_cast<std::size_t>(length))) ||
-        fsync(output) != 0)
-        std::cerr << "warning: cannot record active refresh settings\n";
-    if (output >= 0)
-        close(output);
-}
-
 void record_menu_refresh(const char *stage, uint32_t marker,
                          double elapsed_seconds) {
     if (!ensure_directory(kKoBoyRoot))
@@ -1201,16 +611,15 @@ void record_gameplay_heartbeat(uint32_t submitted_marker,
         entry, sizeof(entry),
         "heartbeat pid=%ld uptime=%.3f submitted_marker=%u "
         "submitted_type=%s completed_marker=%u last_wait=%.3f "
-        "count_a2=%u count_du=%u count_gl16=%u count_gc16_partial=%u "
-        "count_gc16_full=%u system_cpu_pct=%u.%u process_cpu_pct=%u.%u "
+        "count_a2=%u count_gc16_full=%u "
+        "system_cpu_pct=%u.%u process_cpu_pct=%u.%u "
         "audio_frames_queued=%llu audio_frames_dropped=%llu "
         "mem_available_kb=%llu rss_kb=%llu "
         "cpu_khz=%llu cpu_temp_mc=%lld battery_temp_mc=%lld ap_temp_mc=%lld\n",
         static_cast<long>(getpid()), monotonic_seconds(), submitted_marker,
         refresh_type_name(submitted_type), completed_marker,
-        last_wait_seconds, counts[REFRESH_A2], counts[REFRESH_DU],
-        counts[REFRESH_GL16], counts[REFRESH_GC16_PARTIAL],
-        counts[REFRESH_GC16_FULL], system_cpu_tenths / 10U,
+        last_wait_seconds, counts[REFRESH_A2], counts[REFRESH_GC16_FULL],
+        system_cpu_tenths / 10U,
         system_cpu_tenths % 10U, process_cpu_tenths / 10U,
         process_cpu_tenths % 10U,
         static_cast<unsigned long long>(audio_queued),
@@ -1227,30 +636,6 @@ void record_gameplay_heartbeat(uint32_t submitted_marker,
         std::cerr << "warning: cannot record gameplay heartbeat\n";
     if (output >= 0)
         close(output);
-}
-
-void cycle_slow_type(RefreshType &type) {
-    type = static_cast<RefreshType>(
-        (static_cast<unsigned>(type) + 1U) % kSlowRefreshTypeCount);
-}
-
-void cycle_slowest_type(RefreshSettings &settings) {
-    if (settings.slowest_type == REFRESH_GL16)
-        settings.slowest_type = REFRESH_GC16_PARTIAL;
-    else if (settings.slowest_type == REFRESH_GC16_PARTIAL)
-        settings.slowest_type = REFRESH_GC16_FULL;
-    else
-        settings.slowest_type = REFRESH_GL16;
-}
-
-void cycle_slow_frequency(RefreshSettings &settings) {
-    const unsigned values[] = {0U, 1U, 2U, 5U, 10U, 20U};
-    for (unsigned i = 0; i < 6U; ++i)
-        if (settings.slow_tenths_hz == values[i]) {
-            settings.slow_tenths_hz = values[(i + 1U) % 6U];
-            return;
-        }
-    settings.slow_tenths_hz = 10U;
 }
 
 std::string lowercase(std::string value) {
@@ -1525,10 +910,7 @@ struct Options {
     std::string rom;
     unsigned scale;
     unsigned seconds;
-    unsigned cleanup_seconds;
-    bool cleanup_set;
-    Options() : scale(6), seconds(0), cleanup_seconds(1),
-                cleanup_set(false) {}
+    Options() : scale(6), seconds(0) {}
 };
 
 Options parse_options(int argc, char **argv) {
@@ -1545,10 +927,7 @@ Options parse_options(int argc, char **argv) {
             options.scale = parse_unsigned(argv[i + 1], "--scale");
         else if (std::strcmp(argv[i], "--seconds") == 0)
             options.seconds = parse_unsigned(argv[i + 1], "--seconds");
-        else if (std::strcmp(argv[i], "--cleanup-seconds") == 0) {
-            options.cleanup_seconds = parse_unsigned(argv[i + 1], "--cleanup-seconds");
-            options.cleanup_set = true;
-        } else
+        else
             throw std::runtime_error(std::string("unknown option: ") + argv[i]);
     }
     if (options.scale > 6U)
@@ -1835,16 +1214,6 @@ void draw_menu(std::vector<uint32_t> &screen, unsigned width,
                "EXIT TO NICKEL", 5, light);
 }
 
-const char *display_refresh_policy_name(DisplayRefreshPolicy policy) {
-    switch (policy) {
-        case DISPLAY_REFRESH_PROGRESSIVE: return "PROGRESSIVE";
-        case DISPLAY_REFRESH_INTERMEDIATE: return "MODERATE";
-        case DISPLAY_REFRESH_AGGRESSIVE: return "AGGRESSIVE";
-        case DISPLAY_REFRESH_LAZY: return "LAZY";
-        default: return "UNKNOWN";
-    }
-}
-
 std::string full_refresh_frequency_name(unsigned seconds) {
     if (!seconds)
         return "OFF";
@@ -1888,11 +1257,9 @@ void draw_display_settings(std::vector<uint32_t> &screen, unsigned width,
                "DISPLAY SETTINGS", 6, dark);
     const int left = width * 8 / 100;
     const int right = width * 92 / 100;
-    const int half_height = height * (developer ? 3 : 4) / 100;
-    const unsigned developer_centers[] = {22U, 35U, 48U, 61U, 74U};
+    const int half_height = height * 4 / 100;
+    const unsigned developer_centers[] = {27U, 43U, 59U, 75U};
     const std::string developer_rows[] = {
-        std::string("REFRESH TYPE  ") +
-            display_refresh_policy_name(settings.refresh_policy),
         std::string("FULL REFRESH  ") +
             full_refresh_frequency_name(settings.full_refresh_seconds),
         std::string("GRID EFFECT  ") +
@@ -1911,50 +1278,8 @@ void draw_display_settings(std::vector<uint32_t> &screen, unsigned width,
     };
     const unsigned *centers = developer ? developer_centers : user_centers;
     const std::string *rows = developer ? developer_rows : user_rows;
-    const unsigned count = developer ? 5U : 2U;
+    const unsigned count = developer ? 4U : 2U;
     for (unsigned i = 0U; i < count; ++i) {
-        const int center = height * centers[i] / 100;
-        fill_rectangle(screen, width, height, left, center - half_height,
-                       right, center + half_height, dark);
-        draw_label(screen, width, height, width / 2, center,
-                   rows[i].c_str(), 4, light);
-    }
-    draw_label(screen, width, height, width / 2, height * 91 / 100,
-               "BACK", 5, dark);
-}
-
-std::string frequency_name(unsigned tenths_hz) {
-    if (!tenths_hz)
-        return "OFF";
-    char text[32];
-    if (tenths_hz % 10U)
-        std::snprintf(text, sizeof(text), "%u.%u HZ",
-                      tenths_hz / 10U, tenths_hz % 10U);
-    else
-        std::snprintf(text, sizeof(text), "%u HZ", tenths_hz / 10U);
-    return text;
-}
-
-void draw_refresh_settings(std::vector<uint32_t> &screen, unsigned width,
-                           unsigned height,
-                           const RefreshSettings &settings) {
-    const uint32_t dark = 0xFF000000U;
-    const uint32_t light = 0xFFFFFFFFU;
-    screen.assign(static_cast<size_t>(width) * height, light);
-    draw_label(screen, width, height, width / 2, height * 10 / 100,
-               "REFRESH SETTINGS", 6, dark);
-    const int left = width * 8 / 100;
-    const int right = width * 92 / 100;
-    const int half_height = height * 4 / 100;
-    const unsigned centers[] = {28U, 46U, 64U};
-    const std::string rows[] = {
-        std::string("SLOW TYPE  ") + refresh_type_name(settings.slow_type),
-        std::string("SLOWEST TYPE  ") +
-            refresh_type_name(settings.slowest_type),
-        std::string("SLOW FREQUENCY  ") +
-            frequency_name(settings.slow_tenths_hz)
-    };
-    for (unsigned i = 0; i < 3U; ++i) {
         const int center = height * centers[i] / 100;
         fill_rectangle(screen, width, height, left, center - half_height,
                        right, center + half_height, dark);
@@ -2177,26 +1502,6 @@ std::string choose_game(koboy::FramebufferBackend &framebuffer,
     }
 }
 
-double refresh_viewport(koboy::FramebufferBackend &framebuffer,
-                        RefreshType type, uint32_t marker,
-                        bool wait_for_completion) {
-    switch (type) {
-        case REFRESH_A2:
-            return framebuffer.refresh_a2(marker, wait_for_completion);
-        case REFRESH_DU:
-            return framebuffer.refresh_du(marker, wait_for_completion);
-        case REFRESH_GL16:
-            return framebuffer.refresh_gl16(marker, wait_for_completion);
-        case REFRESH_GC16_PARTIAL:
-            return framebuffer.refresh_gc16_partial(marker,
-                                                     wait_for_completion);
-        case REFRESH_GC16_FULL:
-            return framebuffer.refresh_gc16(marker, wait_for_completion);
-        default:
-            return framebuffer.refresh_a2(marker, wait_for_completion);
-    }
-}
-
 bool refresh_menu_screen(
         koboy::FramebufferBackend &framebuffer,
         koboy::TouchInput &input, uint32_t marker,
@@ -2275,7 +1580,6 @@ int main(int argc, char **argv) {
         const bool no_gameplay_refresh =
             file_exists(kNoGameplayRefreshFlag);
         const bool no_touch = file_exists(kNoTouchFlag);
-        RefreshSettings refresh_settings;
         DisplaySettings display_settings;
         load_display_settings(display_settings);
         unsigned audio_volume = load_audio_volume();
@@ -2302,7 +1606,6 @@ int main(int argc, char **argv) {
 
         std::vector<uint32_t> rgb;
         std::vector<uint32_t> scaled;
-        TileDamageTracker damage_tracker;
         uint32_t marker = 1U;
         const unsigned screen_width = framebuffer.variable_info().xres;
         const unsigned screen_height = framebuffer.variable_info().yres;
@@ -2339,9 +1642,6 @@ int main(int argc, char **argv) {
             throw std::runtime_error("ROM video size does not fit the display");
         framebuffer.configure_viewport(core.video_width() * effective_scale,
                                        core.video_height() * effective_scale);
-        damage_tracker.set_tile_size(
-            display_settings.refresh_policy == DISPLAY_REFRESH_INTERMEDIATE ?
-            kIntermediateTileSize : kDamageTileSize);
         bool shoulder_buttons = core.video_width() == 240U &&
                                 core.video_height() == 160U;
         input.set_shoulder_buttons_enabled(shoulder_buttons);
@@ -2365,18 +1665,16 @@ int main(int argc, char **argv) {
         const double started = monotonic_seconds();
         double deadline = options.seconds ? started + options.seconds : 0.0;
         double next_display = started;
-        double next_policy_refresh = started;
         double next_full_refresh = display_settings.full_refresh_seconds ?
             started + display_settings.full_refresh_seconds : 0.0;
         double emulation_accumulator = 1.0;
         double last_emulation_time = started;
         unsigned emulated_frames = 0U;
         unsigned displayed_frames = 0U;
-        unsigned cleanups = 0U;
         unsigned last_buttons = 0U;
         unsigned input_transitions = 0U;
         unsigned input_nonzero_polls = 0U;
-        unsigned refresh_counts[REFRESH_TYPE_COUNT] = { 0U, 0U, 0U, 0U, 0U };
+        unsigned refresh_counts[REFRESH_TYPE_COUNT] = { 0U, 0U };
         uint32_t last_submitted_marker = marker - 1U;
         uint32_t last_completed_marker = marker - 1U;
         RefreshType last_submitted_type = REFRESH_GC16_FULL;
@@ -2389,7 +1687,6 @@ int main(int argc, char **argv) {
         bool exit_to_nickel = false;
         bool force_first_frame_gc16 = !no_gameplay_refresh;
         std::vector<uint32_t> a2_markers;
-        std::vector<ActiveCleanup> active_cleanups;
 
         while (!interrupted &&
                (!options.seconds || monotonic_seconds() < deadline)) {
@@ -2419,16 +1716,6 @@ int main(int argc, char **argv) {
                     last_completed_marker = marker - 1U;
                     last_wait_seconds = drain_elapsed;
                     a2_markers.clear();
-                    if (!active_cleanups.empty()) {
-                        for (std::size_t i = 0;
-                             i < active_cleanups.size(); ++i) {
-                            last_wait_seconds =
-                                framebuffer.wait_for_update(
-                                    active_cleanups[i].marker);
-                            last_completed_marker = active_cleanups[i].marker;
-                        }
-                        active_cleanups.clear();
-                    }
                     draw_menu(screen, screen_width, screen_height, developer,
                               audio_volume);
                     framebuffer.draw_screen(screen);
@@ -2490,10 +1777,7 @@ int main(int argc, char **argv) {
                                     usleep(20000);
                             }
                             if (settings_action ==
-                                koboy::UI_SETTING_REFRESH_POLICY)
-                                cycle_display_refresh_policy(display_settings);
-                            else if (settings_action ==
-                                     koboy::UI_SETTING_FULL_REFRESH)
+                                koboy::UI_SETTING_FULL_REFRESH)
                                 cycle_full_refresh_frequency(display_settings);
                             else if (settings_action ==
                                      koboy::UI_SETTING_GRID_EFFECT)
@@ -2511,10 +1795,6 @@ int main(int argc, char **argv) {
                             }
                         }
                         save_display_settings(display_settings);
-                        damage_tracker.set_tile_size(
-                            display_settings.refresh_policy ==
-                                DISPLAY_REFRESH_INTERMEDIATE ?
-                            kIntermediateTileSize : kDamageTileSize);
                         if (display_settings.grid_effect != previous_grid ||
                             display_settings.bichrome_threshold !=
                                 previous_bichrome) {
@@ -2576,10 +1856,6 @@ int main(int argc, char **argv) {
                             framebuffer.configure_viewport(
                                 core.video_width() * effective_scale,
                                 core.video_height() * effective_scale);
-                            damage_tracker.set_tile_size(
-                                display_settings.refresh_policy ==
-                                    DISPLAY_REFRESH_INTERMEDIATE ?
-                                kIntermediateTileSize : kDamageTileSize);
                             shoulder_buttons = core.video_width() == 240U &&
                                                core.video_height() == 160U;
                             input.set_shoulder_buttons_enabled(
@@ -2610,12 +1886,8 @@ int main(int argc, char **argv) {
                     if (menu_refresh_healthy)
                         refresh_menu_screen(framebuffer, input, marker++,
                                             diagnostics, true);
-                    damage_tracker.reset(
-                        scaled, framebuffer.viewport().width,
-                        framebuffer.viewport().height);
                     const double menu_resumed = monotonic_seconds();
                     next_display = menu_resumed;
-                    next_policy_refresh = menu_resumed;
                     next_full_refresh = display_settings.full_refresh_seconds ?
                         menu_resumed + display_settings.full_refresh_seconds :
                         0.0;
@@ -2631,22 +1903,14 @@ int main(int argc, char **argv) {
                     for (std::size_t i = 0; i < a2_markers.size(); ++i)
                         framebuffer.wait_for_update(a2_markers[i]);
                     a2_markers.clear();
-                    for (std::size_t i = 0; i < active_cleanups.size(); ++i)
-                        framebuffer.wait_for_update(
-                            active_cleanups[i].marker);
-                    active_cleanups.clear();
                     const double paused_for = pause_for_sleep(
                         framebuffer, input, screen, scaled, marker++,
                         diagnostics);
                     if (options.seconds)
                         deadline += paused_for;
                     const double resumed_at = monotonic_seconds();
-                    damage_tracker.reset(
-                        scaled, framebuffer.viewport().width,
-                        framebuffer.viewport().height);
                     last_emulation_time = resumed_at;
                     next_display = resumed_at;
-                    next_policy_refresh = resumed_at;
                     next_full_refresh = display_settings.full_refresh_seconds ?
                         resumed_at + display_settings.full_refresh_seconds :
                         0.0;
@@ -2678,52 +1942,10 @@ int main(int argc, char **argv) {
             }
             a2_markers.clear();
 
-            double now = monotonic_seconds();
-            for (std::size_t i = 0U; i < active_cleanups.size();) {
-                if (now - active_cleanups[i].submitted_at <
-                    kCleanupRetirementAge) {
-                    ++i;
-                    continue;
-                }
-                last_wait_seconds = framebuffer.wait_for_update(
-                    active_cleanups[i].marker);
-                last_completed_marker = active_cleanups[i].marker;
-                active_cleanups.erase(active_cleanups.begin() + i);
-                now = monotonic_seconds();
-            }
-
-            std::vector<koboy::Viewport> gc16_regions;
-            for (std::size_t i = 0U; i < active_cleanups.size(); ++i)
-                gc16_regions.push_back(active_cleanups[i].region);
-
-            damage_tracker.observe(
-                scaled, framebuffer.viewport().width,
-                framebuffer.viewport().height);
-
-            std::vector<koboy::Viewport> a2_regions;
-            if (!active_cleanups.empty()) {
-                a2_regions = regions_outside_tiles(
-                    framebuffer.viewport().width,
-                    framebuffer.viewport().height, gc16_regions,
-                    damage_tracker.tile_size());
-                for (std::size_t i = 0; i < a2_regions.size(); ++i)
-                    framebuffer.draw_region(scaled, a2_regions[i]);
-            } else {
-                framebuffer.draw(scaled);
-                a2_regions.push_back(koboy::Viewport{
-                    0U, 0U, framebuffer.viewport().width,
-                    framebuffer.viewport().height
-                });
-            }
-
+            const double now = monotonic_seconds();
+            framebuffer.draw(scaled);
             bool submitted_refresh = false;
             if (force_first_frame_gc16) {
-                for (std::size_t i = 0; i < active_cleanups.size(); ++i) {
-                    last_wait_seconds =
-                        framebuffer.wait_for_update(active_cleanups[i].marker);
-                    last_completed_marker = active_cleanups[i].marker;
-                }
-                active_cleanups.clear();
                 last_submitted_marker = marker++;
                 last_submitted_type = REFRESH_GC16_FULL;
                 ++refresh_counts[REFRESH_GC16_FULL];
@@ -2740,10 +1962,6 @@ int main(int argc, char **argv) {
                 force_first_frame_gc16 = false;
                 last_emulation_time = monotonic_seconds();
                 emulation_accumulator = 0.0;
-                damage_tracker.reset(
-                    scaled, framebuffer.viewport().width,
-                    framebuffer.viewport().height);
-                next_policy_refresh = last_emulation_time;
                 next_full_refresh = display_settings.full_refresh_seconds ?
                     last_emulation_time + display_settings.full_refresh_seconds :
                     0.0;
@@ -2751,140 +1969,26 @@ int main(int argc, char **argv) {
             } else if (no_gameplay_refresh) {
                 /*
                  * Isolation mode deliberately keeps emulation, input, scaling,
-                 * and framebuffer writes active while issuing no HWTCON ioctl,
-                 * including during startup and the first emulated frame.
+                 * and framebuffer writes active while issuing no HWTCON ioctl.
                  */
+            } else if (next_full_refresh > 0.0 && now >= next_full_refresh) {
+                last_submitted_marker = marker++;
+                last_submitted_type = REFRESH_GC16_FULL;
+                ++refresh_counts[REFRESH_GC16_FULL];
+                last_wait_seconds = framebuffer.refresh_gc16(
+                    last_submitted_marker, true);
+                last_completed_marker = last_submitted_marker;
+                next_full_refresh =
+                    monotonic_seconds() + display_settings.full_refresh_seconds;
+                submitted_refresh = true;
             } else {
-                if (next_full_refresh > 0.0 && now >= next_full_refresh) {
-                    for (std::size_t i = 0U;
-                         i < active_cleanups.size(); ++i)
-                        framebuffer.wait_for_update(
-                            active_cleanups[i].marker);
-                    active_cleanups.clear();
-                    gc16_regions.clear();
-                    framebuffer.draw(scaled);
-                    last_submitted_marker = marker++;
-                    last_submitted_type = REFRESH_GC16_FULL;
-                    ++refresh_counts[REFRESH_GC16_FULL];
-                    last_wait_seconds = framebuffer.refresh_gc16(
-                        last_submitted_marker, true);
-                    last_completed_marker = last_submitted_marker;
-                    damage_tracker.reset(
-                        scaled, framebuffer.viewport().width,
-                        framebuffer.viewport().height);
-                    next_full_refresh = now +
-                        display_settings.full_refresh_seconds;
-                    next_policy_refresh = now;
-                    submitted_refresh = true;
-                    a2_regions.clear();
-                }
-                const bool progressive = display_settings.refresh_policy ==
-                    DISPLAY_REFRESH_PROGRESSIVE;
-                const unsigned maximum_concurrent = progressive ?
-                    kProgressiveMaximumConcurrentCleanups :
-                    kMaximumConcurrentCleanups;
-                const unsigned available = active_cleanups.size() >=
-                    maximum_concurrent ? 0U :
-                    static_cast<unsigned>(maximum_concurrent -
-                                          active_cleanups.size());
-                unsigned starts = std::min(progressive ?
-                    kProgressiveCleanupStartsPerTick :
-                    kCleanupStartsPerTick, available);
-                std::vector<koboy::Viewport> new_gc16_cleanups;
-                std::vector<koboy::Viewport> new_du_cleanups;
-                if (!submitted_refresh && display_settings.refresh_policy ==
-                    DISPLAY_REFRESH_PROGRESSIVE) {
-                    new_gc16_cleanups =
-                        damage_tracker.take_highest_rectangles(
-                            starts, gc16_regions, REFRESH_GC16_FULL);
-                } else if (!submitted_refresh &&
-                           display_settings.refresh_policy ==
-                               DISPLAY_REFRESH_INTERMEDIATE &&
-                           now >= next_policy_refresh) {
-                    starts = std::min(10U, available);
-                    new_gc16_cleanups =
-                        damage_tracker.take_highest_rectangles(
-                            starts, gc16_regions, REFRESH_GC16_FULL,
-                            false, true, false);
-                    for (std::size_t i = 0U;
-                         i < new_gc16_cleanups.size(); ++i)
-                        gc16_regions.push_back(new_gc16_cleanups[i]);
-                    const unsigned intermediate_remaining = starts -
-                        static_cast<unsigned>(new_gc16_cleanups.size());
-                    new_du_cleanups =
-                        damage_tracker.take_highest_rectangles(
-                            intermediate_remaining, gc16_regions, REFRESH_DU,
-                            false, true, false);
-                    next_policy_refresh = now + 0.5;
-                } else if (!submitted_refresh &&
-                           display_settings.refresh_policy ==
-                               DISPLAY_REFRESH_AGGRESSIVE &&
-                           now >= next_policy_refresh &&
-                           active_cleanups.empty()) {
-                    new_gc16_cleanups =
-                        damage_tracker.take_affected_rectangles();
-                    next_policy_refresh = now + 1.0;
-                }
-                if (display_settings.refresh_policy !=
-                    DISPLAY_REFRESH_INTERMEDIATE)
-                    for (std::size_t i = 0U;
-                         i < new_gc16_cleanups.size(); ++i)
-                        gc16_regions.push_back(new_gc16_cleanups[i]);
-                const unsigned remaining_starts = starts -
-                    static_cast<unsigned>(new_gc16_cleanups.size());
-                if (display_settings.refresh_policy ==
-                    DISPLAY_REFRESH_PROGRESSIVE)
-                    new_du_cleanups =
-                        damage_tracker.take_highest_rectangles(
-                            remaining_starts, gc16_regions, REFRESH_DU);
-
-                for (std::size_t i = 0U;
-                     i < new_gc16_cleanups.size(); ++i) {
-                    const uint32_t gc16_marker = marker++;
-                    last_submitted_marker = gc16_marker;
-                    last_submitted_type = REFRESH_GC16_FULL;
-                    ++refresh_counts[REFRESH_GC16_FULL];
-                    last_wait_seconds = framebuffer.refresh_gc16_region(
-                        new_gc16_cleanups[i], gc16_marker, false);
-                    ActiveCleanup cleanup = {
-                        gc16_marker, now, new_gc16_cleanups[i],
-                        REFRESH_GC16_FULL
-                    };
-                    active_cleanups.push_back(cleanup);
-                    ++cleanups;
-                    submitted_refresh = true;
-                }
-                for (std::size_t i = 0U; i < new_du_cleanups.size(); ++i) {
-                    const uint32_t du_marker = marker++;
-                    last_submitted_marker = du_marker;
-                    last_submitted_type = REFRESH_DU;
-                    ++refresh_counts[REFRESH_DU];
-                    last_wait_seconds = framebuffer.refresh_du_region(
-                        new_du_cleanups[i], du_marker, false);
-                    ActiveCleanup cleanup = {
-                        du_marker, now, new_du_cleanups[i], REFRESH_DU
-                    };
-                    active_cleanups.push_back(cleanup);
-                    gc16_regions.push_back(new_du_cleanups[i]);
-                    ++cleanups;
-                    submitted_refresh = true;
-                }
-                if (!new_gc16_cleanups.empty() || !new_du_cleanups.empty())
-                    a2_regions = regions_outside_tiles(
-                        framebuffer.viewport().width,
-                        framebuffer.viewport().height, gc16_regions,
-                        damage_tracker.tile_size());
-
-                for (std::size_t i = 0; i < a2_regions.size(); ++i) {
-                    const uint32_t a2_marker = marker++;
-                    last_submitted_marker = a2_marker;
-                    last_submitted_type = REFRESH_A2;
-                    ++refresh_counts[REFRESH_A2];
-                    last_wait_seconds = framebuffer.refresh_a2_region(
-                        a2_regions[i], a2_marker, false);
-                    a2_markers.push_back(a2_marker);
-                    submitted_refresh = true;
-                }
+                const uint32_t a2_marker = marker++;
+                last_submitted_marker = a2_marker;
+                last_submitted_type = REFRESH_A2;
+                ++refresh_counts[REFRESH_A2];
+                last_wait_seconds = framebuffer.refresh_a2(a2_marker, false);
+                a2_markers.push_back(a2_marker);
+                submitted_refresh = true;
             }
             if (diagnostics && now >= next_heartbeat) {
                 cpu_usage.sample(system_cpu_tenths, process_cpu_tenths);
@@ -2913,9 +2017,6 @@ int main(int argc, char **argv) {
         for (std::size_t i = 0; i < a2_markers.size(); ++i)
             framebuffer.wait_for_update(a2_markers[i]);
         a2_markers.clear();
-        for (std::size_t i = 0; i < active_cleanups.size(); ++i)
-            framebuffer.wait_for_update(active_cleanups[i].marker);
-        active_cleanups.clear();
         const double elapsed = monotonic_seconds() - started;
         automatic_state_saved = save_state(core, automatic_state);
         sram_saved = save_sram(core, sram_path);
@@ -2939,7 +2040,6 @@ int main(int argc, char **argv) {
         std::cout << "elapsed_seconds=" << elapsed << '\n';
         std::cout << "emulated_frames=" << emulated_frames << '\n';
         std::cout << "displayed_frames=" << displayed_frames << '\n';
-        std::cout << "cleanup_refreshes=" << cleanups << '\n';
         std::cout << "audio_frames_queued="
                   << core.audio_frames_queued() << '\n';
         std::cout << "audio_frames_dropped="

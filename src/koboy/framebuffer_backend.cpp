@@ -158,24 +158,6 @@ void FramebufferBackend::draw(const std::vector<uint32_t> &pixels) {
                     &pixels[static_cast<size_t>(y) * viewport_.width], row_bytes);
 }
 
-void FramebufferBackend::draw_region(const std::vector<uint32_t> &pixels,
-                                     const Viewport &region) {
-    if (pixels.size() != static_cast<size_t>(viewport_.width) * viewport_.height)
-        throw std::runtime_error("scaled frame does not match viewport");
-    if (region.width == 0U || region.height == 0U ||
-        region.x + region.width > viewport_.width ||
-        region.y + region.height > viewport_.height)
-        throw std::runtime_error("draw region is outside viewport");
-    const size_t row_bytes = static_cast<size_t>(region.width) * 4U;
-    for (uint32_t y = 0U; y < region.height; ++y) {
-        const uint32_t *source = &pixels[
-            static_cast<size_t>(region.y + y) * viewport_.width + region.x];
-        std::memcpy(row_address(viewport_.y + region.y + y) +
-                        static_cast<size_t>(region.x) * 4U,
-                    source, row_bytes);
-    }
-}
-
 void FramebufferBackend::draw_screen(const std::vector<uint32_t> &pixels) {
     if (pixels.size() != static_cast<size_t>(variable_.xres) * variable_.yres)
         throw std::runtime_error("screen image does not match framebuffer");
@@ -229,61 +211,10 @@ double FramebufferBackend::refresh_screen_du(
                   wait_for_completion, screen);
 }
 
-Viewport FramebufferBackend::absolute_region(const Viewport &region) const {
-    if (region.width == 0U || region.height == 0U ||
-        region.x + region.width > viewport_.width ||
-        region.y + region.height > viewport_.height)
-        throw std::runtime_error("refresh region is outside viewport");
-    Viewport absolute = {
-        viewport_.x + region.x, viewport_.y + region.y,
-        region.width, region.height
-    };
-    return absolute;
-}
-
-double FramebufferBackend::refresh_a2_region(
-        const Viewport &region, uint32_t marker, bool wait_for_completion) {
-    const Viewport absolute = absolute_region(region);
-    return submit(HWTCON_WAVEFORM_A2, HWTCON_UPDATE_PARTIAL, marker,
-                  wait_for_completion, absolute);
-}
-
-double FramebufferBackend::refresh_du(uint32_t marker,
-                                      bool wait_for_completion) {
-    return submit(HWTCON_WAVEFORM_DU, HWTCON_UPDATE_PARTIAL, marker,
-                  wait_for_completion, viewport_);
-}
-
-double FramebufferBackend::refresh_du_region(
-        const Viewport &region, uint32_t marker, bool wait_for_completion) {
-    const Viewport absolute = absolute_region(region);
-    return submit(HWTCON_WAVEFORM_DU, HWTCON_UPDATE_PARTIAL, marker,
-                  wait_for_completion, absolute);
-}
-
-double FramebufferBackend::refresh_gl16(uint32_t marker,
-                                        bool wait_for_completion) {
-    return submit(HWTCON_WAVEFORM_GL16, HWTCON_UPDATE_PARTIAL, marker,
-                  wait_for_completion, viewport_);
-}
-
-double FramebufferBackend::refresh_gc16_partial(uint32_t marker,
-                                                bool wait_for_completion) {
-    return submit(HWTCON_WAVEFORM_GC16, HWTCON_UPDATE_PARTIAL, marker,
-                  wait_for_completion, viewport_);
-}
-
 double FramebufferBackend::refresh_gc16(uint32_t marker,
                                         bool wait_for_completion) {
     return submit(HWTCON_WAVEFORM_GC16, HWTCON_UPDATE_FULL, marker,
                   wait_for_completion, viewport_);
-}
-
-double FramebufferBackend::refresh_gc16_region(
-        const Viewport &region, uint32_t marker, bool wait_for_completion) {
-    const Viewport absolute = absolute_region(region);
-    return submit(HWTCON_WAVEFORM_GC16, HWTCON_UPDATE_FULL, marker,
-                  wait_for_completion, absolute);
 }
 
 double FramebufferBackend::refresh_screen_gc16_partial(
