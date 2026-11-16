@@ -154,15 +154,6 @@ GC16 cleanup is also stability-gated. Debt continues accumulating while a cell i
 
 Initial implementation should retain an occasional full-viewport slowest refresh as a safety net. Its interval can be increased only after device tests show that targeted refreshes do not permit artifacts to accumulate over long sessions. Developer diagnostics should eventually record each selected cell, its debt, and the waveform so the heuristic can be tuned from observed results. Device testing must also confirm minimum dimensions, alignment requirements, edge artifacts, and whether waveforms spill beyond their requested rectangles.
 
-## Remaining release work
-
-- Validate the complete, reversible KoboRoot installation package on-device.
-- Validate install, upgrade, firmware-upgrade, and uninstall behavior without
-  removing user ROMs, saves, states, or configuration.
-- Exercise representative GB, GBC, GBA, and Mega Duck software in longer
-  sessions, with additional focus on GBA stability and save compatibility.
-- Publish supported-device scope, known limitations, source availability, and
-  acknowledgements with the first release.
 
 ## Deferred enhancements
 
@@ -173,5 +164,4 @@ Initial implementation should retain an occasional full-viewport slowest refresh
 - Per-game display profiles.
 - Solar level and tilt mappings for games that need them.
 - Physical controller support.
-- Additional libretro-compatible systems where the hardware and e-ink display
-  make them practical.
+- Additional libretro-compatible systems where the hardware and e-ink display make them practical.
