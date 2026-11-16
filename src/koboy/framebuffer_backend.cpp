@@ -158,6 +158,14 @@ void FramebufferBackend::draw(const std::vector<uint32_t> &pixels) {
                     &pixels[static_cast<size_t>(y) * viewport_.width], row_bytes);
 }
 
+void FramebufferBackend::read_viewport(std::vector<uint32_t> &pixels) {
+    const size_t row_bytes = static_cast<size_t>(viewport_.width) * 4U;
+    pixels.resize(static_cast<size_t>(viewport_.width) * viewport_.height);
+    for (uint32_t y = 0; y < viewport_.height; ++y)
+        std::memcpy(&pixels[static_cast<size_t>(y) * viewport_.width],
+                    row_address(viewport_.y + y), row_bytes);
+}
+
 uint32_t *FramebufferBackend::mutable_viewport_row(uint32_t y) {
     if (y >= viewport_.height)
         throw std::runtime_error("framebuffer viewport row is out of bounds");

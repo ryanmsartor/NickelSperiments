@@ -65,7 +65,6 @@ void scale_rgb32_dithered_bichrome(const std::vector<uint32_t> &source,
                                    unsigned source_width,
                                    unsigned source_height,
                                    unsigned scale,
-                                   std::vector<uint32_t> &destination,
                                    std::vector<uint32_t> &previous_source,
                                    FramebufferBackend &framebuffer,
                                    bool grid_effect) {
@@ -100,10 +99,7 @@ void scale_rgb32_dithered_bichrome(const std::vector<uint32_t> &source,
     if (framebuffer.viewport().width != width ||
         framebuffer.viewport().height != height)
         throw std::runtime_error("scaled frame does not match viewport");
-    const bool redraw_all =
-        destination.size() != static_cast<std::size_t>(width) * height ||
-        previous_source.size() != source.size();
-    destination.resize(width * height);
+    const bool redraw_all = previous_source.size() != source.size();
     previous_source.resize(source.size());
 
     for (unsigned source_y = 0; source_y < source_height; ++source_y) {
@@ -121,13 +117,10 @@ void scale_rgb32_dithered_bichrome(const std::vector<uint32_t> &source,
             const unsigned output_x = source_x * scale;
             for (unsigned dy = 0; dy < scale; ++dy) {
                 const unsigned output_y = source_y * scale + dy;
-                uint32_t *row = &destination[
-                    static_cast<std::size_t>(output_y) * width + output_x];
                 uint32_t *framebuffer_row =
                     framebuffer.mutable_viewport_row(output_y) + output_x;
                 const uint32_t *pattern = dither.pixel[gray][output_y & 3U];
                 if (!grid_effect && scale == 4U) {
-                    std::memcpy(row, pattern, 4U * sizeof(*row));
                     std::memcpy(framebuffer_row, pattern,
                                 4U * sizeof(*framebuffer_row));
                     continue;
@@ -140,7 +133,6 @@ void scale_rgb32_dithered_bichrome(const std::vector<uint32_t> &source,
                     const uint32_t pixel = vertical_grid || horizontal_grid ||
                         pattern[(output_x + dx) & 3U] == 0xFFFFFFFFU ?
                         0xFFFFFFFFU : 0xFF000000U;
-                    row[dx] = pixel;
                     framebuffer_row[dx] = pixel;
                 }
             }

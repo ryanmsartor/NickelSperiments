@@ -1647,6 +1647,7 @@ int main(int argc, char **argv) {
                     last_completed_marker = marker - 1U;
                     last_wait_seconds = drain_elapsed;
                     a2_markers.clear();
+                    framebuffer.read_viewport(scaled);
                     draw_menu(screen, screen_width, screen_height, developer,
                               audio_volume);
                     framebuffer.draw_screen(screen);
@@ -1723,6 +1724,7 @@ int main(int argc, char **argv) {
                         save_display_settings(display_settings);
                         if (display_settings.grid_effect != previous_grid) {
                             scaled.clear();
+                            previous_rgb.clear();
                             force_first_frame_gc16 = true;
                         }
                         menu_action = koboy::UI_RESUME_GAME;
@@ -1740,6 +1742,7 @@ int main(int argc, char **argv) {
                     } else if (menu_action == koboy::UI_LOAD_STATE) {
                         if (load_state(core, manual_state)) {
                             scaled.clear();
+                            previous_rgb.clear();
                             force_first_frame_gc16 = true;
                         } else {
                             std::cerr << "warning: no usable manual save state\n";
@@ -1747,6 +1750,7 @@ int main(int argc, char **argv) {
                     } else if (menu_action == koboy::UI_RESET_GAME) {
                         core.reset();
                         scaled.clear();
+                        previous_rgb.clear();
                         force_first_frame_gc16 = true;
                     }
                     if (menu_action == koboy::UI_SELECT_GAME) {
@@ -1794,6 +1798,7 @@ int main(int argc, char **argv) {
                                 load_state(core, automatic_state);
                             automatic_state_saved = false;
                             scaled.clear();
+                            previous_rgb.clear();
                             force_first_frame_gc16 = true;
                         }
                     }
@@ -1815,6 +1820,7 @@ int main(int argc, char **argv) {
                     if (menu_refresh_healthy)
                         refresh_menu_screen(framebuffer, input, marker++,
                                             diagnostics, true);
+                    scaled.clear();
                     const double menu_resumed = monotonic_seconds();
                     next_display = menu_resumed;
                     next_full_refresh = display_settings.full_refresh_seconds ?
@@ -1832,9 +1838,11 @@ int main(int argc, char **argv) {
                     for (std::size_t i = 0; i < a2_markers.size(); ++i)
                         framebuffer.wait_for_update(a2_markers[i]);
                     a2_markers.clear();
+                    framebuffer.read_viewport(scaled);
                     const double paused_for = pause_for_sleep(
                         framebuffer, input, screen, scaled, marker++,
                         diagnostics);
+                    scaled.clear();
                     if (options.seconds)
                         deadline += paused_for;
                     const double resumed_at = monotonic_seconds();
@@ -1867,7 +1875,7 @@ int main(int argc, char **argv) {
             a2_markers.clear();
             koboy::scale_rgb32_dithered_bichrome(
                 rgb, core.video_width(), core.video_height(),
-                effective_scale, scaled, previous_rgb,
+                effective_scale, previous_rgb,
                 framebuffer,
                 display_settings.grid_effect);
 
