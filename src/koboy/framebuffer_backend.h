@@ -30,6 +30,7 @@ public:
     void clear_screen(uint32_t pixel);
     void draw(const std::vector<uint32_t> &pixels);
     void draw_screen(const std::vector<uint32_t> &pixels);
+    uint32_t *mutable_viewport_row(uint32_t y);
     double refresh_screen_du(uint32_t marker,
                              bool wait_for_completion = false);
     double refresh_a2(uint32_t marker, bool wait_for_completion = false);

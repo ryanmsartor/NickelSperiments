@@ -1859,19 +1859,19 @@ int main(int argc, char **argv) {
             }
             if (exit_to_nickel || interrupted)
                 break;
-            koboy::scale_rgb32_dithered_bichrome(
-                rgb, core.video_width(), core.video_height(),
-                effective_scale, scaled, previous_rgb,
-                display_settings.grid_effect);
             for (std::size_t i = 0; i < a2_markers.size(); ++i) {
                 last_wait_seconds =
                     framebuffer.wait_for_update(a2_markers[i]);
                 last_completed_marker = a2_markers[i];
             }
             a2_markers.clear();
+            koboy::scale_rgb32_dithered_bichrome(
+                rgb, core.video_width(), core.video_height(),
+                effective_scale, scaled, previous_rgb,
+                framebuffer,
+                display_settings.grid_effect);
 
             const double now = monotonic_seconds();
-            framebuffer.draw(scaled);
             bool submitted_refresh = false;
             if (force_first_frame_gc16) {
                 last_submitted_marker = marker++;

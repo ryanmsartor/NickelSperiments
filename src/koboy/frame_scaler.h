@@ -8,6 +8,8 @@
 
 namespace koboy {
 
+class FramebufferBackend;
+
 enum {
     kGameBoyWidth = 160,
     kGameBoyHeight = 144
@@ -25,6 +27,7 @@ void scale_rgb32_dithered_bichrome(const std::vector<uint32_t> &source,
                                    unsigned scale,
                                    std::vector<uint32_t> &destination,
                                    std::vector<uint32_t> &previous_source,
+                                   FramebufferBackend &framebuffer,
                                    bool grid_effect = false);
 
 } // namespace koboy

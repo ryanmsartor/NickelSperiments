@@ -158,6 +158,12 @@ void FramebufferBackend::draw(const std::vector<uint32_t> &pixels) {
                     &pixels[static_cast<size_t>(y) * viewport_.width], row_bytes);
 }
 
+uint32_t *FramebufferBackend::mutable_viewport_row(uint32_t y) {
+    if (y >= viewport_.height)
+        throw std::runtime_error("framebuffer viewport row is out of bounds");
+    return reinterpret_cast<uint32_t *>(row_address(viewport_.y + y));
+}
+
 void FramebufferBackend::draw_screen(const std::vector<uint32_t> &pixels) {
     if (pixels.size() != static_cast<size_t>(variable_.xres) * variable_.yres)
         throw std::runtime_error("screen image does not match framebuffer");
