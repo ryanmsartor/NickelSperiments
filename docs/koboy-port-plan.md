@@ -156,7 +156,8 @@ review may still be appropriate before broad distribution.
 
 ## Known limitations and deferred work
 
-- No audio output.
+- Bluetooth audio currently targets the Clara BW's stock MediaTek GStreamer
+  sink; broader device support remains unverified.
 - No Bluetooth controller support.
 - ZIP archives load the first supported ROM they contain; nested ROM folders
   are not supported.

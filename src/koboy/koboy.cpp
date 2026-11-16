@@ -47,6 +47,7 @@ const char *const kNoGameplayRefreshFlag =
 const char *const kNoTouchFlag = "/mnt/onboard/KoBoy/isolate-no-touch";
 const char *const kRefreshConfig = "/mnt/onboard/KoBoy/refresh.conf";
 const char *const kDisplayConfig = "/mnt/onboard/KoBoy/display.conf";
+const char *const kAudioConfig = "/mnt/onboard/KoBoy/audio.conf";
 const char *const kRefreshBreadcrumb =
     "/mnt/onboard/KoBoy/refresh-active.log";
 const char *const kPidPath = "/tmp/koboy.pid";
@@ -782,6 +783,37 @@ void save_display_settings(const DisplaySettings &settings) {
         std::cerr << "warning: cannot save display settings\n";
 }
 
+unsigned load_audio_volume() {
+    std::ifstream input(kAudioConfig);
+    std::string line;
+    while (std::getline(input, line)) {
+        if (line.compare(0U, 7U, "volume=") == 0) {
+            const unsigned volume = static_cast<unsigned>(
+                std::strtoul(line.substr(7U).c_str(), 0, 10));
+            if (volume <= 20U)
+                return volume;
+        }
+    }
+    return 10U;
+}
+
+void save_audio_volume(unsigned volume) {
+    if (!ensure_directory(kKoBoyRoot))
+        return;
+    const std::string temporary = std::string(kAudioConfig) + ".tmp";
+    const int output = open(temporary.c_str(),
+                            O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0644);
+    char text[32];
+    const int length = std::snprintf(text, sizeof(text), "volume=%u\n", volume);
+    bool saved = output >= 0 && length > 0 &&
+        write_all(output, std::string(text, static_cast<std::size_t>(length))) &&
+        fsync(output) == 0;
+    if (output >= 0 && close(output) != 0)
+        saved = false;
+    if (!saved || rename(temporary.c_str(), kAudioConfig) != 0)
+        std::cerr << "warning: cannot save audio volume\n";
+}
+
 void cycle_display_refresh_policy(DisplaySettings &settings) {
     switch (settings.refresh_policy) {
         case DISPLAY_REFRESH_PROGRESSIVE:
@@ -1158,7 +1190,9 @@ void record_gameplay_heartbeat(uint32_t submitted_marker,
                                double last_wait_seconds,
                                const unsigned counts[REFRESH_TYPE_COUNT],
                                unsigned system_cpu_tenths,
-                               unsigned process_cpu_tenths) {
+                               unsigned process_cpu_tenths,
+                               uint64_t audio_queued,
+                               uint64_t audio_dropped) {
     if (!ensure_directory(kKoBoyRoot))
         return;
     const SystemMetrics metrics = read_system_metrics();
@@ -1169,6 +1203,7 @@ void record_gameplay_heartbeat(uint32_t submitted_marker,
         "submitted_type=%s completed_marker=%u last_wait=%.3f "
         "count_a2=%u count_du=%u count_gl16=%u count_gc16_partial=%u "
         "count_gc16_full=%u system_cpu_pct=%u.%u process_cpu_pct=%u.%u "
+        "audio_frames_queued=%llu audio_frames_dropped=%llu "
         "mem_available_kb=%llu rss_kb=%llu "
         "cpu_khz=%llu cpu_temp_mc=%lld battery_temp_mc=%lld ap_temp_mc=%lld\n",
         static_cast<long>(getpid()), monotonic_seconds(), submitted_marker,
@@ -1177,7 +1212,10 @@ void record_gameplay_heartbeat(uint32_t submitted_marker,
         counts[REFRESH_GL16], counts[REFRESH_GC16_PARTIAL],
         counts[REFRESH_GC16_FULL], system_cpu_tenths / 10U,
         system_cpu_tenths % 10U, process_cpu_tenths / 10U,
-        process_cpu_tenths % 10U, metrics.memory_available_kb,
+        process_cpu_tenths % 10U,
+        static_cast<unsigned long long>(audio_queued),
+        static_cast<unsigned long long>(audio_dropped),
+        metrics.memory_available_kb,
         metrics.resident_kb, metrics.cpu_frequency_khz,
         metrics.cpu_temperature_mc, metrics.battery_temperature_mc,
         metrics.ap_temperature_mc);
@@ -1585,6 +1623,20 @@ const unsigned char *glyph(char character) {
     static const unsigned char nine[7] = {14, 17, 17, 15, 1, 1, 14};
     static const unsigned char hyphen[7] = {0, 0, 0, 31, 0, 0, 0};
     static const unsigned char dot[7] = {0, 0, 0, 0, 0, 12, 12};
+    static const unsigned char colon[7] = {0, 12, 12, 0, 12, 12, 0};
+    static const unsigned char left_parenthesis[7] = {2, 4, 8, 8, 8, 4, 2};
+    static const unsigned char right_parenthesis[7] = {8, 4, 2, 2, 2, 4, 8};
+    static const unsigned char less_than[7] = {1, 2, 4, 8, 4, 2, 1};
+    static const unsigned char greater_than[7] = {16, 8, 4, 2, 4, 8, 16};
+    static const unsigned char slash[7] = {1, 2, 2, 4, 8, 8, 16};
+    static const unsigned char percent[7] = {17, 2, 4, 4, 8, 16, 17};
+    static const unsigned char comma[7] = {0, 0, 0, 0, 0, 4, 8};
+    static const unsigned char apostrophe[7] = {4, 4, 8, 0, 0, 0, 0};
+    static const unsigned char plus[7] = {0, 4, 4, 31, 4, 4, 0};
+    static const unsigned char equals[7] = {0, 31, 0, 31, 0, 0, 0};
+    static const unsigned char exclamation[7] = {4, 4, 4, 4, 4, 0, 4};
+    static const unsigned char question[7] = {14, 17, 1, 2, 4, 0, 4};
+    static const unsigned char underscore[7] = {0, 0, 0, 0, 0, 0, 31};
     switch (std::toupper(static_cast<unsigned char>(character))) {
         case 'A': return a;
         case 'B': return b;
@@ -1624,6 +1676,20 @@ const unsigned char *glyph(char character) {
         case '9': return nine;
         case '-': return hyphen;
         case '.': return dot;
+        case ':': return colon;
+        case '(': return left_parenthesis;
+        case ')': return right_parenthesis;
+        case '<': return less_than;
+        case '>': return greater_than;
+        case '/': return slash;
+        case '%': return percent;
+        case ',': return comma;
+        case '\'': return apostrophe;
+        case '+': return plus;
+        case '=': return equals;
+        case '!': return exclamation;
+        case '?': return question;
+        case '_': return underscore;
         default: return 0;
     }
 }
@@ -1712,7 +1778,7 @@ void draw_controls(std::vector<uint32_t> &screen, unsigned width,
 }
 
 void draw_menu(std::vector<uint32_t> &screen, unsigned width,
-               unsigned height, bool developer) {
+               unsigned height, bool developer, unsigned volume) {
     (void)developer;
     const uint32_t dark = 0xFF000000U;
     const uint32_t light = 0xFFFFFFFFU;
@@ -1723,39 +1789,48 @@ void draw_menu(std::vector<uint32_t> &screen, unsigned width,
     const int left = width * 18 / 100;
     const int right = width * 82 / 100;
     const int half_height = height * 3 / 100;
-    const int resume_y = height * 22 / 100;
-    const int save_y = height * 31 / 100;
-    const int load_y = height * 40 / 100;
-    const int reset_y = height * 49 / 100;
-    const int select_y = height * 58 / 100;
-    const int settings_y = height * 67 / 100;
-    const int exit_y = height * 78 / 100;
+    const int resume_y = height * 27 / 100;
+    const int state_y = height * 37 / 100;
+    const int settings_y = height * 47 / 100;
+    const int volume_y = height * 57 / 100;
+    const int reset_y = height * 67 / 100;
+    const int select_y = height * 77 / 100;
+    const int exit_y = height * 87 / 100;
+    const int state_gap = width * 1 / 100;
+    const int state_middle = width / 2;
     fill_rectangle(screen, width, height, left, resume_y - half_height,
                    right, resume_y + half_height, dark);
-    fill_rectangle(screen, width, height, left, save_y - half_height,
-                   right, save_y + half_height, dark);
-    fill_rectangle(screen, width, height, left, load_y - half_height,
-                   right, load_y + half_height, dark);
+    fill_rectangle(screen, width, height, left, state_y - half_height,
+                   state_middle - state_gap, state_y + half_height, dark);
+    fill_rectangle(screen, width, height, state_middle + state_gap,
+                   state_y - half_height, right, state_y + half_height, dark);
     fill_rectangle(screen, width, height, left, reset_y - half_height,
                    right, reset_y + half_height, dark);
     fill_rectangle(screen, width, height, left, select_y - half_height,
                    right, select_y + half_height, dark);
     fill_rectangle(screen, width, height, left, settings_y - half_height,
                    right, settings_y + half_height, dark);
+    fill_rectangle(screen, width, height, left, volume_y - half_height,
+                   right, volume_y + half_height, dark);
     fill_rectangle(screen, width, height, left, exit_y - half_height,
                    right, exit_y + half_height, dark);
     draw_label(screen, width, height, width / 2, resume_y,
                "RESUME GAME", 6, light);
-    draw_label(screen, width, height, width / 2, save_y,
-               "SAVE STATE", 6, light);
-    draw_label(screen, width, height, width / 2, load_y,
-               "LOAD STATE", 6, light);
+    draw_label(screen, width, height, (left + state_middle - state_gap) / 2,
+               state_y, "LOAD STATE", 4, light);
+    draw_label(screen, width, height, (state_middle + state_gap + right) / 2,
+               state_y, "SAVE STATE", 4, light);
     draw_label(screen, width, height, width / 2, reset_y,
                "RESET GAME", 6, light);
     draw_label(screen, width, height, width / 2, select_y,
-               "SELECT GAME", 6, light);
+               "CHANGE GAME", 6, light);
     draw_label(screen, width, height, width / 2, settings_y,
                "DISPLAY SETTINGS", 5, light);
+    char volume_label[32];
+    std::snprintf(volume_label, sizeof(volume_label),
+                  "< VOLUME: %u/20 >", volume);
+    draw_label(screen, width, height, width / 2, volume_y,
+               volume_label, 5, light);
     draw_label(screen, width, height, width / 2, exit_y,
                "EXIT TO NICKEL", 5, light);
 }
@@ -2203,11 +2278,13 @@ int main(int argc, char **argv) {
         RefreshSettings refresh_settings;
         DisplaySettings display_settings;
         load_display_settings(display_settings);
+        unsigned audio_volume = load_audio_volume();
         ensure_directory(kKoBoyRoot);
         ensure_directory(kKoBoyBiosDirectory);
         std::unique_ptr<koboy::EmulatorCore> selected_core =
             koboy::create_default_core();
         koboy::EmulatorCore &core = *selected_core;
+        core.set_audio_volume(audio_volume);
 
         std::signal(SIGINT, handle_signal);
         std::signal(SIGTERM, handle_signal);
@@ -2328,12 +2405,14 @@ int main(int argc, char **argv) {
                     input.take_ui_action(koboy::UI_SCREEN_GAME) ==
                     koboy::UI_OPEN_MENU) {
                     const double menu_started = monotonic_seconds();
+                    core.set_audio_paused(true);
                     if (diagnostics)
                         record_simple_breadcrumb("menu_press", marker - 1U);
                     double drain_elapsed = 0.0;
                     if (!drain_gameplay_refresh(framebuffer, input,
                                                 marker - 1U, diagnostics,
                                                 drain_elapsed)) {
+                        core.set_audio_paused(false);
                         next_display = monotonic_seconds();
                         continue;
                     }
@@ -2350,7 +2429,8 @@ int main(int argc, char **argv) {
                         }
                         active_cleanups.clear();
                     }
-                    draw_menu(screen, screen_width, screen_height, developer);
+                    draw_menu(screen, screen_width, screen_height, developer,
+                              audio_volume);
                     framebuffer.draw_screen(screen);
                     koboy::UiAction menu_action =
                         koboy::UI_NONE;
@@ -2359,12 +2439,31 @@ int main(int argc, char **argv) {
                                             diagnostics, true);
                     if (!menu_refresh_healthy)
                         menu_action = koboy::UI_RESUME_GAME;
-                    while (!interrupted && menu_action == koboy::UI_NONE) {
-                        menu_action = input.take_ui_action(developer
-                            ? koboy::UI_SCREEN_MENU_DEVELOPER
-                            : koboy::UI_SCREEN_MENU);
-                        if (menu_action == koboy::UI_NONE)
-                            usleep(20000);
+                    while (!interrupted) {
+                        while (!interrupted && menu_action == koboy::UI_NONE) {
+                            menu_action = input.take_ui_action(developer
+                                ? koboy::UI_SCREEN_MENU_DEVELOPER
+                                : koboy::UI_SCREEN_MENU);
+                            if (menu_action == koboy::UI_NONE)
+                                usleep(20000);
+                        }
+                        if (menu_action != koboy::UI_VOLUME_DOWN &&
+                            menu_action != koboy::UI_VOLUME_UP)
+                            break;
+                        if (menu_action == koboy::UI_VOLUME_DOWN) {
+                            if (audio_volume > 0U)
+                                --audio_volume;
+                        } else if (audio_volume < 20U) {
+                            ++audio_volume;
+                        }
+                        core.set_audio_volume(audio_volume);
+                        save_audio_volume(audio_volume);
+                        draw_menu(screen, screen_width, screen_height,
+                                  developer, audio_volume);
+                        framebuffer.draw_screen(screen);
+                        refresh_menu_screen(framebuffer, input, marker++,
+                                            diagnostics, false);
+                        menu_action = koboy::UI_NONE;
                     }
                     if (menu_action == koboy::UI_DISPLAY_SETTINGS) {
                         const bool previous_grid = display_settings.grid_effect;
@@ -2523,8 +2622,10 @@ int main(int argc, char **argv) {
                     last_emulation_time = menu_resumed;
                     emulation_accumulator = 0.0;
                     frames_this_update = 0U;
+                    core.set_audio_paused(false);
                 }
                 if (sleep_requested || wake_requested) {
+                    core.set_audio_paused(true);
                     frames_this_update = 0U;
                     emulation_accumulator = 0.0;
                     for (std::size_t i = 0; i < a2_markers.size(); ++i)
@@ -2549,6 +2650,7 @@ int main(int argc, char **argv) {
                     next_full_refresh = display_settings.full_refresh_seconds ?
                         resumed_at + display_settings.full_refresh_seconds :
                         0.0;
+                    core.set_audio_paused(false);
                     continue;
                 }
                 const unsigned current_buttons = input.buttons();
@@ -2789,7 +2891,9 @@ int main(int argc, char **argv) {
                 record_gameplay_heartbeat(
                     last_submitted_marker, last_submitted_type,
                     last_completed_marker, last_wait_seconds, refresh_counts,
-                    system_cpu_tenths, process_cpu_tenths);
+                    system_cpu_tenths, process_cpu_tenths,
+                    core.audio_frames_queued(),
+                    core.audio_frames_dropped());
                 next_heartbeat = now + 5.0;
             }
             if (submitted_refresh)
@@ -2836,6 +2940,10 @@ int main(int argc, char **argv) {
         std::cout << "emulated_frames=" << emulated_frames << '\n';
         std::cout << "displayed_frames=" << displayed_frames << '\n';
         std::cout << "cleanup_refreshes=" << cleanups << '\n';
+        std::cout << "audio_frames_queued="
+                  << core.audio_frames_queued() << '\n';
+        std::cout << "audio_frames_dropped="
+                  << core.audio_frames_dropped() << '\n';
         std::cout << "input_transitions=" << input_transitions << '\n';
         std::cout << "input_nonzero_polls=" << input_nonzero_polls << '\n';
         std::cout << "result="

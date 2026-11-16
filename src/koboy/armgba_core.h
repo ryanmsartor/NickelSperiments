@@ -22,6 +22,10 @@ public:
     virtual void reset();
     virtual void run_frame(unsigned buttons, std::vector<uint32_t> &video,
                            bool capture_video);
+    virtual void set_audio_paused(bool paused);
+    virtual void set_audio_volume(unsigned volume);
+    virtual uint64_t audio_frames_queued() const;
+    virtual uint64_t audio_frames_dropped() const;
     virtual std::size_t state_size() const;
     virtual bool save_state(void *data, std::size_t size);
     virtual bool load_state(const void *data, std::size_t size);

@@ -39,6 +39,10 @@ public:
     virtual void run_frame(unsigned buttons,
                            std::vector<uint32_t> &video,
                            bool capture_video) = 0;
+    virtual void set_audio_paused(bool) {}
+    virtual void set_audio_volume(unsigned) {}
+    virtual uint64_t audio_frames_queued() const { return 0; }
+    virtual uint64_t audio_frames_dropped() const { return 0; }
 
     virtual std::size_t state_size() const = 0;
     virtual bool save_state(void *data, std::size_t size) = 0;

@@ -58,6 +58,25 @@ Recognized filenames are:
 The install package creates the BIOS directory but does not distribute any
 proprietary BIOS images.
 
+## Bluetooth audio
+
+Ko Boy streams armGBA's 32,768 Hz stereo PCM through a bounded, non-blocking
+queue to one persistent stock GStreamer pipeline. The Kobo pipeline converts
+the stream to 48 kHz stereo and sends it to the firmware's
+`mtkbtmwrpcaudiosink`. The emulation thread never waits for Bluetooth: if the
+audio consumer falls behind, new audio frames are dropped instead of slowing
+the game. Queued audio is discarded when menus open or the device sleeps, and
+the pipeline is released on exit.
+
+This initial implementation targets the Clara BW's MediaTek audio stack and
+expects headphones to have already been paired and connected through Nickel.
+Ko Boy queries the firmware Bluetooth service when a game loads and starts no
+audio process when an output device is not connected. The main menu provides
+software volume from 0 through 20; the value persists in `KoBoy/audio.conf`,
+defaults to 10, and volume 0 releases the audio pipeline entirely.
+Developer diagnostics record cumulative queued and dropped audio frames in
+the gameplay heartbeat for performance and stability comparisons.
+
 ## Refresh scheduling
 
 Gameplay uses regularly paced A2 updates plus one of four global cleanup policies. The default target is 10 Hz; developer mode also offers 10.25, 10.5, 10.75, 11, 11.25, and 11.5 Hz, plus Unlimited. Settings persist in `KoBoy/display.conf` and currently apply to every game.
@@ -153,6 +172,6 @@ Initial implementation should retain an occasional full-viewport slowest refresh
     - RTC (Real-Time Clock) emulation settings.
 - Per-game display profiles.
 - Solar level and tilt mappings for games that need them.
-- Bluetooth audio and physical controller support.
+- Physical controller support.
 - Additional libretro-compatible systems where the hardware and e-ink display
   make them practical.

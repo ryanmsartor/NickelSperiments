@@ -7,15 +7,237 @@
 
 #include "libretro.h"
 
+#include <algorithm>
+#include <atomic>
+#include <chrono>
 #include <cstdarg>
+#include <cerrno>
+#include <condition_variable>
 #include <cstdio>
 #include <cstring>
+#include <fcntl.h>
+#include <mutex>
+#include <poll.h>
+#include <signal.h>
 #include <stdexcept>
+#include <thread>
+#include <sys/wait.h>
+#include <unistd.h>
 
 namespace koboy {
 namespace {
 
 ArmGbaCore *active_core;
+
+bool bluetooth_audio_connected() {
+    FILE *query = popen(
+        "dbus-send --system --print-reply "
+        "--dest=com.kobo.mtk.bluedroid / "
+        "org.freedesktop.DBus.ObjectManager.GetManagedObjects 2>/dev/null",
+        "r");
+    if (!query)
+        return false;
+    bool connected = false;
+    unsigned connected_value_lines = 0U;
+    char line[256];
+    while (std::fgets(line, sizeof(line), query)) {
+        if (std::strstr(line, "string \"Connected\"")) {
+            connected_value_lines = 3U;
+            continue;
+        }
+        if (connected_value_lines != 0U) {
+            if (std::strstr(line, "boolean true")) {
+                connected = true;
+                break;
+            }
+            --connected_value_lines;
+        }
+    }
+    pclose(query);
+    return connected;
+}
+
+class AudioOutput {
+public:
+    AudioOutput()
+        : pipe_fd_(-1), child_(-1), stopping_(false), paused_(false),
+          volume_(10U), queued_frames_(0), dropped_frames_(0), read_(0), used_(0),
+          samples_(32768U * 2U) {}
+
+    ~AudioOutput() { stop(); }
+
+    void start() {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (pipe_fd_ >= 0 || child_ > 0)
+            return;
+        int descriptors[2];
+        if (pipe(descriptors) != 0)
+            return;
+        const pid_t child = fork();
+        if (child == 0) {
+            dup2(descriptors[0], STDIN_FILENO);
+            close(descriptors[0]);
+            close(descriptors[1]);
+            const long maximum_fd = sysconf(_SC_OPEN_MAX);
+            for (int fd = 3; fd < maximum_fd; ++fd)
+                close(fd);
+            execlp("gst-launch-1.0", "gst-launch-1.0", "-q",
+                   "fdsrc", "fd=0", "!",
+                   "audio/x-raw,format=S16LE,rate=32768,channels=2,layout=interleaved",
+                   "!", "audioconvert", "!", "audioresample", "!",
+                   "audio/x-raw,format=S16LE,rate=48000,channels=2,layout=interleaved",
+                   "!", "mtkbtmwrpcaudiosink", "sync=false",
+                   static_cast<char *>(0));
+            _exit(127);
+        }
+        close(descriptors[0]);
+        if (child < 0) {
+            close(descriptors[1]);
+            return;
+        }
+        pipe_fd_ = descriptors[1];
+        child_ = child;
+        fcntl(pipe_fd_, F_SETFL, fcntl(pipe_fd_, F_GETFL) | O_NONBLOCK);
+        stopping_ = false;
+        worker_ = std::thread(&AudioOutput::run, this);
+    }
+
+    void stop() {
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            stopping_ = true;
+            condition_.notify_all();
+        }
+        if (worker_.joinable())
+            worker_.join();
+        if (pipe_fd_ >= 0) {
+            close(pipe_fd_);
+            pipe_fd_ = -1;
+        }
+        if (child_ > 0) {
+            int status = 0;
+            for (unsigned i = 0; i < 20U; ++i) {
+                if (waitpid(child_, &status, WNOHANG) == child_)
+                    break;
+                usleep(50000);
+            }
+            if (waitpid(child_, &status, WNOHANG) == 0) {
+                kill(child_, SIGTERM);
+                waitpid(child_, &status, 0);
+            }
+            child_ = -1;
+        }
+    }
+
+    void push(const int16_t *data, std::size_t frames) {
+        if (!data || frames == 0U)
+            return;
+        const std::size_t count = frames * 2U;
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (paused_ || stopping_ || pipe_fd_ < 0)
+            return;
+        if (count > samples_.size() - used_) {
+            dropped_frames_ += frames;
+            return;
+        }
+        static const int32_t gains[21] = {
+            0, 413, 519, 655, 823, 1036, 1304, 1642, 2068, 2602, 3277,
+            4125, 5194, 6538, 8231, 10361, 13045, 16422, 20675, 26028,
+            32768
+        };
+        const int32_t gain = gains[std::min(volume_.load(), 20U)];
+        std::size_t write = (read_ + used_) % samples_.size();
+        for (std::size_t i = 0; i < count; ++i) {
+            const int64_t product = static_cast<int64_t>(data[i]) * gain;
+            samples_[write] = static_cast<int16_t>(
+                (product + (product >= 0 ? 16384 : -16384)) / 32768);
+            write = (write + 1U) % samples_.size();
+        }
+        used_ += count;
+        queued_frames_ += frames;
+        condition_.notify_one();
+    }
+
+    void set_paused(bool paused) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        paused_ = paused;
+        if (paused) {
+            read_ = 0U;
+            used_ = 0U;
+        }
+        condition_.notify_all();
+    }
+
+    void set_volume(unsigned volume) {
+        volume_ = std::min(volume, 20U);
+    }
+
+    unsigned volume() const { return volume_; }
+
+    uint64_t queued_frames() const {
+        std::lock_guard<std::mutex> lock(mutex_);
+        return queued_frames_;
+    }
+
+    uint64_t dropped_frames() const {
+        std::lock_guard<std::mutex> lock(mutex_);
+        return dropped_frames_;
+    }
+
+private:
+    void run() {
+        std::vector<int16_t> chunk(4096U);
+        while (true) {
+            std::size_t count = 0U;
+            {
+                std::unique_lock<std::mutex> lock(mutex_);
+                condition_.wait_for(lock, std::chrono::milliseconds(50),
+                    [this] { return stopping_ || (!paused_ && used_ != 0U); });
+                if (stopping_)
+                    break;
+                if (paused_ || used_ == 0U)
+                    continue;
+                count = std::min(chunk.size(), used_);
+                for (std::size_t i = 0; i < count; ++i) {
+                    chunk[i] = samples_[read_];
+                    read_ = (read_ + 1U) % samples_.size();
+                }
+                used_ -= count;
+            }
+            const unsigned char *bytes = reinterpret_cast<unsigned char *>(
+                &chunk[0]);
+            std::size_t left = count * sizeof(chunk[0]);
+            while (left != 0U && !stopping_) {
+                pollfd descriptor = {pipe_fd_, POLLOUT, 0};
+                if (poll(&descriptor, 1, 100) <= 0)
+                    continue;
+                const ssize_t written = write(pipe_fd_, bytes, left);
+                if (written > 0) {
+                    bytes += written;
+                    left -= static_cast<std::size_t>(written);
+                } else if (written < 0 && errno != EAGAIN && errno != EINTR) {
+                    std::lock_guard<std::mutex> lock(mutex_);
+                    stopping_ = true;
+                    break;
+                }
+            }
+        }
+    }
+
+    int pipe_fd_;
+    pid_t child_;
+    std::atomic<bool> stopping_;
+    bool paused_;
+    std::atomic<unsigned> volume_;
+    uint64_t queued_frames_;
+    uint64_t dropped_frames_;
+    std::size_t read_;
+    std::size_t used_;
+    std::vector<int16_t> samples_;
+    mutable std::mutex mutex_;
+    std::condition_variable condition_;
+    std::thread worker_;
+};
 
 uint32_t rgb565_to_xrgb8888(uint16_t pixel) {
     const uint32_t red = (pixel >> 11U) & 0x1FU;
@@ -47,6 +269,7 @@ struct ArmGbaCore::Impl {
     bool capture_video;
     std::string error;
     std::vector<uint32_t> frame;
+    AudioOutput audio;
 
     Impl()
         : pixel_format(RETRO_PIXEL_FORMAT_XRGB8888), width(160U),
@@ -152,7 +375,11 @@ static void video_callback(const void *data, unsigned width,
     }
 }
 
-static size_t audio_callback(const int16_t *, size_t frames) { return frames; }
+static size_t audio_callback(const int16_t *samples, size_t frames) {
+    if (active_core)
+        active_core->impl_->audio.push(samples, frames);
+    return frames;
+}
 
 static void input_poll_callback() {}
 
@@ -182,6 +409,7 @@ ArmGbaCore::ArmGbaCore() : impl_(new Impl) {
         throw std::runtime_error("armGBA only supports one active core");
     }
     active_core = this;
+    signal(SIGPIPE, SIG_IGN);
     retro_set_environment(environment_callback);
     retro_set_video_refresh(video_callback);
     retro_set_audio_sample(0);
@@ -220,6 +448,12 @@ bool ArmGbaCore::load_rom(const std::string &path,
         return false;
     }
     impl_->loaded = true;
+    if (impl_->audio.volume() != 0U && bluetooth_audio_connected()) {
+        impl_->audio.start();
+        std::fputs("Ko Boy: Bluetooth audio connected\n", stderr);
+    } else {
+        std::fputs("Ko Boy: no connected Bluetooth audio device\n", stderr);
+    }
     retro_system_av_info information;
     retro_get_system_av_info(&information);
     impl_->width = information.geometry.base_width;
@@ -237,6 +471,27 @@ void ArmGbaCore::run_frame(unsigned buttons, std::vector<uint32_t> &video,
     retro_run();
     if (capture_video)
         video = impl_->frame;
+}
+
+void ArmGbaCore::set_audio_paused(bool paused) {
+    impl_->audio.set_paused(paused);
+}
+
+void ArmGbaCore::set_audio_volume(unsigned volume) {
+    impl_->audio.set_volume(volume);
+    if (volume == 0U) {
+        impl_->audio.stop();
+    } else if (impl_->loaded && bluetooth_audio_connected()) {
+        impl_->audio.start();
+    }
+}
+
+uint64_t ArmGbaCore::audio_frames_queued() const {
+    return impl_->audio.queued_frames();
+}
+
+uint64_t ArmGbaCore::audio_frames_dropped() const {
+    return impl_->audio.dropped_frames();
 }
 
 std::size_t ArmGbaCore::state_size() const { return retro_serialize_size(); }

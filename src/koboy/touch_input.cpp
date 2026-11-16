@@ -172,22 +172,20 @@ UiAction TouchInput::ui_hit_test(int raw_x, int raw_y,
         const int half_height = static_cast<int>(screen_height_ * 3U / 100U);
         if (x < left || x > right)
             return UI_NONE;
-        const unsigned resume_y = 22U;
-        const unsigned save_y = 31U;
-        const unsigned load_y = 40U;
-        const unsigned reset_y = 49U;
-        const unsigned select_y = 58U;
-        const unsigned settings_y = 67U;
-        const unsigned exit_y = 78U;
+        const unsigned resume_y = 27U;
+        const unsigned state_y = 37U;
+        const unsigned settings_y = 47U;
+        const unsigned volume_y = 57U;
+        const unsigned reset_y = 67U;
+        const unsigned select_y = 77U;
+        const unsigned exit_y = 87U;
         if (std::abs(y - static_cast<int>(screen_height_ * resume_y / 100U)) <=
             half_height)
             return UI_RESUME_GAME;
-        if (std::abs(y - static_cast<int>(screen_height_ * save_y / 100U)) <=
+        if (std::abs(y - static_cast<int>(screen_height_ * state_y / 100U)) <=
             half_height)
-            return UI_SAVE_STATE;
-        if (std::abs(y - static_cast<int>(screen_height_ * load_y / 100U)) <=
-            half_height)
-            return UI_LOAD_STATE;
+            return x < static_cast<int>(screen_width_ / 2U)
+                ? UI_LOAD_STATE : UI_SAVE_STATE;
         if (std::abs(y - static_cast<int>(screen_height_ * reset_y / 100U)) <=
             half_height)
             return UI_RESET_GAME;
@@ -197,6 +195,10 @@ UiAction TouchInput::ui_hit_test(int raw_x, int raw_y,
         if (std::abs(y - static_cast<int>(screen_height_ * settings_y / 100U)) <=
             half_height)
             return UI_DISPLAY_SETTINGS;
+        if (std::abs(y - static_cast<int>(screen_height_ * volume_y / 100U)) <=
+            half_height)
+            return x < static_cast<int>(screen_width_ / 2U)
+                ? UI_VOLUME_DOWN : UI_VOLUME_UP;
         if (std::abs(y - static_cast<int>(screen_height_ * exit_y / 100U)) <=
             half_height)
             return UI_EXIT_TO_NICKEL;
