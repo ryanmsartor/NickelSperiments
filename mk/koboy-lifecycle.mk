@@ -2,6 +2,7 @@ include deps/NickelHook/NickelHook.mk
 
 override LIBRARY := libkoboylifecycle.so
 override SOURCES += src/koboy-lifecycle.cpp
+override PKGCONF += Qt5Widgets
 
 ifneq ($(wildcard $(CURDIR)/.toolchains/nickeltc-root),)
 LOCAL_NICKELTC := $(CURDIR)/scripts/nickeltc-tool

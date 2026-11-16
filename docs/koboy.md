@@ -36,17 +36,18 @@ Passing a ROM path bypasses the startup browser for development and testing.
 Local compilation, including the ARM64-hosted NickelTC arrangement, is
 documented in [Local Kobo toolchain](local-toolchain.md).
 
-## NickelMenu launcher
+## Nickel launcher
 
-Add this entry to `/mnt/onboard/.adds/nm/config`:
+The combined launcher/lifecycle plugin adds a **Ko Boy** row to Nickel's
+**More** screen near Help, using the same stock anchor as NickelModManager.
+Tapping it starts the supervisor asynchronously and writes player output to
+`/mnt/onboard/.adds/koboy/koboy.log`. A running player or a supervisor which is
+still starting prevents a second launch. Other mods may affect the relative
+order of rows which use that anchor, but do not replace the Ko Boy entry.
 
-```text
-menu_item :main :Ko Boy :cmd_spawn :quiet:exec /mnt/onboard/.adds/koboy/koboy-supervisor >>/mnt/onboard/.adds/koboy/koboy.log 2>&1
-```
-
-NickelMenu monitors its configuration directory and reloads changes. Keep
-backups outside `.adds/nm/`, because NickelMenu parses every file in that
-directory as configuration.
+This launcher is built into Ko Boy and does not require NickelMenu. Users who
+already have NickelMenu may still create their own entry, but doing so produces
+a second route to the same supervisor and is unnecessary.
 
 ## Player flow
 
@@ -174,10 +175,10 @@ viewport and controller panel and presents the whole screen with full-update
 GC16 before emulation continues. The sleep interval does not consume a
 configured timed test run or cause refresh catch-up bursts.
 
-Install the lifecycle bridge at
+Install the launcher/lifecycle plugin at
 `/usr/local/Kobo/imageformats/libkoboylifecycle.so` and restart the Kobo so
-Nickel loads it. It is intentionally separate from the player process and is a
-no-op whenever `/tmp/koboy.pid` is absent. Creating
+Nickel loads it. Its lifecycle hooks are inactive whenever `/tmp/koboy.pid` is
+absent, while its More-screen launcher remains available. Creating
 `/mnt/onboard/.adds/koboy/uninstall-lifecycle-hook` requests removal through
 NickelHook's failsafe mechanism.
 

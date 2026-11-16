@@ -33,5 +33,5 @@ exec "$workspace/scripts/nickeltc-exec" "$tools/ld.bfd.x86_64" \
     -shared -X -m armelf_linux_eabi -soname "$(basename "$output")" \
     -o "$output" -L"$gcc" -L"$target/arm-nickel-linux-gnueabihf/lib" \
     -L"$sysroot/lib" -L"$sysroot/usr/lib" "$gcc/crtbeginS.o" $objects \
-    -lQt5Gui -lQt5Core -lstdc++ -lm -lpthread -ldl -lgcc_s -lc -lgcc_s \
+    -lQt5Widgets -lQt5Gui -lQt5Core -lstdc++ -lm -lpthread -ldl -lgcc_s -lc -lgcc_s \
     "$gcc/crtendS.o"

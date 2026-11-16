@@ -35,7 +35,8 @@ Copyright remains with their respective authors.
 | libretro API and libretro-common support code | [MIT](MIT.txt) | `deps/armgba/libretro/deps/libretro-common` |
 | LZMA SDK / 7-Zip decoder source | [Public-domain notices](PUBLIC-DOMAIN-NOTICES.txt) | `deps/armgba/libretro/deps/7zip` |
 | Solar Designer MD5 implementation | [Public-domain notices](PUBLIC-DOMAIN-NOTICES.txt) | `deps/armgba/libretro/deps/libretro-common/utils/md5.c` |
-| NickelHook lifecycle integration | [MIT](MIT.txt) | `deps/NickelHook` |
+| NickelHook launcher/lifecycle integration | [MIT](MIT.txt) | `deps/NickelHook` |
+| NickelModManager More-screen integration pattern | [MIT](MIT.txt) | adapted in `src/koboy-lifecycle.cpp` |
 
 The files named above live beside this document in `LICENSES/` and are intended
 to be copied into the release package with it. In the source tree, their

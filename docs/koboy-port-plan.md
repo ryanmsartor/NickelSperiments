@@ -49,6 +49,8 @@ stopped for extended periods.
 A NickelHook lifecycle bridge observes Nickel's real sleep and wake events.
 It pauses the active player for cover- and button-initiated sleep, then asks
 Ko Boy to redraw the complete viewport and controls before emulation resumes.
+The same plugin adds a Ko Boy launcher to Nickel's More screen, so an
+installation does not depend on NickelMenu.
 
 ## Implemented user flow
 
@@ -123,8 +125,8 @@ review may still be appropriate before broad distribution.
 
 ### Install and removal
 
-- Produce `Ko-Boy-KoboRoot.tgz` with the player, supervisor, lifecycle plugin,
-  launcher integration, and license bundle.
+- Produce `Ko-Boy-KoboRoot.tgz` with the player, supervisor, combined
+  launcher/lifecycle plugin, and license bundle.
 - Keep executable files under the project installation directory and user
   content under `/mnt/onboard/KoBoy/`.
 - Make installation and upgrades idempotent.
