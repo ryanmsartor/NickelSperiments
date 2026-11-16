@@ -59,12 +59,18 @@ void scale_monochrome(const std::vector<uint8_t> &source,
     }
 }
 
-void scale_rgb32_grayscale(const std::vector<uint32_t> &source,
-                           unsigned source_width,
-                           unsigned source_height,
-                           unsigned scale,
-                           std::vector<uint32_t> &destination,
-                           bool grid_effect) {
+void scale_rgb32_dithered_bichrome(const std::vector<uint32_t> &source,
+                                   unsigned source_width,
+                                   unsigned source_height,
+                                   unsigned scale,
+                                   std::vector<uint32_t> &destination,
+                                   bool grid_effect) {
+    static const unsigned bayer[4][4] = {
+        { 0U,  8U,  2U, 10U},
+        {12U,  4U, 14U,  6U},
+        { 3U, 11U,  1U,  9U},
+        {15U,  7U, 13U,  5U},
+    };
     if (source_width == 0U || source_height == 0U ||
         source.size() != static_cast<std::size_t>(source_width) * source_height)
         throw std::runtime_error("source frame dimensions do not match data");
@@ -82,17 +88,21 @@ void scale_rgb32_grayscale(const std::vector<uint32_t> &source,
             const unsigned green = (rgb >> 8U) & 0xFFU;
             const unsigned blue = rgb & 0xFFU;
             const uint32_t gray = (red * 54U + green * 183U + blue * 19U) >> 8U;
-            const uint32_t pixel = 0xFF000000U | gray * 0x00010101U;
             for (unsigned dy = 0; dy < scale; ++dy) {
-                uint32_t *row = &destination[(source_y * scale + dy) * width +
+                const unsigned output_y = source_y * scale + dy;
+                uint32_t *row = &destination[output_y * width +
                                              source_x * scale];
+                const unsigned *thresholds = bayer[output_y & 3U];
                 for (unsigned dx = 0; dx < scale; ++dx) {
                     const bool vertical_grid = grid_effect &&
                         dx + 1U == scale && source_x + 1U < source_width;
                     const bool horizontal_grid = grid_effect &&
                         dy + 1U == scale && source_y + 1U < source_height;
-                    row[dx] = vertical_grid || horizontal_grid ?
-                        0xFFFFFFFFU : pixel;
+                    const unsigned output_x = source_x * scale + dx;
+                    const unsigned cutoff =
+                        (2U * thresholds[output_x & 3U] + 1U) * 255U;
+                    row[dx] = vertical_grid || horizontal_grid ||
+                        gray * 32U > cutoff ? 0xFFFFFFFFU : 0xFF000000U;
                 }
             }
         }

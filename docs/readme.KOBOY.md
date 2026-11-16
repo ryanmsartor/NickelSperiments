@@ -88,7 +88,7 @@ The install package creates the BIOS directory but does not distribute proprieta
 
 ## Display settings
 
-Gameplay uses steady full-viewport A2 updates at 10 Hz by default, Dithered bichrome output, and a full-screen GC16 every 60 seconds. Display settings persist globally in `/mnt/onboard/KoBoy/display.conf` rather than per game.
+Gameplay uses steady full-viewport A2 updates at 6.5 Hz by default, dithered bichrome output, and a full-screen GC16 every 60 seconds. Display settings persist globally in `/mnt/onboard/KoBoy/display.conf` rather than per game.
 
 The normal Display Settings menu exposes:
 
@@ -97,10 +97,9 @@ The normal Display Settings menu exposes:
 
 Creating `/mnt/onboard/KoBoy/developer` additionally exposes:
 
-- **Bichrome:** Off, Dithered, or a fixed 25%, 50%, or 75% luminance split.
-- **Target Refresh Rate:** 10, 10.25, 10.5, 10.75, 11, 11.25, or 11.5 Hz, or Unlimited.
+- **Target Refresh Rate:** 5 through 8 Hz in quarter-Hz increments. The default is 6.5 Hz.
 
-Dithered bichrome uses a stable 4-by-4 pattern of physical panel pixels to represent intermediate shades without temporal noise. Menus use a black-and-white palette and waited full-screen updates: GC16 when entering or leaving the menu and DU between menu screens. Loading, wake, and exit also use full-screen GC16 where a clean visual boundary matters more than uninterrupted animation.
+Ko Boy always uses a stable 4-by-4 ordered pattern of physical panel pixels to represent intermediate shades without temporal noise. Menus use a black-and-white palette and waited full-screen updates: GC16 when entering or leaving the menu and DU between menu screens. Returning from the menu first clears the panel through a waited white-screen GC16, then presents the restored game and controls through a second waited GC16. Loading, wake, and exit also use full-screen GC16 where a clean visual boundary matters more than uninterrupted animation.
 
 Each display tick draws the complete latest frame and submits one A2 update. Before submitting the next update, Ko Boy waits for the previous marker to complete. A configured full-screen refresh replaces its scheduled A2 update, and missed cadence deadlines advance the scheduling baseline instead of causing catch-up bursts.
 

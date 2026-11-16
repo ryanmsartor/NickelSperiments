@@ -34,8 +34,6 @@ public:
                              bool wait_for_completion = false);
     double refresh_a2(uint32_t marker, bool wait_for_completion = false);
     double refresh_gc16(uint32_t marker, bool wait_for_completion);
-    double refresh_screen_gc16_partial(uint32_t marker,
-                                       bool wait_for_completion);
     double refresh_screen_gc16(uint32_t marker, bool wait_for_completion);
     double wait_for_update(uint32_t marker);
     void restore(uint32_t marker);

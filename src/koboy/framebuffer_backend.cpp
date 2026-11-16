@@ -217,13 +217,6 @@ double FramebufferBackend::refresh_gc16(uint32_t marker,
                   wait_for_completion, viewport_);
 }
 
-double FramebufferBackend::refresh_screen_gc16_partial(
-        uint32_t marker, bool wait_for_completion) {
-    Viewport screen = { 0U, 0U, variable_.xres, variable_.yres };
-    return submit(HWTCON_WAVEFORM_GC16, HWTCON_UPDATE_PARTIAL, marker,
-                  wait_for_completion, screen);
-}
-
 double FramebufferBackend::refresh_screen_gc16(uint32_t marker,
                                                 bool wait_for_completion) {
     Viewport screen = { 0U, 0U, variable_.xres, variable_.yres };

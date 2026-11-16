@@ -19,12 +19,12 @@ void scale_monochrome(const std::vector<uint8_t> &source,
                       unsigned scale,
                       std::vector<uint32_t> &destination);
 
-void scale_rgb32_grayscale(const std::vector<uint32_t> &source,
-                           unsigned source_width,
-                           unsigned source_height,
-                           unsigned scale,
-                           std::vector<uint32_t> &destination,
-                           bool grid_effect = false);
+void scale_rgb32_dithered_bichrome(const std::vector<uint32_t> &source,
+                                   unsigned source_width,
+                                   unsigned source_height,
+                                   unsigned scale,
+                                   std::vector<uint32_t> &destination,
+                                   bool grid_effect = false);
 
 } // namespace koboy
 
