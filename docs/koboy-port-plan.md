@@ -125,8 +125,8 @@ review may still be appropriate before broad distribution.
 
 ### Install and removal
 
-- Produce `Ko-Boy-KoboRoot.tgz` with the player, supervisor, combined
-  launcher/lifecycle plugin, and license bundle.
+- Validate the generated `Ko-Boy-KoboRoot.tgz`, which contains the player,
+  supervisor, combined launcher/lifecycle plugin, and license bundle.
 - Keep executable files under the project installation directory and user
   content under `/mnt/onboard/KoBoy/`.
 - Make installation and upgrades idempotent.
@@ -136,8 +136,8 @@ review may still be appropriate before broad distribution.
 
 ### Build and publication
 
-- Add a Ko Boy package target and have its dedicated workflow upload the
-  project-specific KoboRoot archive rather than loose development binaries.
+- Validate the dedicated Ko Boy workflow and its release upload through the
+  aggregate build action.
 - Validate archive ownership, permissions, paths, ARM architecture, license
   contents, and pinned source revisions in CI.
 - Publish source availability, installation instructions, supported-device

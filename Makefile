@@ -25,6 +25,7 @@ help:
 	@echo "  armgba-probe           Build the headless armGBA Kobo probe"
 	@echo "  koboy                  Build the Ko Boy player"
 	@echo "  koboy-supervisor       Build the Ko Boy crash-recovery supervisor"
+	@echo "  koboy-package          Build build/Ko-Boy-KoboRoot.tgz"
 	@echo "  koboy-display-test     Build the Ko Boy synthetic display diagnostic"
 	@echo "  koboy-framebuffer-isolation  Build the framebuffer isolation diagnostic"
 	@echo "  koboy-lifecycle        Build the Ko Boy Nickel lifecycle bridge"

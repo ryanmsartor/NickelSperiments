@@ -78,7 +78,9 @@ Entering and leaving the menu uses waited, full-screen full-update GC16 so the g
 
 Ko Boy leaves Nickel responsible for interpreting the sleep cover and power button and for performing system power management. The companion `libkoboylifecycle.so` NickelHook plugin observes Nickel's actual `aboutToSleep` and `resumedFromSleep` lifecycle transitions and signals the active player through `/tmp/koboy.pid`. A sleep transition pauses emulation immediately. After Nickel finishes waking, Ko Boy redraws the complete game viewport and controller panel and presents the whole screen with full-update GC16 before emulation continues. The sleep interval does not consume a configured timed test run or cause refresh catch-up bursts.
 
-Install the launcher/lifecycle plugin at `/usr/local/Kobo/imageformats/libkoboylifecycle.so` and restart the Kobo so Nickel loads it. Its lifecycle hooks are inactive whenever `/tmp/koboy.pid` is absent, while its More-screen launcher remains available. Creating `/mnt/onboard/.adds/koboy/uninstall-lifecycle-hook` requests removal through NickelHook's failsafe mechanism.
+Install `Ko-Boy-KoboRoot.tgz` by renaming it to `KoboRoot.tgz`, copying it into the Kobo's `.kobo` directory, and safely ejecting the reader. The package installs the player and supervisor under `/mnt/onboard/.adds/koboy`, installs the launcher/lifecycle plugin at `/usr/local/Kobo/imageformats/libkoboylifecycle.so`, creates the four stock ROM directories, and includes the complete license bundle. Reinstalling the archive updates program files without replacing ROMs, saves, states, or settings.
+
+To uninstall, create an empty `/mnt/onboard/.adds/koboy/uninstall` file and reboot. NickelHook removes the loaded plugin safely during startup and deletes only the Ko Boy program directory. User content under `/mnt/onboard/KoBoy` is preserved. The lifecycle hooks are inactive whenever `/tmp/koboy.pid` is absent, while the More-screen launcher remains available whenever the plugin is installed.
 
 Before opening any menu, Ko Boy waits for the most recently submitted gameplay update to finish. Touches accumulated while draining that update are discarded, so repeated Menu presses cannot enqueue multiple menu transitions. Drain start, completion, marker, and elapsed time are included in the diagnostic log; a near-timeout cancels the menu opening.
 
@@ -114,7 +116,7 @@ Initial implementation should retain an occasional full-viewport slowest refresh
 
 ## Remaining release work
 
-- Produce a complete, reversible KoboRoot installation package.
+- Validate the complete, reversible KoboRoot installation package on-device.
 - Validate install, upgrade, firmware-upgrade, and uninstall behavior without
   removing user ROMs, saves, states, or configuration.
 - Exercise representative GB, GBC, GBA, and Mega Duck software in longer
@@ -125,7 +127,6 @@ Initial implementation should retain an occasional full-viewport slowest refresh
 ## Deferred enhancements
 
 - Loading ROMs directly from ZIP archives.
-- Bichrome mode that could pair with lazy refresh mode.
 - Nested folders below each system in the game library.
 - Maximum emulation-speed (alternative to fast forward).
 - Advanced core-option settings.

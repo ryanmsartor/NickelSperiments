@@ -16,7 +16,11 @@ permissions:
 jobs:
   koboy:
     name: Build Ko Boy
+    permissions:
+      contents: write
     uses: ./.github/workflows/build-koboy.yml
+    with:
+      release_tag: ${{ inputs.release_tag }}
 
   nickelrefresh:
     name: Build NickelRefresh

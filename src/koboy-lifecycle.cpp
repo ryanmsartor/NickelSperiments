@@ -26,6 +26,7 @@
 namespace {
 
 const char kPidPath[] = "/tmp/koboy.pid";
+const char kProgramRoot[] = "/mnt/onboard/.adds/koboy";
 const char kSupervisorPath[] = "/mnt/onboard/.adds/koboy/koboy-supervisor";
 const char kLogPath[] = "/mnt/onboard/.adds/koboy/koboy.log";
 pid_t launchedSupervisorPid = -1;
@@ -320,12 +321,45 @@ void koboyResumedFromSleep(void *self)
     notifyKoBoy(SIGUSR2, "wake");
 }
 
+bool uninstallKoBoyIntegration()
+{
+    const char *files[] = {
+        "/mnt/onboard/.adds/koboy/koboy",
+        "/mnt/onboard/.adds/koboy/koboy-supervisor",
+        "/mnt/onboard/.adds/koboy/koboy.log",
+        "/mnt/onboard/.adds/koboy/README.txt",
+        "/mnt/onboard/.adds/koboy/uninstall-lifecycle-hook",
+        "/mnt/onboard/.adds/koboy/LICENSES/EXPAT.txt",
+        "/mnt/onboard/.adds/koboy/LICENSES/GPL-2.0.txt",
+        "/mnt/onboard/.adds/koboy/LICENSES/KOBOY-LICENSES.md",
+        "/mnt/onboard/.adds/koboy/LICENSES/MIT.txt",
+        "/mnt/onboard/.adds/koboy/LICENSES/MPL-2.0.txt",
+        "/mnt/onboard/.adds/koboy/LICENSES/PUBLIC-DOMAIN-NOTICES.txt",
+        nullptr,
+    };
+    bool clean = true;
+    for (const char **file = files; *file; ++file) {
+        if (unlink(*file) != 0 && errno != ENOENT) {
+            nh_log("Could not remove package file %s", *file);
+            clean = false;
+        }
+    }
+    if (rmdir("/mnt/onboard/.adds/koboy/LICENSES") != 0 && errno != ENOENT)
+        clean = false;
+    if (rmdir(kProgramRoot) != 0 && errno != ENOENT)
+        clean = false;
+    if (!clean)
+        nh_log("Some Ko Boy program files could not be removed");
+    nh_log("Removed Ko Boy program files; user content was preserved");
+    return clean;
+}
+
 namespace {
 
 struct nh_info info = {
     .name = "KoBoyIntegration",
     .desc = "Ko Boy launcher and sleep/wake integration",
-    .uninstall_flag = "/mnt/onboard/.adds/koboy/uninstall-lifecycle-hook",
+    .uninstall_flag = "/mnt/onboard/.adds/koboy/uninstall",
 };
 
 struct nh_hook hooks[] = {
@@ -357,4 +391,5 @@ NickelHook(
     .info = &info,
     .hook = hooks,
     .dlsym = symbols,
+    .uninstall = uninstallKoBoyIntegration,
 )
