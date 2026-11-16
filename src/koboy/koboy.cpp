@@ -66,7 +66,7 @@ struct DisplaySettings {
     unsigned target_refresh_quarters;
     DisplaySettings()
         : full_refresh_seconds(60U), grid_effect(false),
-          target_refresh_quarters(36U) {}
+          target_refresh_quarters(40U) {}
 };
 
 void handle_signal(int) { interrupted = 1; }
