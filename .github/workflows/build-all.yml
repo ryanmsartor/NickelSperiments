@@ -14,10 +14,6 @@ permissions:
   contents: read
 
 jobs:
-  gambatte:
-    name: Build Gambatte benchmark
-    uses: ./.github/workflows/build-gambatte.yml
-
   koboy:
     name: Build Ko Boy
     uses: ./.github/workflows/build-koboy.yml

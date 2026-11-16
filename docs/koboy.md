@@ -94,12 +94,12 @@ integration is ready for release.
 
 ## Refresh scheduling
 
-Gameplay uses A2 at a steady 10 Hz cadence plus one of three global cleanup
+Gameplay uses A2 at a steady 10 Hz cadence plus one of four global cleanup
 policies selected from the in-game Display Settings submenu. Settings persist
 in `KoBoy/display.conf` and currently apply to every game.
 
 Adaptive is the default. Ko Boy measures frame-change debt independently in
-fixed 16-by-16 framebuffer cells. On each 10 Hz display tick it may start
+fixed 24-by-24 framebuffer cells. On each 10 Hz display tick it may start
 full-waveform GC16
 or DU cleanups for up to five highest-debt contiguous rectangles of dirty
 cells, with at most twenty cleanups active at once. This staggers cleanup starts
@@ -108,19 +108,44 @@ cells, the newest A2 frame continues through coalesced rectangles covering the
 remainder. Framebuffer writes follow the same partition so active cleanup cells
 are not modified underneath the controller.
 
-Intermediate issues GC16 for up to eight highest-debt contiguous rectangles at
-2 Hz, combining adjacent dirty 16-by-16 cells. Conservative accumulates all
+Intermediate issues up to ten GC16 or DU cleanups across the highest-debt
+contiguous rectangles at 2 Hz, combining adjacent dirty 24-by-24 cells. It uses
+GC16 for gray destinations and DU for gray-to-black/white transitions.
+Aggressive accumulates all
 affected cells into one aligned bounding rectangle and issues one GC16 at 1 Hz.
 Intermediate ignores pure black-to-white and white-to-black motion so A2 can
 continue covering those cells without GC16. Its cleanup debt includes only
-transitions involving gray. Conservative remains intentionally broad. Neither
-simpler policy uses DU.
+transitions involving gray. Aggressive remains intentionally broad and does
+not use DU.
+
+Lazy schedules only the steady A2 updates. It performs no regional cleanup, so
+any cleanup beyond A2 comes exclusively from Full Refresh Frequency. With full
+refresh set to Off, Lazy deliberately permits artifacts to accumulate.
 
 Full Refresh Frequency can be Off, 2, 5, 10, 15, 30, or 60 seconds. When due,
 the full-screen GC16 drains active cleanups and replaces that tick's policy
 cleanup. Grid Effect draws a one-pixel white divider between logical emulated
 pixels before output reaches the framebuffer. Both default to Off. Menus,
 loading, wake, and exit retain full-screen GC16 boundaries.
+
+
+| Behavior | Adaptive | Intermediate | Aggressive | Lazy |
+|---|---|---|---|---|
+| Normal display | A2 at 10 Hz | A2 at 10 Hz | A2 at 10 Hz | A2 at 10 Hz |
+| Cleanup cell size | 24×24 physical pixels | 24×24 physical pixels | Tracks 24×24 cells, then bounds all affected cells | None |
+| Cleanup cadence | Every 10 Hz display tick | 2 Hz | 1 Hz | Never |
+| Maximum starts per cleanup opportunity | 5 rectangles | 10 total GC16/DU rectangles | 1 rectangle | 0 |
+| Maximum concurrently active | 20 | 20, though the 0.5-second cadence normally lets the previous batch finish | 1 in normal operation | 0 |
+| Rectangle construction | Combines adjacent eligible cells | Combines adjacent eligible cells | One bounding rectangle containing every affected cell | None |
+| Cleanup waveforms | GC16 and DU | GC16 and DU | GC16 only | None |
+| Gray destination | GC16 debt | GC16 cleanup debt | Included | Ignored until full refresh |
+| Gray → black/white | DU debt | DU cleanup debt | Included | Ignored until full refresh |
+| Black ↔ white motion | Low aging debt; eventually DU | Ignored; remains A2-only | Included immediately in affected area | A2-only |
+| GC16 stability gate | Requires 2 unchanged 10 Hz snapshots | None | None | N/A |
+| GC16 emergency override | After debt equivalent to 4 full-range cell transitions | N/A | N/A | N/A |
+| Black/white aging threshold | DU after 8 cell-equivalents | Not used | Not used | Not used |
+| Primary goal | Targeted quality with limited flashing | Predictable, moderately aggressive grayscale cleanup | Broad and simple cleanup | Maximum smoothness between full refreshes |
+
 
 Create `/mnt/onboard/KoBoy/diagnostics` to enable durable refresh diagnostics.
 This is independent of `developer`: the experimental settings menu can remain
@@ -215,7 +240,7 @@ Nickel. Stopping Nickel is intentionally avoided: device testing showed that a
 
 ## Targeted cleanup refreshes
 
-Adaptive and Intermediate accumulate debt in fixed aligned 16-by-16 framebuffer
+Adaptive and Intermediate accumulate debt in fixed aligned 24-by-24 framebuffer
 cells. Device tests establish the controller's behavior for simultaneous
 non-overlapping A2, DU, and GC16 regions at these boundaries.
 

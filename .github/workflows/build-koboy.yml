@@ -19,7 +19,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Initialize Ko Boy dependencies
-        run: git submodule update --init deps/gambatte deps/NickelHook
+        run: git submodule update --init deps/armgba deps/NickelHook
 
       - name: Add NickelTC cross-toolchain to PATH
         run: echo "/tc/arm-nickel-linux-gnueabihf/bin" >> "$GITHUB_PATH"

@@ -41,7 +41,6 @@ owns the application and its diagnostics. Normal targets need no environment
 setup:
 
 ```sh
-make gambatte-bench
 make koboy-display-test
 make koboy-framebuffer-isolation
 make koboy
@@ -61,7 +60,7 @@ To rebuild every Gambatte and Ko Boy object after changing toolchains, use:
 
 ```sh
 make gambatte-clean koboy-clean
-make gambatte-bench koboy-display-test koboy-framebuffer-isolation koboy koboy-supervisor
+make koboy-display-test koboy-framebuffer-isolation koboy koboy-supervisor
 make koboy-lifecycle
 ```
 

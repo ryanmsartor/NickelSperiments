@@ -143,7 +143,8 @@ References:
 
 The safest initial architecture is therefore:
 
-- Build the frontend and Gambatte together under GPL-2.0.
+- Build the frontend and armGBA together under GPL-2.0. armGBA's GB/GBC
+  backend includes Gambatte-derived GPL-2.0 code.
 - Implement the minimal framebuffer mapping and refresh ioctl backend without
   copying FBInk implementation code.
 - Use Linux evdev directly.
@@ -155,9 +156,11 @@ A formal license review is still appropriate before publishing binaries.
 
 ### 1. Feasibility probe
 
-Implementation has begun with the `gambatte-bench` Make target and
-`build/gambatte-bench` headless runner. The runner measures emulation
-throughput and memory use and validates an in-memory save-state round trip.
+The initial feasibility work used a standalone Gambatte headless runner to
+measure emulation throughput and memory use and validate an in-memory
+save-state round trip. That superseded runner and dependency were removed when
+Ko Boy adopted armGBA as its sole backend; these measurements are retained as
+historical evidence.
 
 The first real-device ARMv7 test passed on a Kobo Clara BW on 2026-11-14 using
 the user-supplied US ROM for *Rolan's Curse II*. The statically linked ARM EABI5

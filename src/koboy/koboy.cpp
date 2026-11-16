@@ -61,7 +61,8 @@ enum RefreshType {
 
 const unsigned kSlowRefreshTypeCount = 4U;
 const double kFastRefreshInterval = 0.1;
-const unsigned kDamageTileSize = 16U;
+const unsigned kDamageTileSize = 24U;
+const unsigned kIntermediateTileSize = 24U;
 const unsigned kA2AgingTileEquivalents = 8U;
 const unsigned kCleanupStableTicks = 2U;
 const unsigned kUrgentCleanupTileEquivalents = 4U;
@@ -152,7 +153,9 @@ public:
     std::vector<koboy::Viewport> take_highest_rectangles(
             unsigned maximum,
             const std::vector<koboy::Viewport> &excluded,
-            RefreshType type, bool combined_debt = false) {
+            RefreshType type, bool combined_debt = false,
+            bool ignore_stability = false,
+            bool include_a2_aging = true) {
         std::vector<bool> blocked(
             static_cast<std::size_t>(columns_) * rows_, false);
         for (std::size_t i = 0U; i < excluded.size(); ++i) {
@@ -195,7 +198,7 @@ public:
                             static_cast<std::size_t>(bottom) * columns_ +
                             column;
                         const unsigned long long aging_debt =
-                            a2_aging_debt_[cell] >=
+                            include_a2_aging && a2_aging_debt_[cell] >=
                                 static_cast<unsigned long long>(tile_size_) *
                                 tile_size_ * kA2AgingTileEquivalents ?
                             a2_aging_debt_[cell] : 0ULL;
@@ -208,7 +211,8 @@ public:
                             blocked[cell] ||
                             (!combined_debt && type == REFRESH_DU &&
                              gc16_debt_[cell]) ||
-                            (!combined_debt && type == REFRESH_GC16_FULL &&
+                            (!combined_debt && !ignore_stability &&
+                             type == REFRESH_GC16_FULL &&
                              stable_ticks_[cell] < kCleanupStableTicks &&
                              waveform_debt <
                                 static_cast<unsigned long long>(tile_size_) *
@@ -435,7 +439,8 @@ struct RefreshSettings {
 enum DisplayRefreshPolicy {
     DISPLAY_REFRESH_ADAPTIVE,
     DISPLAY_REFRESH_INTERMEDIATE,
-    DISPLAY_REFRESH_CONSERVATIVE,
+    DISPLAY_REFRESH_AGGRESSIVE,
+    DISPLAY_REFRESH_LAZY,
     DISPLAY_REFRESH_POLICY_COUNT
 };
 
@@ -1578,7 +1583,8 @@ const char *display_refresh_policy_name(DisplayRefreshPolicy policy) {
     switch (policy) {
         case DISPLAY_REFRESH_ADAPTIVE: return "ADAPTIVE";
         case DISPLAY_REFRESH_INTERMEDIATE: return "INTERMEDIATE";
-        case DISPLAY_REFRESH_CONSERVATIVE: return "CONSERVATIVE";
+        case DISPLAY_REFRESH_AGGRESSIVE: return "AGGRESSIVE";
+        case DISPLAY_REFRESH_LAZY: return "LAZY";
         default: return "UNKNOWN";
     }
 }
@@ -2026,7 +2032,8 @@ int main(int argc, char **argv) {
         framebuffer.configure_viewport(core.video_width() * effective_scale,
                                        core.video_height() * effective_scale);
         damage_tracker.set_tile_size(
-            kDamageTileSize);
+            display_settings.refresh_policy == DISPLAY_REFRESH_INTERMEDIATE ?
+            kIntermediateTileSize : kDamageTileSize);
         bool shoulder_buttons = core.video_width() == 240U &&
                                 core.video_height() == 160U;
         input.set_shoulder_buttons_enabled(shoulder_buttons);
@@ -2164,7 +2171,9 @@ int main(int argc, char **argv) {
                         }
                         save_display_settings(display_settings);
                         damage_tracker.set_tile_size(
-                            kDamageTileSize);
+                            display_settings.refresh_policy ==
+                                DISPLAY_REFRESH_INTERMEDIATE ?
+                            kIntermediateTileSize : kDamageTileSize);
                         if (display_settings.grid_effect != previous_grid) {
                             scaled.clear();
                             force_first_frame_gc16 = true;
@@ -2223,7 +2232,9 @@ int main(int argc, char **argv) {
                                 core.video_width() * effective_scale,
                                 core.video_height() * effective_scale);
                             damage_tracker.set_tile_size(
-                                kDamageTileSize);
+                                display_settings.refresh_policy ==
+                                    DISPLAY_REFRESH_INTERMEDIATE ?
+                                kIntermediateTileSize : kDamageTileSize);
                             shoulder_buttons = core.video_width() == 240U &&
                                                core.video_height() == 160U;
                             input.set_shoulder_buttons_enabled(
@@ -2434,14 +2445,24 @@ int main(int argc, char **argv) {
                            display_settings.refresh_policy ==
                                DISPLAY_REFRESH_INTERMEDIATE &&
                            now >= next_policy_refresh) {
-                    starts = std::min(8U, available);
+                    starts = std::min(10U, available);
                     new_gc16_cleanups =
                         damage_tracker.take_highest_rectangles(
-                            starts, gc16_regions, REFRESH_GC16_FULL, true);
+                            starts, gc16_regions, REFRESH_GC16_FULL,
+                            false, true, false);
+                    for (std::size_t i = 0U;
+                         i < new_gc16_cleanups.size(); ++i)
+                        gc16_regions.push_back(new_gc16_cleanups[i]);
+                    const unsigned intermediate_remaining = starts -
+                        static_cast<unsigned>(new_gc16_cleanups.size());
+                    new_du_cleanups =
+                        damage_tracker.take_highest_rectangles(
+                            intermediate_remaining, gc16_regions, REFRESH_DU,
+                            false, true, false);
                     next_policy_refresh = now + 0.5;
                 } else if (!submitted_refresh &&
                            display_settings.refresh_policy ==
-                               DISPLAY_REFRESH_CONSERVATIVE &&
+                               DISPLAY_REFRESH_AGGRESSIVE &&
                            now >= next_policy_refresh &&
                            active_cleanups.empty()) {
                     koboy::Viewport affected;
@@ -2449,9 +2470,11 @@ int main(int argc, char **argv) {
                         new_gc16_cleanups.push_back(affected);
                     next_policy_refresh = now + 1.0;
                 }
-                for (std::size_t i = 0U;
-                     i < new_gc16_cleanups.size(); ++i)
-                    gc16_regions.push_back(new_gc16_cleanups[i]);
+                if (display_settings.refresh_policy !=
+                    DISPLAY_REFRESH_INTERMEDIATE)
+                    for (std::size_t i = 0U;
+                         i < new_gc16_cleanups.size(); ++i)
+                        gc16_regions.push_back(new_gc16_cleanups[i]);
                 const unsigned remaining_starts = starts -
                     static_cast<unsigned>(new_gc16_cleanups.size());
                 if (display_settings.refresh_policy ==

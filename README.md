@@ -33,8 +33,8 @@ is packaged separately from NickelRefresh.
 
 ### Ko Boy
 
-Ko Boy is an experimental Game Boy and Game Boy Color player based on
-Gambatte. The current work explores emulation performance, MediaTek e-paper
+Ko Boy is an experimental Game Boy, Game Boy Color, Game Boy Advance, and Mega
+Duck player based on armGBA. The current work explores emulation performance, MediaTek e-paper
 presentation, touch controls, and recovery from player crashes.
 
 Its components range from a headless feasibility benchmark to a ROM-driven

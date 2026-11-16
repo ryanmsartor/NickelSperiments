@@ -2,7 +2,6 @@
 
 include mk/ewdb.mk
 include mk/kobo-toolchain.mk
-include mk/gambatte.mk
 include mk/armgba.mk
 include mk/koboy.mk
 
@@ -20,7 +19,6 @@ help:
 	@echo "  nickelrefresh-package  Build NickelRefresh KoboRoot.tgz"
 	@echo "  ewdb-binary            Build the pinned ARMv7 EWDB daemon"
 	@echo "  ewdb-package           Build build/EWDB-KoboRoot.tgz"
-	@echo "  gambatte-bench         Build the headless ARMv7 Gambatte benchmark"
 	@echo "  armgba-adapter-check   Compile the in-progress armGBA frontend adapter"
 	@echo "  armgba-core-check      Compile armGBA's ARMv7/NEON/JIT core"
 	@echo "  armgba-libretro-check  Compile armGBA's libretro support layer"
