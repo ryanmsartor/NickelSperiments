@@ -62,7 +62,7 @@ public:
     AudioOutput()
         : pipe_fd_(-1), child_(-1), stopping_(false), paused_(false),
           volume_(10U), queued_frames_(0), dropped_frames_(0), read_(0), used_(0),
-          samples_(32768U * 2U) {}
+          samples_(65536U * 2U) {}
 
     ~AudioOutput() { stop(); }
 
@@ -84,7 +84,7 @@ public:
             execlp("gst-launch-1.0", "gst-launch-1.0", "-q",
                    "fdsrc", "fd=0", "!",
                    "audio/x-raw,format=S16LE,rate=32768,channels=2,layout=interleaved",
-                   "!", "audioconvert", "!", "audioresample", "!",
+                   "!", "audioresample", "quality=0", "!",
                    "audio/x-raw,format=S16LE,rate=48000,channels=2,layout=interleaved",
                    "!", "mtkbtmwrpcaudiosink", "sync=false",
                    static_cast<char *>(0));
