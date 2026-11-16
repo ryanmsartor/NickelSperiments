@@ -68,8 +68,8 @@ const unsigned kCleanupStableTicks = 2U;
 const unsigned kUrgentCleanupTileEquivalents = 4U;
 const unsigned kCleanupStartsPerTick = 5U;
 const unsigned kMaximumConcurrentCleanups = 20U;
-const unsigned kAdaptiveCleanupStartsPerTick = 8U;
-const unsigned kAdaptiveMaximumConcurrentCleanups = 32U;
+const unsigned kProgressiveCleanupStartsPerTick = 8U;
+const unsigned kProgressiveMaximumConcurrentCleanups = 32U;
 const double kCleanupRetirementAge = 0.30;
 
 struct ActiveCleanup {
@@ -277,36 +277,89 @@ public:
         return selected;
     }
 
-    bool take_affected_rectangle(koboy::Viewport &region) {
-        unsigned left = columns_, top = rows_, right = 0U, bottom = 0U;
-        for (unsigned row = 0U; row < rows_; ++row)
-            for (unsigned column = 0U; column < columns_; ++column) {
-                const std::size_t cell =
-                    static_cast<std::size_t>(row) * columns_ + column;
-                if (!gc16_debt_[cell] && !du_debt_[cell] &&
-                    !a2_aging_debt_[cell])
-                    continue;
-                left = std::min(left, column);
-                top = std::min(top, row);
-                right = std::max(right, column + 1U);
-                bottom = std::max(bottom, row + 1U);
-            }
-        if (left == columns_)
-            return false;
-        const unsigned x = left * tile_size_;
-        const unsigned y = top * tile_size_;
-        region = koboy::Viewport{
-            x, y, std::min(width_, right * tile_size_) - x,
-            std::min(height_, bottom * tile_size_) - y
+    std::vector<koboy::Viewport> take_affected_rectangles() {
+        struct Bounds {
+            bool valid;
+            unsigned left;
+            unsigned top;
+            unsigned right;
+            unsigned bottom;
         };
-        for (unsigned row = top; row < bottom; ++row)
-            for (unsigned column = left; column < right; ++column) {
-                const std::size_t cell =
-                    static_cast<std::size_t>(row) * columns_ + column;
-                gc16_debt_[cell] = du_debt_[cell] =
-                    a2_aging_debt_[cell] = 0ULL;
+        const auto find_bounds = [&](bool split_columns, unsigned split,
+                                     bool lower) {
+            Bounds bounds = {false, columns_, rows_, 0U, 0U};
+            for (unsigned row = 0U; row < rows_; ++row)
+                for (unsigned column = 0U; column < columns_; ++column) {
+                    const bool selected = split_columns ?
+                        (lower ? column < split : column >= split) :
+                        (lower ? row < split : row >= split);
+                    const std::size_t cell =
+                        static_cast<std::size_t>(row) * columns_ + column;
+                    /* Pure black/white motion remains A2-only. */
+                    if (!selected ||
+                        (!gc16_debt_[cell] && !du_debt_[cell]))
+                        continue;
+                    bounds.valid = true;
+                    bounds.left = std::min(bounds.left, column);
+                    bounds.top = std::min(bounds.top, row);
+                    bounds.right = std::max(bounds.right, column + 1U);
+                    bounds.bottom = std::max(bounds.bottom, row + 1U);
+                }
+            return bounds;
+        };
+        const auto area = [](const Bounds &bounds) {
+            return bounds.valid ?
+                static_cast<unsigned long long>(bounds.right - bounds.left) *
+                    (bounds.bottom - bounds.top) : 0ULL;
+        };
+
+        Bounds best_first = find_bounds(true, columns_, true);
+        if (!best_first.valid)
+            return std::vector<koboy::Viewport>();
+        Bounds best_second = {false, 0U, 0U, 0U, 0U};
+        unsigned long long best_area = area(best_first);
+        for (unsigned axis = 0U; axis < 2U; ++axis) {
+            const bool split_columns = axis == 0U;
+            const unsigned limit = split_columns ? columns_ : rows_;
+            for (unsigned split = 1U; split < limit; ++split) {
+                const Bounds first =
+                    find_bounds(split_columns, split, true);
+                const Bounds second =
+                    find_bounds(split_columns, split, false);
+                if (!first.valid || !second.valid)
+                    continue;
+                const unsigned long long combined = area(first) + area(second);
+                if (combined < best_area) {
+                    best_area = combined;
+                    best_first = first;
+                    best_second = second;
+                }
             }
-        return true;
+        }
+
+        std::vector<koboy::Viewport> regions;
+        const Bounds bounds[] = {best_first, best_second};
+        for (unsigned i = 0U; i < 2U; ++i) {
+            if (!bounds[i].valid)
+                continue;
+            const unsigned x = bounds[i].left * tile_size_;
+            const unsigned y = bounds[i].top * tile_size_;
+            regions.push_back(koboy::Viewport{
+                x, y,
+                std::min(width_, bounds[i].right * tile_size_) - x,
+                std::min(height_, bounds[i].bottom * tile_size_) - y
+            });
+            for (unsigned row = bounds[i].top;
+                 row < bounds[i].bottom; ++row)
+                for (unsigned column = bounds[i].left;
+                     column < bounds[i].right; ++column) {
+                    const std::size_t cell =
+                        static_cast<std::size_t>(row) * columns_ + column;
+                    gc16_debt_[cell] = du_debt_[cell] =
+                        a2_aging_debt_[cell] = 0ULL;
+                }
+        }
+        return regions;
     }
 
     std::vector<koboy::Viewport> take_highest_cells(
@@ -439,7 +492,7 @@ struct RefreshSettings {
 };
 
 enum DisplayRefreshPolicy {
-    DISPLAY_REFRESH_ADAPTIVE,
+    DISPLAY_REFRESH_PROGRESSIVE,
     DISPLAY_REFRESH_INTERMEDIATE,
     DISPLAY_REFRESH_AGGRESSIVE,
     DISPLAY_REFRESH_LAZY,
@@ -450,9 +503,11 @@ struct DisplaySettings {
     DisplayRefreshPolicy refresh_policy;
     unsigned full_refresh_seconds;
     bool grid_effect;
+    unsigned bichrome_threshold;
     DisplaySettings()
-        : refresh_policy(DISPLAY_REFRESH_ADAPTIVE),
-          full_refresh_seconds(0U), grid_effect(false) {}
+        : refresh_policy(DISPLAY_REFRESH_AGGRESSIVE),
+          full_refresh_seconds(0U), grid_effect(false),
+          bichrome_threshold(0U) {}
 };
 
 void handle_signal(int) { interrupted = 1; }
@@ -627,6 +682,14 @@ bool valid_full_refresh_seconds(unsigned value) {
     return false;
 }
 
+bool valid_bichrome_threshold(unsigned value) {
+    const unsigned values[] = {0U, 25U, 33U, 50U, 67U, 75U};
+    for (unsigned i = 0U; i < sizeof(values) / sizeof(values[0]); ++i)
+        if (value == values[i])
+            return true;
+    return false;
+}
+
 void load_display_settings(DisplaySettings &settings) {
     std::ifstream input(kDisplayConfig);
     std::string line;
@@ -644,18 +707,23 @@ void load_display_settings(DisplaySettings &settings) {
             settings.full_refresh_seconds = value;
         else if (key == "grid_effect" && value <= 1U)
             settings.grid_effect = value != 0U;
+        else if (key == "bichrome_threshold" &&
+                 valid_bichrome_threshold(value))
+            settings.bichrome_threshold = value;
     }
 }
 
 void save_display_settings(const DisplaySettings &settings) {
     if (!ensure_directory(kKoBoyRoot))
         return;
-    char text[128];
+    char text[160];
     const int length = std::snprintf(
         text, sizeof(text),
-        "refresh_policy=%u\nfull_refresh_seconds=%u\ngrid_effect=%u\n",
+        "refresh_policy=%u\nfull_refresh_seconds=%u\ngrid_effect=%u\n"
+        "bichrome_threshold=%u\n",
         static_cast<unsigned>(settings.refresh_policy),
-        settings.full_refresh_seconds, settings.grid_effect ? 1U : 0U);
+        settings.full_refresh_seconds, settings.grid_effect ? 1U : 0U,
+        settings.bichrome_threshold);
     const std::string temporary = std::string(kDisplayConfig) + ".tmp";
     const int output = open(temporary.c_str(),
                             O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0644);
@@ -669,9 +737,20 @@ void save_display_settings(const DisplaySettings &settings) {
 }
 
 void cycle_display_refresh_policy(DisplaySettings &settings) {
-    settings.refresh_policy = static_cast<DisplayRefreshPolicy>(
-        (static_cast<unsigned>(settings.refresh_policy) + 1U) %
-        DISPLAY_REFRESH_POLICY_COUNT);
+    switch (settings.refresh_policy) {
+        case DISPLAY_REFRESH_PROGRESSIVE:
+            settings.refresh_policy = DISPLAY_REFRESH_LAZY;
+            break;
+        case DISPLAY_REFRESH_LAZY:
+            settings.refresh_policy = DISPLAY_REFRESH_INTERMEDIATE;
+            break;
+        case DISPLAY_REFRESH_INTERMEDIATE:
+            settings.refresh_policy = DISPLAY_REFRESH_AGGRESSIVE;
+            break;
+        default:
+            settings.refresh_policy = DISPLAY_REFRESH_PROGRESSIVE;
+            break;
+    }
 }
 
 void cycle_full_refresh_frequency(DisplaySettings &settings) {
@@ -682,6 +761,25 @@ void cycle_full_refresh_frequency(DisplaySettings &settings) {
         ++index;
     settings.full_refresh_seconds =
         values[(index + 1U) % (sizeof(values) / sizeof(values[0]))];
+}
+
+void cycle_bichrome_threshold(DisplaySettings &settings) {
+    const unsigned values[] = {0U, 25U, 33U, 50U, 67U, 75U};
+    unsigned index = 0U;
+    while (index + 1U < sizeof(values) / sizeof(values[0]) &&
+           values[index] != settings.bichrome_threshold)
+        ++index;
+    settings.bichrome_threshold =
+        values[(index + 1U) % (sizeof(values) / sizeof(values[0]))];
+}
+
+void apply_bichrome(std::vector<uint32_t> &pixels, unsigned threshold) {
+    if (!threshold)
+        return;
+    const unsigned split = (threshold * 255U + 50U) / 100U;
+    for (std::size_t i = 0U; i < pixels.size(); ++i)
+        pixels[i] = (pixels[i] & 0xFFU) < split ?
+            0xFF000000U : 0xFFFFFFFFU;
 }
 
 unsigned long long read_unsigned_file(const char *path) {
@@ -1583,8 +1681,8 @@ void draw_menu(std::vector<uint32_t> &screen, unsigned width,
 
 const char *display_refresh_policy_name(DisplayRefreshPolicy policy) {
     switch (policy) {
-        case DISPLAY_REFRESH_ADAPTIVE: return "ADAPTIVE";
-        case DISPLAY_REFRESH_INTERMEDIATE: return "INTERMEDIATE";
+        case DISPLAY_REFRESH_PROGRESSIVE: return "PROGRESSIVE";
+        case DISPLAY_REFRESH_INTERMEDIATE: return "MODERATE";
         case DISPLAY_REFRESH_AGGRESSIVE: return "AGGRESSIVE";
         case DISPLAY_REFRESH_LAZY: return "LAZY";
         default: return "UNKNOWN";
@@ -1599,6 +1697,14 @@ std::string full_refresh_frequency_name(unsigned seconds) {
     return text;
 }
 
+std::string bichrome_threshold_name(unsigned threshold) {
+    if (!threshold)
+        return "OFF";
+    char text[16];
+    std::snprintf(text, sizeof(text), "%u%%", threshold);
+    return text;
+}
+
 void draw_display_settings(std::vector<uint32_t> &screen, unsigned width,
                            unsigned height,
                            const DisplaySettings &settings) {
@@ -1610,16 +1716,18 @@ void draw_display_settings(std::vector<uint32_t> &screen, unsigned width,
     const int left = width * 8 / 100;
     const int right = width * 92 / 100;
     const int half_height = height * 4 / 100;
-    const unsigned centers[] = {28U, 46U, 64U};
+    const unsigned centers[] = {24U, 40U, 56U, 72U};
     const std::string rows[] = {
         std::string("REFRESH TYPE  ") +
             display_refresh_policy_name(settings.refresh_policy),
         std::string("FULL REFRESH  ") +
             full_refresh_frequency_name(settings.full_refresh_seconds),
         std::string("GRID EFFECT  ") +
-            (settings.grid_effect ? "ON" : "OFF")
+            (settings.grid_effect ? "ON" : "OFF"),
+        std::string("BICHROME  ") +
+            bichrome_threshold_name(settings.bichrome_threshold)
     };
-    for (unsigned i = 0U; i < 3U; ++i) {
+    for (unsigned i = 0U; i < 4U; ++i) {
         const int center = height * centers[i] / 100;
         fill_rectangle(screen, width, height, left, center - half_height,
                        right, center + half_height, dark);
@@ -2147,6 +2255,8 @@ int main(int argc, char **argv) {
                     }
                     if (menu_action == koboy::UI_DISPLAY_SETTINGS) {
                         const bool previous_grid = display_settings.grid_effect;
+                        const unsigned previous_bichrome =
+                            display_settings.bichrome_threshold;
                         koboy::UiAction settings_action = koboy::UI_NONE;
                         while (!interrupted &&
                                settings_action != koboy::UI_LIST_CANCEL) {
@@ -2174,6 +2284,9 @@ int main(int argc, char **argv) {
                                      koboy::UI_SETTING_GRID_EFFECT)
                                 display_settings.grid_effect =
                                     !display_settings.grid_effect;
+                            else if (settings_action ==
+                                     koboy::UI_SETTING_BICHROME)
+                                cycle_bichrome_threshold(display_settings);
                             if (settings_action != koboy::UI_LIST_CANCEL) {
                                 save_display_settings(display_settings);
                                 settings_action = koboy::UI_NONE;
@@ -2184,7 +2297,9 @@ int main(int argc, char **argv) {
                             display_settings.refresh_policy ==
                                 DISPLAY_REFRESH_INTERMEDIATE ?
                             kIntermediateTileSize : kDamageTileSize);
-                        if (display_settings.grid_effect != previous_grid) {
+                        if (display_settings.grid_effect != previous_grid ||
+                            display_settings.bichrome_threshold !=
+                                previous_bichrome) {
                             scaled.clear();
                             force_first_frame_gc16 = true;
                         }
@@ -2331,6 +2446,7 @@ int main(int argc, char **argv) {
             koboy::scale_rgb32_grayscale(
                 rgb, core.video_width(), core.video_height(),
                 effective_scale, scaled, display_settings.grid_effect);
+            apply_bichrome(scaled, display_settings.bichrome_threshold);
             for (std::size_t i = 0; i < a2_markers.size(); ++i) {
                 last_wait_seconds =
                     framebuffer.wait_for_update(a2_markers[i]);
@@ -2438,22 +2554,22 @@ int main(int argc, char **argv) {
                     submitted_refresh = true;
                     a2_regions.clear();
                 }
-                const bool adaptive = display_settings.refresh_policy ==
-                    DISPLAY_REFRESH_ADAPTIVE;
-                const unsigned maximum_concurrent = adaptive ?
-                    kAdaptiveMaximumConcurrentCleanups :
+                const bool progressive = display_settings.refresh_policy ==
+                    DISPLAY_REFRESH_PROGRESSIVE;
+                const unsigned maximum_concurrent = progressive ?
+                    kProgressiveMaximumConcurrentCleanups :
                     kMaximumConcurrentCleanups;
                 const unsigned available = active_cleanups.size() >=
                     maximum_concurrent ? 0U :
                     static_cast<unsigned>(maximum_concurrent -
                                           active_cleanups.size());
-                unsigned starts = std::min(adaptive ?
-                    kAdaptiveCleanupStartsPerTick :
+                unsigned starts = std::min(progressive ?
+                    kProgressiveCleanupStartsPerTick :
                     kCleanupStartsPerTick, available);
                 std::vector<koboy::Viewport> new_gc16_cleanups;
                 std::vector<koboy::Viewport> new_du_cleanups;
                 if (!submitted_refresh && display_settings.refresh_policy ==
-                    DISPLAY_REFRESH_ADAPTIVE) {
+                    DISPLAY_REFRESH_PROGRESSIVE) {
                     new_gc16_cleanups =
                         damage_tracker.take_highest_rectangles(
                             starts, gc16_regions, REFRESH_GC16_FULL);
@@ -2481,9 +2597,8 @@ int main(int argc, char **argv) {
                                DISPLAY_REFRESH_AGGRESSIVE &&
                            now >= next_policy_refresh &&
                            active_cleanups.empty()) {
-                    koboy::Viewport affected;
-                    if (damage_tracker.take_affected_rectangle(affected))
-                        new_gc16_cleanups.push_back(affected);
+                    new_gc16_cleanups =
+                        damage_tracker.take_affected_rectangles();
                     next_policy_refresh = now + 1.0;
                 }
                 if (display_settings.refresh_policy !=
@@ -2494,7 +2609,7 @@ int main(int argc, char **argv) {
                 const unsigned remaining_starts = starts -
                     static_cast<unsigned>(new_gc16_cleanups.size());
                 if (display_settings.refresh_policy ==
-                    DISPLAY_REFRESH_ADAPTIVE)
+                    DISPLAY_REFRESH_PROGRESSIVE)
                     new_du_cleanups =
                         damage_tracker.take_highest_rectangles(
                             remaining_starts, gc16_regions, REFRESH_DU);

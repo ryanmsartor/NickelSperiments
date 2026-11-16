@@ -43,33 +43,33 @@ armGBA is pinned as the `deps/armgba` submodule at revision `6deb8f84`. The `Arm
 
 Gameplay uses A2 at a steady 10 Hz cadence plus one of four global cleanup policies selected from the in-game Display Settings submenu. Settings persist in `KoBoy/display.conf` and currently apply to every game.
 
-Adaptive is the default. Ko Boy measures frame-change debt independently in fixed 24-by-24 framebuffer cells. On each 10 Hz display tick it may start full-waveform GC16 or DU cleanups for up to eight highest-debt contiguous rectangles of dirty cells, with at most thirty-two cleanups active at once. This staggers cleanup starts instead of blinking a whole batch simultaneously. While a cleanup owns those cells, the newest A2 frame continues through coalesced rectangles covering the remainder. Framebuffer writes follow the same partition so active cleanup cells are not modified underneath the controller.
+Progressive measures frame-change debt independently in fixed 24-by-24 framebuffer cells. On each 10 Hz display tick it may start full-waveform GC16 or DU cleanups for up to eight highest-debt contiguous rectangles of dirty cells, with at most thirty-two cleanups active at once. This staggers cleanup starts instead of blinking a whole batch simultaneously. While a cleanup owns those cells, the newest A2 frame continues through coalesced rectangles covering the remainder. Framebuffer writes follow the same partition so active cleanup cells are not modified underneath the controller.
 
-Intermediate issues up to ten GC16 or DU cleanups across the highest-debt contiguous rectangles at 2 Hz, combining adjacent dirty 24-by-24 cells. It uses GC16 for gray destinations and DU for gray-to-black/white transitions.
+Moderate issues up to ten GC16 or DU cleanups across the highest-debt contiguous rectangles at 2 Hz, combining adjacent dirty 24-by-24 cells. It uses GC16 for gray destinations and DU for gray-to-black/white transitions.
 
-Aggressive accumulates all affected cells into one aligned bounding rectangle and issues one GC16 at 1 Hz. Intermediate ignores pure black-to-white and white-to-black motion so A2 can continue covering those cells without GC16. Its cleanup debt includes only transitions involving gray. Aggressive remains intentionally broad and does not use DU.
+Aggressive is the default. It considers only transitions involving gray, splits their affected cells into at most two area-minimizing aligned bounding rectangles, and issues GC16 at 1 Hz. Pure black-to-white and white-to-black motion remains A2-only and does not create or expand those rectangles. Moderate applies the same A2-only exclusion and uses separate GC16 and DU cleanups; Aggressive remains intentionally broader and GC16-only.
 
 Lazy schedules only the steady A2 updates. It performs no regional cleanup, so any cleanup beyond A2 comes exclusively from Full Refresh Frequency. With full refresh set to Off, Lazy deliberately permits artifacts to accumulate.
 
-Full Refresh Frequency can be Off, 2, 5, 10, 15, 30, or 60 seconds. When due, the full-screen GC16 drains active cleanups and replaces that tick's policy cleanup. Grid Effect draws a one-pixel white divider between logical emulated pixels before output reaches the framebuffer. Both default to Off. Menus, loading, wake, and exit retain full-screen GC16 boundaries.
+Full Refresh Frequency can be Off, 2, 5, 10, 15, 30, or 60 seconds. When due, the full-screen GC16 drains active cleanups and replaces that tick's policy cleanup. Grid Effect draws a one-pixel white divider between logical emulated pixels before output reaches the framebuffer. Bichrome flattens the scaled image to absolute black and white, with selectable luminance splits of 25%, 33%, 50%, 67%, or 75%. Full Refresh Frequency, Grid Effect, and Bichrome default to Off. Menus, loading, wake, and exit retain full-screen GC16 boundaries.
 
 
-| Behavior | Adaptive | Intermediate | Aggressive | Lazy |
+| Behavior | Progressive | Lazy | Moderate | Aggressive |
 |---|---|---|---|---|
 | Normal display | A2 at 10 Hz | A2 at 10 Hz | A2 at 10 Hz | A2 at 10 Hz |
-| Cleanup cell size | 24×24 physical pixels | 24×24 physical pixels | Tracks 24×24 cells, then bounds all affected cells | None |
-| Cleanup cadence | Every 10 Hz display tick | 2 Hz | 1 Hz | Never |
-| Maximum starts per cleanup opportunity | 8 rectangles | 10 total GC16/DU rectangles | 1 rectangle | 0 |
-| Maximum concurrently active | 32 | 20, though the 0.5-second cadence normally lets the previous batch finish | 1 in normal operation | 0 |
-| Rectangle construction | Combines adjacent eligible cells | Combines adjacent eligible cells | One bounding rectangle containing every affected cell | None |
-| Cleanup waveforms | GC16 and DU | GC16 and DU | GC16 only | None |
-| Gray destination | GC16 debt | GC16 cleanup debt | Included | Ignored until full refresh |
-| Gray → black/white | DU debt | DU cleanup debt | Included | Ignored until full refresh |
-| Black ↔ white motion | Low aging debt; eventually DU | Ignored; remains A2-only | Included immediately in affected area | A2-only |
+| Cleanup cell size | 24×24 physical pixels | None | 24×24 physical pixels | Tracks 24×24 cells, then bounds eligible cells |
+| Cleanup cadence | Every 10 Hz display tick | Never | 2 Hz | 1 Hz |
+| Maximum starts per cleanup opportunity | 8 rectangles | 0 | 10 total GC16/DU rectangles | 2 rectangles |
+| Maximum concurrently active | 32 | 0 | 20, though the 0.5-second cadence normally lets the previous batch finish | 2 in normal operation |
+| Rectangle construction | Combines adjacent eligible cells | None | Combines adjacent eligible cells | Up to two area-minimizing bounding rectangles |
+| Cleanup waveforms | GC16 and DU | None | GC16 and DU | GC16 only |
+| Gray destination | GC16 debt | Ignored until full refresh | GC16 cleanup debt | Included |
+| Gray → black/white | DU debt | Ignored until full refresh | DU cleanup debt | Included |
+| Black ↔ white motion | Low aging debt; eventually DU | A2-only | Ignored; remains A2-only | Ignored; remains A2-only |
 | GC16 stability gate | Requires 2 unchanged 10 Hz snapshots | None | None | N/A |
 | GC16 emergency override | After debt equivalent to 4 full-range cell transitions | N/A | N/A | N/A |
 | Black/white aging threshold | DU after 8 cell-equivalents | Not used | Not used | Not used |
-| Primary goal | Targeted quality with limited flashing | Predictable, moderately aggressive grayscale cleanup | Broad and simple cleanup | Maximum smoothness between full refreshes |
+| Primary goal | Targeted quality with limited flashing | Maximum smoothness between full refreshes | Predictable, moderate grayscale cleanup | Broad cleanup with smaller affected areas |
 
 
 Create `/mnt/onboard/KoBoy/diagnostics` to enable durable refresh diagnostics. Display Settings remain available without this flag. Release-style operation without diagnostics avoids the additional VFAT writes, log growth, sysfs reads, and diagnostic timing changes.
@@ -100,7 +100,7 @@ Ko Boy leaves Nickel running. It exclusively grabs the touchscreen while active,
 
 ## Targeted cleanup refreshes
 
-Adaptive and Intermediate accumulate debt in fixed aligned 24-by-24 framebuffer cells. Device tests establish the controller's behavior for simultaneous non-overlapping A2, DU, and GC16 regions at these boundaries.
+Progressive and Moderate accumulate debt in fixed aligned 24-by-24 framebuffer cells. Device tests establish the controller's behavior for simultaneous non-overlapping A2, DU, and GC16 regions at these boundaries.
 
 The framebuffer cannot reveal which physical e-ink pixels still retain a visible prior image; it contains only the image Ko Boy intended to display. Instead, Ko Boy can estimate a per-region "ghosting debt" from its frame history. Divide the scaled game viewport into tiles and increase each tile's debt according to the number and magnitude of pixel changes, repeated dark-to-light transitions, time since its last cleanup, and the waveform used for that cleanup. Stronger waveforms should reduce more debt than weaker ones.
 

@@ -74,8 +74,8 @@ installation does not depend on NickelMenu.
 
 Gameplay uses steady A2 presentation plus a selectable cleanup policy:
 
-- Adaptive targets high-debt 24-by-24 physical-pixel cells with DU or GC16.
-- Intermediate batches adjacent dirty cells at a predictable 2 Hz cadence.
+- Progressive targets high-debt 24-by-24 physical-pixel cells with DU or GC16.
+- Moderate batches adjacent dirty cells at a predictable 2 Hz cadence.
 - Aggressive cleans one bounding rectangle at 1 Hz.
 - Lazy uses only A2 except for an optional periodic full-screen refresh.
 
