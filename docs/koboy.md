@@ -41,24 +41,24 @@ armGBA is pinned as the `deps/armgba` submodule at revision `6deb8f84`. The `Arm
 
 ## Refresh scheduling
 
-Gameplay uses A2 at a steady 10 Hz cadence plus one of four global cleanup policies selected from the in-game Display Settings submenu. Settings persist in `KoBoy/display.conf` and currently apply to every game.
+Gameplay uses regularly paced A2 updates plus one of four global cleanup policies. The default target is 10 Hz; developer mode also offers 10.25, 10.5, 10.75, 11, 11.25, and 11.5 Hz, plus Unlimited. Settings persist in `KoBoy/display.conf` and currently apply to every game.
 
-Progressive measures frame-change debt independently in fixed 24-by-24 framebuffer cells. On each 10 Hz display tick it may start full-waveform GC16 or DU cleanups for up to eight highest-debt contiguous rectangles of dirty cells, with at most thirty-two cleanups active at once. This staggers cleanup starts instead of blinking a whole batch simultaneously. While a cleanup owns those cells, the newest A2 frame continues through coalesced rectangles covering the remainder. Framebuffer writes follow the same partition so active cleanup cells are not modified underneath the controller.
+Progressive measures frame-change debt independently in fixed 24-by-24 framebuffer cells. On each display tick it may start full-waveform GC16 or DU cleanups for up to eight highest-debt contiguous rectangles of dirty cells, with at most thirty-two cleanups active at once. This staggers cleanup starts instead of blinking a whole batch simultaneously. While a cleanup owns those cells, the newest A2 frame continues through coalesced rectangles covering the remainder. Framebuffer writes follow the same partition so active cleanup cells are not modified underneath the controller.
 
 Moderate issues up to ten GC16 or DU cleanups across the highest-debt contiguous rectangles at 2 Hz, combining adjacent dirty 24-by-24 cells. It uses GC16 for gray destinations and DU for gray-to-black/white transitions.
 
-Aggressive is the default. It considers only transitions involving gray, splits their affected cells into at most two area-minimizing aligned bounding rectangles, and issues GC16 at 1 Hz. Pure black-to-white and white-to-black motion remains A2-only and does not create or expand those rectangles. Moderate applies the same A2-only exclusion and uses separate GC16 and DU cleanups; Aggressive remains intentionally broader and GC16-only.
+Aggressive considers only transitions involving gray, splits their affected cells into at most two area-minimizing aligned bounding rectangles, and issues GC16 at 1 Hz. Pure black-to-white and white-to-black motion remains A2-only and does not create or expand those rectangles. Moderate applies the same A2-only exclusion and uses separate GC16 and DU cleanups; Aggressive remains intentionally broader and GC16-only.
 
-Lazy schedules only the steady A2 updates. It performs no regional cleanup, so any cleanup beyond A2 comes exclusively from Full Refresh Frequency. With full refresh set to Off, Lazy deliberately permits artifacts to accumulate.
+Lazy is the default and schedules only the paced A2 updates. It performs no regional cleanup, so any cleanup beyond A2 comes exclusively from Full Refresh Frequency.
 
-Full Refresh Frequency can be Off, 2, 5, 10, 15, 30, or 60 seconds. When due, the full-screen GC16 drains active cleanups and replaces that tick's policy cleanup. Grid Effect draws a one-pixel white divider between logical emulated pixels before output reaches the framebuffer. Bichrome flattens the scaled image to absolute black and white, with selectable luminance splits of 25%, 33%, 50%, 67%, or 75%. Full Refresh Frequency, Grid Effect, and Bichrome default to Off. Menus, loading, wake, and exit retain full-screen GC16 boundaries.
+Full Refresh Frequency can be Off, 5, 15, 30, 60, or 90 seconds and defaults to 60 seconds. When due, the full-screen GC16 drains active cleanups and replaces that tick's policy cleanup. Grid Effect draws a one-pixel white divider between logical emulated pixels before output reaches the framebuffer and defaults to Off. Bichrome flattens the scaled image to absolute black and white, with fixed luminance splits of 25%, 50%, or 75%, plus Dithered and Off. Dithered is the default and uses a stable 4-by-4 ordered pattern of physical panel pixels, varying black-dot density to represent intermediate shades without temporal noise. Menus, loading, wake, and exit retain full-screen GC16 boundaries.
 
 
 | Behavior | Progressive | Lazy | Moderate | Aggressive |
 |---|---|---|---|---|
-| Normal display | A2 at 10 Hz | A2 at 10 Hz | A2 at 10 Hz | A2 at 10 Hz |
+| Normal display | Paced A2 | Paced A2 | Paced A2 | Paced A2 |
 | Cleanup cell size | 24×24 physical pixels | None | 24×24 physical pixels | Tracks 24×24 cells, then bounds eligible cells |
-| Cleanup cadence | Every 10 Hz display tick | Never | 2 Hz | 1 Hz |
+| Cleanup cadence | Every display tick | Never | 2 Hz | 1 Hz |
 | Maximum starts per cleanup opportunity | 8 rectangles | 0 | 10 total GC16/DU rectangles | 2 rectangles |
 | Maximum concurrently active | 32 | 0 | 20, though the 0.5-second cadence normally lets the previous batch finish | 2 in normal operation |
 | Rectangle construction | Combines adjacent eligible cells | None | Combines adjacent eligible cells | Up to two area-minimizing bounding rectangles |
@@ -66,17 +66,19 @@ Full Refresh Frequency can be Off, 2, 5, 10, 15, 30, or 60 seconds. When due, th
 | Gray destination | GC16 debt | Ignored until full refresh | GC16 cleanup debt | Included |
 | Gray → black/white | DU debt | Ignored until full refresh | DU cleanup debt | Included |
 | Black ↔ white motion | Low aging debt; eventually DU | A2-only | Ignored; remains A2-only | Ignored; remains A2-only |
-| GC16 stability gate | Requires 2 unchanged 10 Hz snapshots | None | None | N/A |
+| GC16 stability gate | Requires 2 unchanged display snapshots | None | None | N/A |
 | GC16 emergency override | After debt equivalent to 4 full-range cell transitions | N/A | N/A | N/A |
 | Black/white aging threshold | DU after 8 cell-equivalents | Not used | Not used | Not used |
 | Primary goal | Targeted quality with limited flashing | Maximum smoothness between full refreshes | Predictable, moderate grayscale cleanup | Broad cleanup with smaller affected areas |
 
 
-Create `/mnt/onboard/KoBoy/diagnostics` to enable durable refresh diagnostics. Display Settings remain available without this flag. Release-style operation without diagnostics avoids the additional VFAT writes, log growth, sysfs reads, and diagnostic timing changes.
+Display Settings normally exposes Full Refresh Frequency and Grid Effect. Create `/mnt/onboard/KoBoy/developer` to additionally expose Refresh Type, Bichrome, and Target Refresh Rate. The regional Progressive, Moderate, and Aggressive implementations remain available for experimentation even though Lazy and Dithered are the defaults.
+
+Create `/mnt/onboard/KoBoy/diagnostics` to enable durable refresh diagnostics. Release-style operation without diagnostics avoids the additional VFAT writes, log growth, sysfs reads, and diagnostic timing changes.
 
 Entering and leaving the menu uses waited, full-screen full-update GC16 so the game and menu do not bleed into one another. Transitions between menu screens use waited, full-screen DU over a strictly black-and-white palette and never apply the selected gameplay waveform inside the menu. Input accumulated during an update is drained, and all gameplay and UI actions remain blocked until every existing contact has been released. Exit to Nickel likewise waits for release before giving Nickel the touchscreen. With diagnostics enabled, each menu update writes `begin` and `end` records, including its marker and elapsed time, to `refresh-active.log`. If a wait lasts at least 4.5 seconds—close to HWTCON's five-second timeout—Ko Boy closes Display Settings instead of submitting another menu update.
 
-Ko Boy leaves Nickel responsible for interpreting the sleep cover and power button and for performing system power management. The companion `libkoboylifecycle.so` NickelHook plugin observes Nickel's actual `aboutToSleep` and `resumedFromSleep` lifecycle transitions and signals the active player through `/tmp/koboy.pid`. A sleep transition pauses emulation immediately. After Nickel finishes waking, Ko Boy redraws the complete game viewport and controller panel and presents the whole screen with full-update GC16 before emulation continues. The sleep interval does not consume a configured timed test run or cause refresh catch-up bursts.
+Ko Boy leaves Nickel responsible for interpreting the sleep cover and power button and for performing system power management. While Ko Boy owns the touchscreen, the companion plugin suppresses Nickel's inactivity-only timeout so Nickel cannot take the visible screen while touches continue going to the emulator. Explicit cover and power-button sleep remain enabled. The plugin observes Nickel's actual `aboutToSleep` and `resumedFromSleep` lifecycle transitions and signals the active player through `/tmp/koboy.pid`. A sleep transition pauses emulation immediately. After Nickel finishes waking, Ko Boy redraws the complete game viewport and controller panel and presents the whole screen with full-update GC16 before emulation continues. The sleep interval does not consume a configured timed test run or cause refresh catch-up bursts.
 
 Install `Ko-Boy-KoboRoot.tgz` by renaming it to `KoboRoot.tgz`, copying it into the Kobo's `.kobo` directory, and safely ejecting the reader. The package installs the player and supervisor under `/mnt/onboard/.adds/koboy`, installs the launcher/lifecycle plugin at `/usr/local/Kobo/imageformats/libkoboylifecycle.so`, creates the four stock ROM directories, and includes the complete license bundle. Reinstalling the archive updates program files without replacing ROMs, saves, states, or settings.
 
@@ -110,7 +112,7 @@ On each display tick, Ko Boy finds the highest-debt rectangles composed entirely
 
 Debt is classified by the intended grayscale transition. A destination gray level requires GC16. A transition from gray to pure black or white requires DU. Pure black/white motion under A2, such as a black sprite crossing a white background, accumulates only a low aging charge and does not immediately request cleanup. Eight tile-equivalents of such endpoint motion make a cell eligible for an eventual DU cleanup. GC16 rectangles are selected before DU rectangles because they require accurate grayscale output; either waveform clears the weaker debt it supersedes in the cells it cleans.
 
-GC16 cleanup is also stability-gated. Debt continues accumulating while a cell is changing, but the cell normally becomes eligible only after remaining unchanged for two 10 Hz display snapshots. This lets scrolling finish before GC16 cleans the settled image instead of repeatedly flashing background segments that immediately move again. A debt equivalent to four complete maximum-range tile transitions bypasses the stability gate so sustained motion cannot defer cleanup indefinitely. DU does not use the stability gate because its endpoint repair is less visually disruptive.
+GC16 cleanup is also stability-gated. Debt continues accumulating while a cell is changing, but the cell normally becomes eligible only after remaining unchanged for two display snapshots. This lets scrolling finish before GC16 cleans the settled image instead of repeatedly flashing background segments that immediately move again. A debt equivalent to four complete maximum-range tile transitions bypasses the stability gate so sustained motion cannot defer cleanup indefinitely. DU does not use the stability gate because its endpoint repair is less visually disruptive.
 
 Initial implementation should retain an occasional full-viewport slowest refresh as a safety net. Its interval can be increased only after device tests show that targeted refreshes do not permit artifacts to accumulate over long sessions. Developer diagnostics should eventually record each selected cell, its debt, and the waveform so the heuristic can be tuned from observed results. Device testing must also confirm minimum dimensions, alignment requirements, edge artifacts, and whether waveforms spill beyond their requested rectangles.
 

@@ -203,18 +203,30 @@ UiAction TouchInput::ui_hit_test(int raw_x, int raw_y,
         return UI_NONE;
     }
 
-    if (screen == UI_SCREEN_DISPLAY_SETTINGS) {
+    if (screen == UI_SCREEN_DISPLAY_SETTINGS ||
+        screen == UI_SCREEN_DISPLAY_SETTINGS_DEVELOPER) {
         const int left = static_cast<int>(screen_width_ * 8U / 100U);
         const int right = static_cast<int>(screen_width_ * 92U / 100U);
-        const int half_height = static_cast<int>(screen_height_ * 4U / 100U);
+        const bool developer =
+            screen == UI_SCREEN_DISPLAY_SETTINGS_DEVELOPER;
+        const int half_height = static_cast<int>(screen_height_ *
+            (developer ? 3U : 4U) / 100U);
         if (x < left || x > right)
             return UI_NONE;
-        const unsigned centers[] = {24U, 40U, 56U, 72U};
-        const UiAction actions[] = {
+        const unsigned developer_centers[] = {22U, 35U, 48U, 61U, 74U};
+        const UiAction developer_actions[] = {
             UI_SETTING_REFRESH_POLICY, UI_SETTING_FULL_REFRESH,
-            UI_SETTING_GRID_EFFECT, UI_SETTING_BICHROME
+            UI_SETTING_GRID_EFFECT, UI_SETTING_BICHROME,
+            UI_SETTING_TARGET_REFRESH
         };
-        for (unsigned i = 0; i < 4U; ++i)
+        const unsigned user_centers[] = {36U, 60U};
+        const UiAction user_actions[] = {
+            UI_SETTING_FULL_REFRESH, UI_SETTING_GRID_EFFECT
+        };
+        const unsigned *centers = developer ? developer_centers : user_centers;
+        const UiAction *actions = developer ? developer_actions : user_actions;
+        const unsigned count = developer ? 5U : 2U;
+        for (unsigned i = 0; i < count; ++i)
             if (std::abs(y - static_cast<int>(screen_height_ * centers[i] /
                                               100U)) <= half_height)
                 return actions[i];

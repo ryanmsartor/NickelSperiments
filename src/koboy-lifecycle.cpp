@@ -32,8 +32,12 @@ const char kLogPath[] = "/mnt/onboard/.adds/koboy/koboy.log";
 pid_t launchedSupervisorPid = -1;
 
 typedef void (*LifecycleMethod)(void *self);
+typedef bool (*PowerFilterMethod)(void *self, QObject *watched, QEvent *event);
+typedef QEvent::Type (*TimeEventTypeMethod)();
 LifecycleMethod originalAboutToSleep = nullptr;
 LifecycleMethod originalResumedFromSleep = nullptr;
+PowerFilterMethod originalPowerFilter = nullptr;
+TimeEventTypeMethod timeEventType = nullptr;
 
 bool readKoBoyPid(pid_t &pid)
 {
@@ -321,6 +325,23 @@ void koboyResumedFromSleep(void *self)
     notifyKoBoy(SIGUSR2, "wake");
 }
 
+extern "C" __attribute__((visibility("default")))
+bool koboyPowerFilter(void *self, QObject *watched, QEvent *event)
+{
+    if (koBoyRunning() && timeEventType && event &&
+        event->type() == timeEventType()) {
+        int subtype = 0;
+        std::memcpy(&subtype,
+                    reinterpret_cast<const char *>(event) + sizeof(QEvent),
+                    sizeof(subtype));
+        if (subtype == 6) {
+            nh_log("Suppressed Nickel inactivity timeout while Ko Boy runs");
+            return false;
+        }
+    }
+    return originalPowerFilter(self, watched, event);
+}
+
 bool uninstallKoBoyIntegration()
 {
     const char *files[] = {
@@ -364,6 +385,14 @@ struct nh_info info = {
 
 struct nh_hook hooks[] = {
     {
+        .sym = "_ZN12PowerManager6filterEP7QObjectP6QEvent",
+        .sym_new = "koboyPowerFilter",
+        .lib = "libnickel.so.1.0.0",
+        .out = nh_symoutptr(originalPowerFilter),
+        .desc = "Prevent inactivity sleep while Ko Boy owns input",
+        .optional = true,
+    },
+    {
         .sym = "_ZN22N3PowerWorkflowManager12aboutToSleepEv",
         .sym_new = "koboyAboutToSleep",
         .lib = "libnickel.so.1.0.0",
@@ -382,7 +411,15 @@ struct nh_hook hooks[] = {
     {0},
 };
 
-struct nh_dlsym symbols[] = {{0}};
+struct nh_dlsym symbols[] = {
+    {
+        .name = "_ZN9TimeEvent9eventTypeEv",
+        .out = nh_symoutptr(timeEventType),
+        .desc = "Identify Nickel inactivity timer events",
+        .optional = true,
+    },
+    {0},
+};
 
 } // namespace
 

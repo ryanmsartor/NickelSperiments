@@ -60,7 +60,6 @@ enum RefreshType {
 };
 
 const unsigned kSlowRefreshTypeCount = 4U;
-const double kFastRefreshInterval = 0.1;
 const unsigned kDamageTileSize = 24U;
 const unsigned kIntermediateTileSize = 24U;
 const unsigned kA2AgingTileEquivalents = 8U;
@@ -70,6 +69,7 @@ const unsigned kCleanupStartsPerTick = 5U;
 const unsigned kMaximumConcurrentCleanups = 20U;
 const unsigned kProgressiveCleanupStartsPerTick = 8U;
 const unsigned kProgressiveMaximumConcurrentCleanups = 32U;
+const unsigned kBichromeDithered = 100U;
 const double kCleanupRetirementAge = 0.30;
 
 struct ActiveCleanup {
@@ -504,10 +504,12 @@ struct DisplaySettings {
     unsigned full_refresh_seconds;
     bool grid_effect;
     unsigned bichrome_threshold;
+    unsigned target_refresh_quarters;
     DisplaySettings()
-        : refresh_policy(DISPLAY_REFRESH_AGGRESSIVE),
-          full_refresh_seconds(0U), grid_effect(false),
-          bichrome_threshold(0U) {}
+        : refresh_policy(DISPLAY_REFRESH_LAZY),
+          full_refresh_seconds(60U), grid_effect(false),
+          bichrome_threshold(kBichromeDithered),
+          target_refresh_quarters(40U) {}
 };
 
 void handle_signal(int) { interrupted = 1; }
@@ -675,7 +677,7 @@ bool write_all(int descriptor, const std::string &contents) {
 }
 
 bool valid_full_refresh_seconds(unsigned value) {
-    const unsigned values[] = {0U, 2U, 5U, 10U, 15U, 30U, 60U};
+    const unsigned values[] = {0U, 5U, 15U, 30U, 60U, 90U};
     for (unsigned i = 0U; i < sizeof(values) / sizeof(values[0]); ++i)
         if (value == values[i])
             return true;
@@ -683,11 +685,17 @@ bool valid_full_refresh_seconds(unsigned value) {
 }
 
 bool valid_bichrome_threshold(unsigned value) {
-    const unsigned values[] = {0U, 25U, 33U, 50U, 67U, 75U};
+    const unsigned values[] = {
+        0U, kBichromeDithered, 25U, 50U, 75U
+    };
     for (unsigned i = 0U; i < sizeof(values) / sizeof(values[0]); ++i)
         if (value == values[i])
             return true;
     return false;
+}
+
+bool valid_target_refresh_quarters(unsigned value) {
+    return value == 0U || (value >= 40U && value <= 46U);
 }
 
 void load_display_settings(DisplaySettings &settings) {
@@ -710,20 +718,23 @@ void load_display_settings(DisplaySettings &settings) {
         else if (key == "bichrome_threshold" &&
                  valid_bichrome_threshold(value))
             settings.bichrome_threshold = value;
+        else if (key == "target_refresh_quarters" &&
+                 valid_target_refresh_quarters(value))
+            settings.target_refresh_quarters = value;
     }
 }
 
 void save_display_settings(const DisplaySettings &settings) {
     if (!ensure_directory(kKoBoyRoot))
         return;
-    char text[160];
+    char text[192];
     const int length = std::snprintf(
         text, sizeof(text),
         "refresh_policy=%u\nfull_refresh_seconds=%u\ngrid_effect=%u\n"
-        "bichrome_threshold=%u\n",
+        "bichrome_threshold=%u\ntarget_refresh_quarters=%u\n",
         static_cast<unsigned>(settings.refresh_policy),
         settings.full_refresh_seconds, settings.grid_effect ? 1U : 0U,
-        settings.bichrome_threshold);
+        settings.bichrome_threshold, settings.target_refresh_quarters);
     const std::string temporary = std::string(kDisplayConfig) + ".tmp";
     const int output = open(temporary.c_str(),
                             O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0644);
@@ -754,7 +765,7 @@ void cycle_display_refresh_policy(DisplaySettings &settings) {
 }
 
 void cycle_full_refresh_frequency(DisplaySettings &settings) {
-    const unsigned values[] = {0U, 2U, 5U, 10U, 15U, 30U, 60U};
+    const unsigned values[] = {0U, 5U, 15U, 30U, 60U, 90U};
     unsigned index = 0U;
     while (index + 1U < sizeof(values) / sizeof(values[0]) &&
            values[index] != settings.full_refresh_seconds)
@@ -764,7 +775,9 @@ void cycle_full_refresh_frequency(DisplaySettings &settings) {
 }
 
 void cycle_bichrome_threshold(DisplaySettings &settings) {
-    const unsigned values[] = {0U, 25U, 33U, 50U, 67U, 75U};
+    const unsigned values[] = {
+        0U, kBichromeDithered, 25U, 50U, 75U
+    };
     unsigned index = 0U;
     while (index + 1U < sizeof(values) / sizeof(values[0]) &&
            values[index] != settings.bichrome_threshold)
@@ -773,9 +786,42 @@ void cycle_bichrome_threshold(DisplaySettings &settings) {
         values[(index + 1U) % (sizeof(values) / sizeof(values[0]))];
 }
 
-void apply_bichrome(std::vector<uint32_t> &pixels, unsigned threshold) {
+void cycle_target_refresh_rate(DisplaySettings &settings) {
+    const unsigned values[] = {
+        40U, 41U, 42U, 43U, 44U, 45U, 46U, 0U
+    };
+    unsigned index = 0U;
+    while (index + 1U < sizeof(values) / sizeof(values[0]) &&
+           values[index] != settings.target_refresh_quarters)
+        ++index;
+    settings.target_refresh_quarters =
+        values[(index + 1U) % (sizeof(values) / sizeof(values[0]))];
+}
+
+void apply_bichrome(std::vector<uint32_t> &pixels, unsigned width,
+                    unsigned threshold) {
     if (!threshold)
         return;
+    if (threshold == kBichromeDithered) {
+        static const unsigned bayer[4][4] = {
+            { 0U,  8U,  2U, 10U},
+            {12U,  4U, 14U,  6U},
+            { 3U, 11U,  1U,  9U},
+            {15U,  7U, 13U,  5U},
+        };
+        if (!width)
+            return;
+        for (std::size_t i = 0U; i < pixels.size(); ++i) {
+            const unsigned x = static_cast<unsigned>(i % width);
+            const unsigned y = static_cast<unsigned>(i / width);
+            const unsigned luminance = pixels[i] & 0xFFU;
+            const unsigned cutoff = (2U * bayer[y & 3U][x & 3U] + 1U) *
+                255U;
+            pixels[i] = luminance * 32U > cutoff ?
+                0xFFFFFFFFU : 0xFF000000U;
+        }
+        return;
+    }
     const unsigned split = (threshold * 255U + 50U) / 100U;
     for (std::size_t i = 0U; i < pixels.size(); ++i)
         pixels[i] = (pixels[i] & 0xFFU) < split ?
@@ -1700,14 +1746,31 @@ std::string full_refresh_frequency_name(unsigned seconds) {
 std::string bichrome_threshold_name(unsigned threshold) {
     if (!threshold)
         return "OFF";
+    if (threshold == kBichromeDithered)
+        return "DITHERED";
     char text[16];
     std::snprintf(text, sizeof(text), "%u%%", threshold);
     return text;
 }
 
+std::string target_refresh_rate_name(unsigned quarters) {
+    if (!quarters)
+        return "UNLIMITED";
+    char text[24];
+    const unsigned remainder = quarters % 4U;
+    if (!remainder)
+        std::snprintf(text, sizeof(text), "%u HZ", quarters / 4U);
+    else
+        std::snprintf(text, sizeof(text), "%u.%s HZ", quarters / 4U,
+                      remainder == 1U ? "25" :
+                      remainder == 2U ? "5" : "75");
+    return text;
+}
+
 void draw_display_settings(std::vector<uint32_t> &screen, unsigned width,
                            unsigned height,
-                           const DisplaySettings &settings) {
+                           const DisplaySettings &settings,
+                           bool developer) {
     const uint32_t dark = 0xFF000000U;
     const uint32_t light = 0xFFFFFFFFU;
     screen.assign(static_cast<size_t>(width) * height, light);
@@ -1715,9 +1778,9 @@ void draw_display_settings(std::vector<uint32_t> &screen, unsigned width,
                "DISPLAY SETTINGS", 6, dark);
     const int left = width * 8 / 100;
     const int right = width * 92 / 100;
-    const int half_height = height * 4 / 100;
-    const unsigned centers[] = {24U, 40U, 56U, 72U};
-    const std::string rows[] = {
+    const int half_height = height * (developer ? 3 : 4) / 100;
+    const unsigned developer_centers[] = {22U, 35U, 48U, 61U, 74U};
+    const std::string developer_rows[] = {
         std::string("REFRESH TYPE  ") +
             display_refresh_policy_name(settings.refresh_policy),
         std::string("FULL REFRESH  ") +
@@ -1725,9 +1788,21 @@ void draw_display_settings(std::vector<uint32_t> &screen, unsigned width,
         std::string("GRID EFFECT  ") +
             (settings.grid_effect ? "ON" : "OFF"),
         std::string("BICHROME  ") +
-            bichrome_threshold_name(settings.bichrome_threshold)
+            bichrome_threshold_name(settings.bichrome_threshold),
+        std::string("TARGET REFRESH  ") +
+            target_refresh_rate_name(settings.target_refresh_quarters)
     };
-    for (unsigned i = 0U; i < 4U; ++i) {
+    const unsigned user_centers[] = {36U, 60U};
+    const std::string user_rows[] = {
+        std::string("FULL REFRESH  ") +
+            full_refresh_frequency_name(settings.full_refresh_seconds),
+        std::string("GRID EFFECT  ") +
+            (settings.grid_effect ? "ON" : "OFF")
+    };
+    const unsigned *centers = developer ? developer_centers : user_centers;
+    const std::string *rows = developer ? developer_rows : user_rows;
+    const unsigned count = developer ? 5U : 2U;
+    for (unsigned i = 0U; i < count; ++i) {
         const int center = height * centers[i] / 100;
         fill_rectangle(screen, width, height, left, center - half_height,
                        right, center + half_height, dark);
@@ -2085,7 +2160,7 @@ int main(int argc, char **argv) {
     try {
         const Options options = parse_options(argc, argv);
         const bool supervised = std::getenv("KOBOY_SUPERVISED") != 0;
-        const bool developer = false;
+        const bool developer = file_exists(kDeveloperFlag);
         const bool diagnostics = file_exists(kDiagnosticsFlag);
         const bool no_gameplay_refresh =
             file_exists(kNoGameplayRefreshFlag);
@@ -2262,7 +2337,8 @@ int main(int argc, char **argv) {
                                settings_action != koboy::UI_LIST_CANCEL) {
                             draw_display_settings(screen, screen_width,
                                                   screen_height,
-                                                  display_settings);
+                                                  display_settings,
+                                                  developer);
                             framebuffer.draw_screen(screen);
                             refresh_menu_screen(framebuffer, input, marker++,
                                                 diagnostics, false);
@@ -2270,6 +2346,8 @@ int main(int argc, char **argv) {
                             while (!interrupted &&
                                    settings_action == koboy::UI_NONE) {
                                 settings_action = input.take_ui_action(
+                                    developer ?
+                                    koboy::UI_SCREEN_DISPLAY_SETTINGS_DEVELOPER :
                                     koboy::UI_SCREEN_DISPLAY_SETTINGS);
                                 if (settings_action == koboy::UI_NONE)
                                     usleep(20000);
@@ -2287,6 +2365,9 @@ int main(int argc, char **argv) {
                             else if (settings_action ==
                                      koboy::UI_SETTING_BICHROME)
                                 cycle_bichrome_threshold(display_settings);
+                            else if (settings_action ==
+                                     koboy::UI_SETTING_TARGET_REFRESH)
+                                cycle_target_refresh_rate(display_settings);
                             if (settings_action != koboy::UI_LIST_CANCEL) {
                                 save_display_settings(display_settings);
                                 settings_action = koboy::UI_NONE;
@@ -2446,7 +2527,8 @@ int main(int argc, char **argv) {
             koboy::scale_rgb32_grayscale(
                 rgb, core.video_width(), core.video_height(),
                 effective_scale, scaled, display_settings.grid_effect);
-            apply_bichrome(scaled, display_settings.bichrome_threshold);
+            apply_bichrome(scaled, framebuffer.viewport().width,
+                            display_settings.bichrome_threshold);
             for (std::size_t i = 0; i < a2_markers.size(); ++i) {
                 last_wait_seconds =
                     framebuffer.wait_for_update(a2_markers[i]);
@@ -2673,10 +2755,15 @@ int main(int argc, char **argv) {
             if (submitted_refresh)
                 ++displayed_frames;
             const double after_refresh = monotonic_seconds();
-            next_display += kFastRefreshInterval;
-            if (next_display < after_refresh)
+            if (display_settings.target_refresh_quarters) {
+                next_display += 4.0 /
+                    display_settings.target_refresh_quarters;
+                if (next_display < after_refresh)
+                    next_display = after_refresh;
+                sleep_until(next_display);
+            } else {
                 next_display = after_refresh;
-            sleep_until(next_display);
+            }
         }
 
         for (std::size_t i = 0; i < a2_markers.size(); ++i)
