@@ -18,8 +18,7 @@ Ko Boy is a Game Boy, Game Boy Color, Game Boy Advance, and Mega Duck player for
 
 Ko Boy has been developed and tested primarily on the MediaTek-based Kobo Clara BW. The build produces an early user-installable KoboRoot archive; support outside the tested device remains unverified. No ROMs are included.
 
-- [Ko Boy usage and launcher setup](docs/koboy.md)
-- [Ko Boy port plan and technical details](docs/koboy-port-plan.md)
+- [Ko Boy guide, technical details, and release status](docs/readme.KOBOY.md)
 
 ## Building
 

@@ -1,4 +1,4 @@
-# EWDB for Kobo
+# eWaste Debug Bridge Daemon (EWDB) for Kobo
 
 ## Scope and security model
 
