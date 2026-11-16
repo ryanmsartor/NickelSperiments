@@ -6,18 +6,6 @@ but each Speriment has its own purpose, maturity, and deliverables.
 
 ## Speriments
 
-### NickelRefresh
-
-NickelRefresh is an opt-in Nickel plugin for measuring sustained e-paper
-refresh requests. It exercises standard Kobo waveform modes at several target
-rates, records request timing, and displays a small test patch suitable for
-high-speed-camera analysis.
-
-NickelRefresh is intended as a measurement tool, not as a permanent display
-configuration or general refresh-rate modification.
-
-[NickelRefresh usage and technical details](docs/nickelrefresh.md)
-
 ### EWDB for Kobo
 
 The EWDB package provides root ADB access over USB on supported Kobo devices.
@@ -26,8 +14,7 @@ Kobo's normal USB-storage mode when the user accepts Nickel's storage prompt.
 Physical USB access is the trust boundary; connected hosts are not
 authenticated.
 
-This Speriment currently targets the tested MediaTek-based Kobo Clara BW and
-is packaged separately from NickelRefresh.
+This Speriment currently targets the tested MediaTek-based Kobo Clara BW.
 
 - [Kobo USB ADB investigation and technical details](docs/kobo-adb-investigation.md)
 

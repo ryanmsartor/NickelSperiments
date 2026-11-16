@@ -84,10 +84,10 @@ gnueabihf-g++` is absent, the Makefile retains that normal behavior and uses
 `arm-nickel-linux-gnueabihf-g++` from `PATH` for both compilation and linking.
 
 The direct linker helper is intentionally limited to this repository's
-non-LTO Gambatte targets and accepts only object files, archives, an output
+non-LTO Ko Boy targets and accepts only object files, archives, an output
 path, and the two configured static-runtime flags. It is not a general
-replacement for the full NickelTC driver or the Qt build used by
-NickelRefresh.
+replacement for the full NickelTC driver or the Qt build used by Ko Boy's
+Nickel lifecycle plugin.
 
 ## Reinstalling
 

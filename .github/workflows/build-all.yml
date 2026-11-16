@@ -22,14 +22,6 @@ jobs:
     with:
       release_tag: ${{ inputs.release_tag }}
 
-  nickelrefresh:
-    name: Build NickelRefresh
-    permissions:
-      contents: write
-    uses: ./.github/workflows/build-nickelrefresh.yml
-    with:
-      release_tag: ${{ inputs.release_tag }}
-
   ewdb:
     name: Build EWDB
     permissions:
