@@ -35,6 +35,7 @@ namespace {
 
 const char *const kKoBoyRoot = "/mnt/onboard/KoBoy";
 const char *const kKoBoyRomDirectory = "/mnt/onboard/KoBoy/Roms";
+const char *const kKoBoyBiosDirectory = "/mnt/onboard/KoBoy/BIOS";
 const char *const kKoBoyStateDirectory = "/mnt/onboard/KoBoy/States";
 const char *const kKoBoySaveDirectory = "/mnt/onboard/KoBoy/Saves";
 const char *const kSystemFoldersInitialized =
@@ -2202,6 +2203,8 @@ int main(int argc, char **argv) {
         RefreshSettings refresh_settings;
         DisplaySettings display_settings;
         load_display_settings(display_settings);
+        ensure_directory(kKoBoyRoot);
+        ensure_directory(kKoBoyBiosDirectory);
         std::unique_ptr<koboy::EmulatorCore> selected_core =
             koboy::create_default_core();
         koboy::EmulatorCore &core = *selected_core;

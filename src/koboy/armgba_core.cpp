@@ -58,7 +58,7 @@ static bool environment_callback(unsigned command, void *data) {
     if (!active_core)
         return false;
     ArmGbaCore::Impl &impl = *active_core->impl_;
-    static const char *const system_directory = "/mnt/onboard/KoBoy/System";
+    static const char *const system_directory = "/mnt/onboard/KoBoy/BIOS";
     static const char *const save_directory = "/mnt/onboard/KoBoy/Saves";
     switch (command) {
         case RETRO_ENVIRONMENT_SET_PIXEL_FORMAT:
@@ -71,6 +71,20 @@ static bool environment_callback(unsigned command, void *data) {
         case RETRO_ENVIRONMENT_GET_SAVE_DIRECTORY:
             *static_cast<const char **>(data) = save_directory;
             return true;
+        case RETRO_ENVIRONMENT_GET_VARIABLE: {
+            retro_variable *variable = static_cast<retro_variable *>(data);
+            if (!variable || !variable->key)
+                return false;
+            if (std::strcmp(variable->key, "armgba_skip_bios") == 0)
+                variable->value = "disabled";
+            else if (std::strcmp(variable->key, "armgba_bios") == 0)
+                variable->value = "nintendo";
+            else if (std::strcmp(variable->key, "armgba_gb_boot_rom") == 0)
+                variable->value = "enabled";
+            else
+                return false;
+            return true;
+        }
         case RETRO_ENVIRONMENT_GET_LOG_INTERFACE:
             static_cast<retro_log_callback *>(data)->log = core_log;
             return true;

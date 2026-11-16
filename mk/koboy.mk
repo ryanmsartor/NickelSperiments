@@ -39,6 +39,7 @@ koboy-package: koboy koboy-supervisor
 	$(MAKE) koboy-lifecycle
 	rm -rf $(KOBOY_PACKAGE_ROOT)
 	install -d $(KOBOY_PACKAGE_ROOT)/mnt/onboard/.adds/koboy/LICENSES
+	install -d $(KOBOY_PACKAGE_ROOT)/mnt/onboard/KoBoy/BIOS
 	install -d "$(KOBOY_PACKAGE_ROOT)/mnt/onboard/KoBoy/Roms/Game Boy"
 	install -d "$(KOBOY_PACKAGE_ROOT)/mnt/onboard/KoBoy/Roms/Game Boy Color"
 	install -d "$(KOBOY_PACKAGE_ROOT)/mnt/onboard/KoBoy/Roms/Game Boy Advance"

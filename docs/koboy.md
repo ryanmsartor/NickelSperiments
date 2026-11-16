@@ -39,6 +39,25 @@ Ko Boy's frontend depends on a small core-neutral interface for ROM loading, fra
 
 armGBA is pinned as the `deps/armgba` submodule at revision `42f7903f`. The `ArmGbaCore` adapter implements the same interface through armGBA's libretro API, including dynamic GB/GBA video formats, input, reset, states, and save RAM. The adapter and armGBA's ARMv7/NEON/JIT core compile with NickelTC; the remaining libretro support sources also compile except optional CPU LCD effects. That source requires a newer compiler's `__builtin_convertvector`; Ko Boy does its own display processing, so `armgba_lcd_compat.c` supplies a no-effects pass-through layer rather than modifying the pinned dependency. armGBA's bundled GB/GBC backend and archive dependencies compile as part of the player. Ko Boy links the complete backend and obtains it through the core factory. GB, Mega Duck, and GBA games have all reached on-device execution; broader GBC/GBA compatibility and long-session GBA stability remain release-validation work.
 
+## BIOS selection
+
+Ko Boy deterministically enables boot ROMs and asks armGBA to use recognized
+external images from `/mnt/onboard/KoBoy/BIOS/`. When an appropriate image is
+missing or unusable, armGBA's built-in open-source boot ROM is used instead.
+There is no UI setting and BIOS intros are not skipped.
+
+Recognized filenames are:
+
+- `gba_bios.bin` for Game Boy Advance.
+- `gb_bios.bin` or `dmg_boot.bin` for Game Boy.
+- `gbc_bios.bin` or `cgb_boot.bin` for Game Boy Color.
+- `cgb_agb_boot.bin`, `cgb_agb0_boot.bin`, or `agb_boot.bin` for Game Boy
+  games running in the Game Boy Advance model.
+- `mgb_boot.bin` for Game Boy Pocket.
+
+The install package creates the BIOS directory but does not distribute any
+proprietary BIOS images.
+
 ## Refresh scheduling
 
 Gameplay uses regularly paced A2 updates plus one of four global cleanup policies. The default target is 10 Hz; developer mode also offers 10.25, 10.5, 10.75, 11, 11.25, and 11.5 Hz, plus Unlimited. Settings persist in `KoBoy/display.conf` and currently apply to every game.
@@ -131,7 +150,6 @@ Initial implementation should retain an occasional full-viewport slowest refresh
 - Nested folders below each system in the game library.
 - Maximum emulation-speed (alternative to fast forward).
 - Advanced core-option settings.
-    - BIOS selection - armgba native or user-supplied.
     - RTC (Real-Time Clock) emulation settings.
 - Per-game display profiles.
 - Solar level and tilt mappings for games that need them.
