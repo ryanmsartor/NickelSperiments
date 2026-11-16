@@ -8,6 +8,9 @@
 #include "framebuffer_backend.h"
 #include "touch_input.h"
 
+#include <file/archive_file.h>
+#include <lists/string_list.h>
+
 #include <algorithm>
 #include <cerrno>
 #include <cctype>
@@ -578,6 +581,19 @@ unsigned parse_unsigned(const char *value, const char *option) {
 }
 
 std::vector<unsigned char> read_file(const char *path) {
+    if (std::strchr(path, '#')) {
+        void *contents = 0;
+        int64_t size = 0;
+        if (!file_archive_compressed_read(path, &contents, 0, &size) ||
+            !contents || size <= 0 || size > static_cast<int64_t>(UINT_MAX)) {
+            std::free(contents);
+            throw std::runtime_error("cannot read a supported ROM from archive");
+        }
+        const unsigned char *begin = static_cast<unsigned char *>(contents);
+        std::vector<unsigned char> data(begin, begin + size);
+        std::free(contents);
+        return data;
+    }
     std::ifstream input(path, std::ios::binary | std::ios::ate);
     if (!input)
         throw std::runtime_error(std::string("cannot open ROM: ") + path);
@@ -590,6 +606,24 @@ std::vector<unsigned char> read_file(const char *path) {
     if (!input)
         throw std::runtime_error("failed to read complete ROM");
     return data;
+}
+
+std::string loadable_rom_path(const std::string &path) {
+    if (path.size() < 4U || path[path.size() - 4U] != '.' ||
+        std::tolower(static_cast<unsigned char>(path[path.size() - 3U])) != 'z' ||
+        std::tolower(static_cast<unsigned char>(path[path.size() - 2U])) != 'i' ||
+        std::tolower(static_cast<unsigned char>(path[path.size() - 1U])) != 'p')
+        return path;
+
+    struct string_list *entries = file_archive_get_file_list(
+        path.c_str(), "gb|gbc|gba|bin|duck|md0|md1|md2|md20s|md25s");
+    if (!entries || entries->size == 0U) {
+        string_list_free(entries);
+        throw std::runtime_error("ZIP contains no supported ROM");
+    }
+    const std::string member(entries->elems[0].data);
+    string_list_free(entries);
+    return path + "#" + member;
 }
 
 bool ensure_directory(const char *path) {
@@ -1268,7 +1302,7 @@ bool is_supported_rom(const std::string &name) {
     const std::string folded = lowercase(name);
     const char *const extensions[] = {
         ".gb", ".gbc", ".gb2", ".gba", ".gba2", ".bin", ".duck",
-        ".md0", ".md1", ".md2", ".md20s", ".md25s"
+        ".md0", ".md1", ".md2", ".md20s", ".md25s", ".zip"
     };
     for (unsigned i = 0; i < sizeof(extensions) / sizeof(extensions[0]); ++i) {
         const std::string extension(extensions[i]);
@@ -2210,9 +2244,10 @@ int main(int argc, char **argv) {
             if (!no_gameplay_refresh)
                 framebuffer.refresh_screen_gc16(marker++, true);
         }
-        std::vector<unsigned char> rom = read_file(rom_path.c_str());
+        const std::string load_path = loadable_rom_path(rom_path);
+        std::vector<unsigned char> rom = read_file(load_path.c_str());
         std::string core_error;
-        if (!core.load_rom(rom_path, rom, core_error))
+        if (!core.load_rom(load_path, rom, core_error))
             throw std::runtime_error(core_error);
         const unsigned horizontal_scale =
             framebuffer.variable_info().xres / core.video_width();
@@ -2418,9 +2453,11 @@ int main(int argc, char **argv) {
                                                 screen_height, selected);
                             framebuffer.draw_screen(screen);
                             framebuffer.refresh_screen_gc16(marker++, true);
+                            const std::string selected_load_path =
+                                loadable_rom_path(selected);
                             std::vector<unsigned char> selected_rom =
-                                read_file(selected.c_str());
-                            if (!core.load_rom(selected, selected_rom,
+                                read_file(selected_load_path.c_str());
+                            if (!core.load_rom(selected_load_path, selected_rom,
                                                core_error))
                                 throw std::runtime_error(core_error);
                             const unsigned selected_horizontal_scale =

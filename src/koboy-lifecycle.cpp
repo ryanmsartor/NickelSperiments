@@ -199,17 +199,26 @@ class KoBoyMenuEntry final : public QPushButton
             const int side = qMax(1, qRound(qMin(column.width(), column.height()) * .6));
             const QRect icon(column.center().x() - side / 2,
                              column.center().y() - side / 2, side, side);
-            const int stroke = qMax(2, side / 9);
+            const int stroke = qMax(1, side / 16);
             painter.setPen(QPen(ink, stroke, Qt::SolidLine, Qt::RoundCap,
                                 Qt::RoundJoin));
             painter.setBrush(Qt::NoBrush);
-            const int inset = stroke;
-            painter.drawRoundedRect(icon.adjusted(inset, inset, -inset, -inset),
-                                    side / 6, side / 6);
-            painter.drawLine(icon.left() + side / 3, icon.center().y(),
-                             icon.right() - side / 3, icon.center().y());
-            painter.drawLine(icon.center().x(), icon.top() + side / 3,
-                             icon.center().x(), icon.bottom() - side / 3);
+            const QRect cart = icon.adjusted(stroke + 1, stroke + 1,
+                                             -stroke - 1, -stroke - 1);
+            painter.drawRoundedRect(cart, qMax(1, side / 10),
+                                    qMax(1, side / 10));
+
+            const int ridgeY = cart.top() + cart.height() / 5;
+            painter.drawLine(cart.left() + cart.width() / 4, ridgeY,
+                             cart.right() - cart.width() / 4, ridgeY);
+
+            const QRect labelPanel(
+                cart.left() + cart.width() / 5,
+                cart.top() + cart.height() * 2 / 5,
+                cart.width() * 3 / 5,
+                cart.height() * 9 / 20);
+            painter.drawRoundedRect(labelPanel, qMax(1, side / 20),
+                                    qMax(1, side / 20));
         }
 
         painter.setFont(textFont);

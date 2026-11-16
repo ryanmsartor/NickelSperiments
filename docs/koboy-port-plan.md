@@ -158,7 +158,8 @@ review may still be appropriate before broad distribution.
 
 - No audio output.
 - No Bluetooth controller support.
-- No ZIP loading or nested ROM folders.
+- ZIP archives load the first supported ROM they contain; nested ROM folders
+  are not supported.
 - Display settings are global rather than per game.
 - Action games are constrained by e-ink latency and touch controls.
 - Compatibility outside the Clara BW is unverified.

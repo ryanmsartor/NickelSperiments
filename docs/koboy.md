@@ -11,7 +11,7 @@ Install both ARM binaries together:
 /mnt/onboard/.adds/koboy/koboy-supervisor
 ```
 
-ROMs belong in system folders immediately below `/mnt/onboard/KoBoy/Roms/`. On first use Ko Boy creates Game Boy, Game Boy Color, Game Boy Advance, and Mega Duck folders. The system browser is otherwise dynamic: adding, renaming, or removing a top-level folder changes the systems shown without Ko Boy recreating intentionally removed folders. Games live directly inside their system folder. Automatic save states are kept in `/mnt/onboard/KoBoy/States/` with the same system folders as the ROM library. Battery-backed game saves use the same mirrored layout under `/mnt/onboard/KoBoy/Saves/`. For example, `Roms/Game Boy/Tetris.gb` maps to `States/Game Boy/Tetris.gb.state0` and `Saves/Game Boy/Tetris.gb.sav`.
+ROMs belong in system folders immediately below `/mnt/onboard/KoBoy/Roms/`. On first use Ko Boy creates Game Boy, Game Boy Color, Game Boy Advance, and Mega Duck folders. The system browser is otherwise dynamic: adding, renaming, or removing a top-level folder changes the systems shown without Ko Boy recreating intentionally removed folders. Games live directly inside their system folder. A `.zip` file appears as one game and loads the first supported ROM it contains. Automatic save states are kept in `/mnt/onboard/KoBoy/States/` with the same system folders as the ROM library. Battery-backed game saves use the same mirrored layout under `/mnt/onboard/KoBoy/Saves/`. For example, `Roms/Game Boy/Tetris.gb` maps to `States/Game Boy/Tetris.gb.state0` and `Saves/Game Boy/Tetris.gb.sav`; a ZIP uses its archive filename in the same way.
 
 Run the supervisor without a ROM to open the game browser:
 
@@ -37,7 +37,7 @@ For the implementation history, device measurements, and remaining work, see the
 
 Ko Boy's frontend depends on a small core-neutral interface for ROM loading, frame production, input, reset, save states, and battery-backed save RAM. Core types stay out of the display, touch, menu, and lifecycle code, and the player obtains its backend through a factory.
 
-armGBA is pinned as the `deps/armgba` submodule at revision `6deb8f84`. The `ArmGbaCore` adapter implements the same interface through armGBA's libretro API, including dynamic GB/GBA video formats, input, reset, states, and save RAM. The adapter and armGBA's ARMv7/NEON/JIT core compile with NickelTC; the remaining libretro support sources also compile except optional CPU LCD effects. That source requires a newer compiler's `__builtin_convertvector`; Ko Boy does its own display processing, so `armgba_lcd_compat.c` supplies a no-effects pass-through layer rather than modifying the pinned dependency. armGBA's bundled GB/GBC backend and archive dependencies compile as part of the player. Ko Boy links the complete backend and obtains it through the core factory. GB, Mega Duck, and GBA games have all reached on-device execution; broader GBC/GBA compatibility and long-session GBA stability remain release-validation work.
+armGBA is pinned as the `deps/armgba` submodule at revision `42f7903f`. The `ArmGbaCore` adapter implements the same interface through armGBA's libretro API, including dynamic GB/GBA video formats, input, reset, states, and save RAM. The adapter and armGBA's ARMv7/NEON/JIT core compile with NickelTC; the remaining libretro support sources also compile except optional CPU LCD effects. That source requires a newer compiler's `__builtin_convertvector`; Ko Boy does its own display processing, so `armgba_lcd_compat.c` supplies a no-effects pass-through layer rather than modifying the pinned dependency. armGBA's bundled GB/GBC backend and archive dependencies compile as part of the player. Ko Boy links the complete backend and obtains it through the core factory. GB, Mega Duck, and GBA games have all reached on-device execution; broader GBC/GBA compatibility and long-session GBA stability remain release-validation work.
 
 ## Refresh scheduling
 
@@ -128,7 +128,6 @@ Initial implementation should retain an occasional full-viewport slowest refresh
 
 ## Deferred enhancements
 
-- Loading ROMs directly from ZIP archives.
 - Nested folders below each system in the game library.
 - Maximum emulation-speed (alternative to fast forward).
 - Advanced core-option settings.

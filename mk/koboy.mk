@@ -82,6 +82,10 @@ $(KOBOY_FB_ISOLATION_OUTPUT): $(KOBOY_FB_ISOLATION_OBJECTS)
 	@mkdir -p $(@D)
 	$(KOBO_LINK) $(KOBO_LDFLAGS) -o $@ $^
 
+$(KOBOY_OBJ_DIR)/koboy.o: src/koboy/koboy.cpp
+	@mkdir -p $(@D)
+	$(KOBO_CXX) $(ARMGBA_ARCHIVE_CPPFLAGS) $(KOBO_CXXFLAGS) -c -o $@ $<
+
 $(KOBOY_OBJ_DIR)/%.o: src/koboy/%.cpp
 	@mkdir -p $(@D)
 	$(KOBO_CXX) $(KOBO_CXXFLAGS) -c -o $@ $<
