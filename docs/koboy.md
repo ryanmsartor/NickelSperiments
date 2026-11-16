@@ -1,9 +1,10 @@
 # Ko Boy
 
-Ko Boy is the experimental Kobo Game Boy and Game Boy Color frontend in this
-repository. It is currently deployed as two adjacent executables: the player
-and a supervisor which owns framebuffer backup, crash recovery, and final
-restoration. Nickel remains running while Ko Boy exclusively owns touch input.
+Ko Boy is a Kobo Game Boy, Game Boy Color, Game Boy Advance, and Mega Duck
+player built around armGBA. It is currently deployed as two adjacent
+executables: the player and a supervisor which owns framebuffer backup, crash
+recovery, and final restoration. Nickel remains running while Ko Boy
+exclusively owns touch input.
 
 ## Device layout
 
@@ -54,10 +55,10 @@ by the selected system's alphabetically sorted games. An empty system reports
 that no games were found and retains a Back action to the system browser.
 During
 play, the Menu button pauses emulation and offers Resume Game, Save State,
-Load State, Reset Game, Select Game, and Exit to Nickel. Reset Game restarts
-the emulated system without reading or writing any state files. The manual
-entries use each game's `state1` slot, independently of its automatic `state0`
-resume slot.
+Load State, Reset Game, Select Game, Display Settings, and Exit to Nickel.
+Reset Game restarts the emulated system without reading or writing any state
+files. The manual entries use each game's `state1` slot, independently of its
+automatic `state0` resume slot.
 Selecting another game saves the current automatic state and SRAM, then clears
 the browser to a loading screen before loading the selected game's saves. The
 first actual game frame is then presented with waited full GC16 so the loading
@@ -86,11 +87,11 @@ ARMv7/NEON/JIT core compile with NickelTC; the remaining libretro support
 sources also compile except optional CPU LCD effects. That source requires a
 newer compiler's `__builtin_convertvector`; Ko Boy does its own display
 processing, so `armgba_lcd_compat.c` supplies a no-effects pass-through layer
-rather than modifying the pinned dependency. The embedded Gambatte and archive
-dependencies now compile, and `make armgba-probe` links a standalone ARM test
-executable. Ko Boy now links this complete backend and obtains it through the
-core factory. An on-device probe and player test remain required before this
-integration is ready for release.
+rather than modifying the pinned dependency. armGBA's bundled GB/GBC backend
+and archive dependencies compile as part of the player. Ko Boy links the
+complete backend and obtains it through the core factory. GB, Mega Duck, and
+GBA games have all reached on-device execution; broader GBC/GBA compatibility
+and long-session GBA stability remain release-validation work.
 
 ## Refresh scheduling
 
@@ -148,13 +149,12 @@ loading, wake, and exit retain full-screen GC16 boundaries.
 
 
 Create `/mnt/onboard/KoBoy/diagnostics` to enable durable refresh diagnostics.
-This is independent of `developer`: the experimental settings menu can remain
-available without adding gameplay logging. Release-style operation without the
-diagnostics flag avoids the additional VFAT writes, log growth, sysfs reads,
-and diagnostic timing changes.
+Display Settings remain available without this flag. Release-style operation
+without diagnostics avoids the additional VFAT writes, log growth, sysfs
+reads, and diagnostic timing changes.
 
 Entering and leaving the menu uses waited, full-screen full-update GC16 so the
-game and menu do not bleed into one another. Redraws within Refresh Settings
+game and menu do not bleed into one another. Redraws within Display Settings
 use waited, full-screen partial GC16 and never apply the selected gameplay
 waveform inside the menu. Input accumulated during an update is drained, and
 all gameplay and UI actions remain blocked until every existing contact has
@@ -162,7 +162,7 @@ been released. Exit to Nickel likewise waits for release before giving Nickel
 the touchscreen. With diagnostics enabled, each menu update writes `begin` and
 `end` records, including its marker and elapsed time, to `refresh-active.log`.
 If a wait lasts at least 4.5 seconds—close to HWTCON's five-second timeout—Ko
-Boy closes the refresh settings instead of submitting another menu update.
+Boy closes Display Settings instead of submitting another menu update.
 
 Ko Boy leaves Nickel responsible for interpreting the sleep cover and power
 button and for performing system power management. The companion
@@ -285,17 +285,27 @@ its debt, and the waveform so the heuristic can be tuned from observed results.
 Device testing must also confirm minimum dimensions, alignment requirements,
 edge artifacts, and whether waveforms spill beyond their requested rectangles.
 
-## Deferred work
+## Remaining release work
 
-- Implement the ability to load ROMs directly from ZIP archives.
-- Subfolder handling in the game library.
-- Add (max) emulation speed setting.
-- Core options config, whether in-UI or just by editing a text file.
-- Bluetooth audio?
-- Bluetooth controllers?
-- Can Ko Boy become a libretro frontend and leverage existing cores for broader console support?
-- Update build scripts to call it by proper name, and output the full user-installable package.
+- Produce a complete, reversible KoboRoot installation package.
+- Validate install, upgrade, firmware-upgrade, and uninstall behavior without
+  removing user ROMs, saves, states, or configuration.
+- Exercise representative GB, GBC, GBA, and Mega Duck software in longer
+  sessions, with additional focus on GBA stability and save compatibility.
+- Publish supported-device scope, known limitations, source availability, and
+  acknowledgements with the first release.
 
-beyond koboy:
-- Whole LEGAL.md in the repo.
-- Special thanks section to upstream projects and contributors whose work has enabled or inspired Ko Boy.
+## Deferred enhancements
+
+- Loading ROMs directly from ZIP archives.
+- Bichrome mode that could pair with lazy refresh mode.
+- Nested folders below each system in the game library.
+- Maximum emulation-speed (alternative to fast forward).
+- Advanced core-option settings.
+    - BIOS selection - armgba native or user-supplied.
+    - RTC (Real-Time Clock) emulation settings.
+- Per-game display profiles.
+- Solar level and tilt mappings for games that need them.
+- Bluetooth audio and physical controller support.
+- Additional libretro-compatible systems where the hardware and e-ink display
+  make them practical.

@@ -28,7 +28,8 @@ Copyright remains with their respective authors.
 | Component | License copy | Source in this repository |
 |---|---|---|
 | Ko Boy original code | [GPLv2](GPL-2.0.txt) | `src/koboy`, `mk/koboy.mk`, and `mk/koboy-lifecycle.mk` |
-| armGBA | [GPLv2](GPL-2.0.txt) | `deps/armgba` |
+| armGBA combined distribution | [GPLv2](GPL-2.0.txt) | `deps/armgba` |
+| armGBA native core and libretro glue | [MPL 2.0](MPL-2.0.txt) | `deps/armgba/src` and `deps/armgba/libretro` |
 | Gambatte-derived GB/GBC implementation included by armGBA | [GPLv2](GPL-2.0.txt) | `deps/armgba/gambatte` |
 | Mega Duck support included by armGBA | [Expat](EXPAT.txt) | `deps/armgba/libretro/megaduck` |
 | libretro API and libretro-common support code | [MIT](MIT.txt) | `deps/armgba/libretro/deps/libretro-common` |
@@ -41,6 +42,7 @@ to be copied into the release package with it. In the source tree, their
 authoritative upstream texts and notices currently include:
 
 - `deps/armgba/LICENSE`
+- `deps/armgba/LICENSES/MPL-2.0.txt`
 - `deps/armgba/gambatte/COPYING`
 - `deps/armgba/libretro/megaduck/LICENSE`
 - `deps/NickelHook/LICENSE`

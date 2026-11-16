@@ -33,16 +33,15 @@ is packaged separately from NickelRefresh.
 
 ### Ko Boy
 
-Ko Boy is an experimental Game Boy, Game Boy Color, Game Boy Advance, and Mega
-Duck player based on armGBA. The current work explores emulation performance, MediaTek e-paper
-presentation, touch controls, and recovery from player crashes.
+Ko Boy is a Game Boy, Game Boy Color, Game Boy Advance, and Mega Duck player
+for Kobo e-readers, built around armGBA. It combines full-speed emulation with
+an e-ink-specific display scheduler, touchscreen controls, an on-device game
+browser, persistent saves and states, suspend handling, and supervised return
+to Nickel after normal or abnormal termination.
 
-Its components range from a headless feasibility benchmark to a ROM-driven
-display prototype and supervisor. The player includes touch controls and an
-on-device game browser available both at startup and from the in-game menu.
-Games can be resumed or switched, and the player can return safely to Nickel.
-Ko Boy remains a developer prototype rather than an installable end-user
-package. No ROMs are included.
+Ko Boy has been developed and tested primarily on the MediaTek-based Kobo
+Clara BW. It is not yet distributed as an end-user installation package. No
+ROMs are included.
 
 - [Ko Boy usage and launcher setup](docs/koboy.md)
 - [Ko Boy port plan and technical details](docs/koboy-port-plan.md)
