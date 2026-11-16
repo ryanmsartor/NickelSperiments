@@ -94,33 +94,33 @@ integration is ready for release.
 
 ## Refresh scheduling
 
-Gameplay uses only A2 and full GC16. A2 targets a steady 10 Hz cadence across
-the game viewport. Ko Boy measures frame-change debt independently for each
-32-by-32 cell. Once per second it selects up to four highest-debt contiguous
-rectangles of dirty cells and starts full-waveform GC16 cleanups for those
-rectangles. While GC16 owns them, the newest A2 frame continues through
-coalesced rectangles covering the remaining cells. Framebuffer writes follow
-the same partition so active GC16 cells are not modified underneath the
-controller.
+Gameplay uses A2 at a steady 10 Hz cadence plus one of three global cleanup
+policies selected from the in-game Display Settings submenu. Settings persist
+in `KoBoy/display.conf` and currently apply to every game.
 
-This replaces the former developer-configurable fast, slow, and slowest tiers.
-Menus, loading, wake, and exit retain full-screen GC16 boundaries.
-Removing the developer flag hides the menu on the next launch but preserves
-the selected configuration. Delete `refresh.conf` to restore the defaults:
-A2 at 10.5 Hz, DU at 2 Hz for the slow tier, and full-update GC16 for every
-fifth slow refresh.
+Adaptive is the default. Ko Boy measures frame-change debt independently in
+fixed 16-by-16 framebuffer cells. On each 10 Hz display tick it may start
+full-waveform GC16
+or DU cleanups for up to five highest-debt contiguous rectangles of dirty
+cells, with at most twenty cleanups active at once. This staggers cleanup starts
+instead of blinking a whole batch simultaneously. While a cleanup owns those
+cells, the newest A2 frame continues through coalesced rectangles covering the
+remainder. Framebuffer writes follow the same partition so active cleanup cells
+are not modified underneath the controller.
 
-Settings updates are synchronized through `refresh.conf.tmp`, while the prior
-valid configuration is retained as `refresh.conf.bak`. At startup Ko Boy uses
-the first complete, valid file in that order: `refresh.conf`, the temporary
-file, then the backup. This permits recovery if the Kobo resets while writing
-its FAT storage.
+Intermediate issues GC16 for up to eight highest-debt contiguous rectangles at
+2 Hz, combining adjacent dirty 16-by-16 cells. Conservative accumulates all
+affected cells into one aligned bounding rectangle and issues one GC16 at 1 Hz.
+Intermediate ignores pure black-to-white and white-to-black motion so A2 can
+continue covering those cells without GC16. Its cleanup debt includes only
+transitions involving gray. Conservative remains intentionally broad. Neither
+simpler policy uses DU.
 
-Immediately before a refresh configuration becomes active, Ko Boy appends it
-to `/mnt/onboard/KoBoy/refresh-active.log` and synchronizes the entry to disk.
-After a watchdog reset, the final complete line identifies the refresh types
-and frequencies that were active. The log uses monotonic uptime rather than a
-wall-clock timestamp because the Kobo clock may not yet be synchronized.
+Full Refresh Frequency can be Off, 2, 5, 10, 15, 30, or 60 seconds. When due,
+the full-screen GC16 drains active cleanups and replaces that tick's policy
+cleanup. Grid Effect draws a one-pixel white divider between logical emulated
+pixels before output reaches the framebuffer. Both default to Off. Menus,
+loading, wake, and exit retain full-screen GC16 boundaries.
 
 Create `/mnt/onboard/KoBoy/diagnostics` to enable durable refresh diagnostics.
 This is independent of `developer`: the experimental settings menu can remain
@@ -215,10 +215,9 @@ Nickel. Stopping Nickel is intentionally avoided: device testing showed that a
 
 ## Targeted cleanup refreshes
 
-The implementation accumulates debt independently for aligned 32-by-32 cells
-from scaled frame differences. It is intentionally conservative while device
-tests establish the controller's behavior for simultaneous non-overlapping A2
-and GC16 regions.
+Adaptive and Intermediate accumulate debt in fixed aligned 16-by-16 framebuffer
+cells. Device tests establish the controller's behavior for simultaneous
+non-overlapping A2, DU, and GC16 regions at these boundaries.
 
 The framebuffer cannot reveal which physical e-ink pixels still retain a
 visible prior image; it contains only the image Ko Boy intended to display.
@@ -228,12 +227,30 @@ debt according to the number and magnitude of pixel changes, repeated dark-to-
 light transitions, time since its last cleanup, and the waveform used for that
 cleanup. Stronger waveforms should reduce more debt than weaker ones.
 
-When a cleanup becomes due, Ko Boy finds the highest-debt rectangles composed
-entirely of adjacent dirty cells and issues up to four rectangular HWTCON
-updates. This lets one update clean a large contiguous changed area without
-bridging clean gaps merely because they lie inside a global bounding rectangle.
-The cap limits concurrent controller work, and cells not selected retain their
-debt for later cleanup.
+On each display tick, Ko Boy finds the highest-debt rectangles composed
+entirely of adjacent dirty cells and starts up to five rectangular HWTCON
+updates while fewer than twenty older cleanups remain active. This lets one
+update clean a large contiguous changed area without bridging clean gaps merely
+because they lie inside a global bounding rectangle. Active rectangles cannot
+be selected again, and cells not selected retain their debt for later cleanup.
+
+Debt is classified by the intended grayscale transition. A destination gray
+level requires GC16. A transition from gray to pure black or white requires DU.
+Pure black/white motion under A2, such as a black sprite crossing a white
+background, accumulates only a low aging charge and does not immediately
+request cleanup. Eight tile-equivalents of such endpoint motion make a cell
+eligible for an eventual DU cleanup. GC16 rectangles are selected before DU
+rectangles because they require accurate grayscale output; either waveform
+clears the weaker debt it supersedes in the cells it cleans.
+
+GC16 cleanup is also stability-gated. Debt continues accumulating while a cell
+is changing, but the cell normally becomes eligible only after remaining
+unchanged for two 10 Hz display snapshots. This lets scrolling finish before
+GC16 cleans the settled image instead of repeatedly flashing background
+segments that immediately move again. A debt equivalent to four complete
+maximum-range tile transitions bypasses the stability gate so sustained motion
+cannot defer cleanup indefinitely. DU does not use the stability gate because
+its endpoint repair is less visually disruptive.
 
 Initial implementation should retain an occasional full-viewport slowest
 refresh as a safety net. Its interval can be increased only after device tests

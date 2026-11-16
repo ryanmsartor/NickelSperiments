@@ -247,6 +247,13 @@ double FramebufferBackend::refresh_du(uint32_t marker,
                   wait_for_completion, viewport_);
 }
 
+double FramebufferBackend::refresh_du_region(
+        const Viewport &region, uint32_t marker, bool wait_for_completion) {
+    const Viewport absolute = absolute_region(region);
+    return submit(HWTCON_WAVEFORM_DU, HWTCON_UPDATE_PARTIAL, marker,
+                  wait_for_completion, absolute);
+}
+
 double FramebufferBackend::refresh_gl16(uint32_t marker,
                                         bool wait_for_completion) {
     return submit(HWTCON_WAVEFORM_GL16, HWTCON_UPDATE_PARTIAL, marker,

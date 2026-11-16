@@ -63,7 +63,8 @@ void scale_rgb32_grayscale(const std::vector<uint32_t> &source,
                            unsigned source_width,
                            unsigned source_height,
                            unsigned scale,
-                           std::vector<uint32_t> &destination) {
+                           std::vector<uint32_t> &destination,
+                           bool grid_effect) {
     if (source_width == 0U || source_height == 0U ||
         source.size() != static_cast<std::size_t>(source_width) * source_height)
         throw std::runtime_error("source frame dimensions do not match data");
@@ -85,8 +86,14 @@ void scale_rgb32_grayscale(const std::vector<uint32_t> &source,
             for (unsigned dy = 0; dy < scale; ++dy) {
                 uint32_t *row = &destination[(source_y * scale + dy) * width +
                                              source_x * scale];
-                for (unsigned dx = 0; dx < scale; ++dx)
-                    row[dx] = pixel;
+                for (unsigned dx = 0; dx < scale; ++dx) {
+                    const bool vertical_grid = grid_effect &&
+                        dx + 1U == scale && source_x + 1U < source_width;
+                    const bool horizontal_grid = grid_effect &&
+                        dy + 1U == scale && source_y + 1U < source_height;
+                    row[dx] = vertical_grid || horizontal_grid ?
+                        0xFFFFFFFFU : pixel;
+                }
             }
         }
     }

@@ -36,6 +36,8 @@ public:
     double refresh_a2_region(const Viewport &region, uint32_t marker,
                              bool wait_for_completion = false);
     double refresh_du(uint32_t marker, bool wait_for_completion);
+    double refresh_du_region(const Viewport &region, uint32_t marker,
+                             bool wait_for_completion = false);
     double refresh_gl16(uint32_t marker, bool wait_for_completion);
     double refresh_gc16_partial(uint32_t marker, bool wait_for_completion);
     double refresh_gc16(uint32_t marker, bool wait_for_completion);
