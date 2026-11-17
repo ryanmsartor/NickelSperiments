@@ -35,3 +35,7 @@ Then reboot the Kobo. The program files and Nickel integration are removed
 during startup. Everything under /mnt/onboard/KoBoy remains in place.
 
 License texts and third-party notices are in the adjacent LICENSES directory.
+The exact corresponding source for this release, including its build scripts
+and pinned dependencies, is available from the matching release tag at:
+
+  https://github.com/ryanmsartor/NickelSperiments

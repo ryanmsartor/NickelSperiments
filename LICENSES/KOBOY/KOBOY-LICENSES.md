@@ -12,7 +12,7 @@ Ko Boy is free software: you may redistribute it and/or modify it under the term
 
 Ko Boy is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for details.
 
-A release containing this document must also contain the complete text of the GNU General Public License version 2 as [GPL-2.0.txt](GPL-2.0.txt). The exact corresponding source for a release, including build scripts and pinned submodule revisions, must be made available under the GPL.
+A release containing this document must also contain the complete text of the GNU General Public License version 2 as [GPL-2.0.txt](GPL-2.0.txt). The exact corresponding source for each release, including build scripts and pinned submodule revisions, is available from the release tag in the [NickelSperiments source repository](https://github.com/ryanmsartor/NickelSperiments). The submodule revisions recorded by that tag identify the exact armGBA, armNES, and NickelHook sources used for its binaries.
 
 ## Included third-party software
 
@@ -28,6 +28,12 @@ Ko Boy is linked with or built from the following third-party components. Copyri
 | libretro API and libretro-common support code | [MIT](MIT.txt) | `deps/armgba/libretro/deps/libretro-common` |
 | LZMA SDK / 7-Zip decoder source | [Public-domain notices](PUBLIC-DOMAIN-NOTICES.txt) | `deps/armgba/libretro/deps/7zip` |
 | Solar Designer MD5 implementation | [Public-domain notices](PUBLIC-DOMAIN-NOTICES.txt) | `deps/armgba/libretro/deps/libretro-common/utils/md5.c` |
+| armNES combined core | [GPLv2](GPL-2.0.txt) | `deps/armnes` |
+| TriCNES-derived PPU and APU code included by armNES | [MIT](MIT.txt) | `deps/armnes/src/ppu.c` and `deps/armnes/src/apu.c` |
+| emu2413 VRC7 sound implementation included by armNES | [MIT](MIT.txt) | `deps/armnes/src/sound/emu2413.c` |
+| FCEUmm-derived boards and mapping code included by armNES | [GPLv2](GPL-2.0.txt) | `deps/armnes/src/fceu` and related board implementations |
+| MAME-derived VS. System and PlayChoice-10 chip-layout data included by armNES | [BSD 3-Clause](BSD-3-Clause.txt) | `deps/armnes/src/arcade-sets.inc` |
+| libretro-common and LZMA SDK support code included by armNES | [MIT](MIT.txt) and [public-domain notices](PUBLIC-DOMAIN-NOTICES.txt) | `deps/armnes/libretro/deps` |
 | NickelHook launcher/lifecycle integration | [MIT](MIT.txt) | `deps/NickelHook` |
 | NickelModManager More-screen integration pattern | [MIT](MIT.txt) | adapted in `src/koboy-lifecycle.cpp` |
 
@@ -37,6 +43,10 @@ The files named above live beside this document in `LICENSES/KOBOY/` and are int
 - `deps/armgba/LICENSES/MPL-2.0.txt`
 - `deps/armgba/gambatte/COPYING`
 - `deps/armgba/libretro/megaduck/LICENSE`
+- `deps/armnes/LICENSE`
+- `deps/armnes/LICENSES/MIT.txt`
+- `deps/armnes/LICENSES/MIT-emu2413.txt`
+- the BSD 3-Clause notices on the MAME sources identified by `deps/armnes/src/arcade-sets.inc`
 - `deps/NickelHook/LICENSE`
 - the MIT notices embedded in libretro-common source and header files
 - the public-domain notices embedded in the LZMA SDK / 7-Zip source files

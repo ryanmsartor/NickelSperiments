@@ -72,6 +72,7 @@ koboy-package: koboy koboy-supervisor armgba-core armnes-core
 	install -m644 LICENSES/KOBOY/KOBOY-LICENSES.md \
 		LICENSES/KOBOY/GPL-2.0.txt LICENSES/KOBOY/MPL-2.0.txt \
 		LICENSES/KOBOY/MIT.txt LICENSES/KOBOY/EXPAT.txt \
+		LICENSES/KOBOY/BSD-3-Clause.txt \
 		LICENSES/KOBOY/PUBLIC-DOMAIN-NOTICES.txt \
 		$(KOBOY_PACKAGE_ROOT)/mnt/onboard/.adds/koboy/LICENSES/
 	tar --owner=0 --group=0 --numeric-owner -C $(KOBOY_PACKAGE_ROOT) \
@@ -86,7 +87,7 @@ koboy-package: koboy koboy-supervisor armgba-core armnes-core
 		grep -q 'ELF 32-bit.*shared object, ARM'
 	file $(KOBOY_PACKAGE_ROOT)/usr/local/Kobo/imageformats/libkoboylifecycle.so | \
 		grep -q 'ELF 32-bit.*shared object, ARM'
-	test "$$(tar -tzf $(KOBOY_PACKAGE) | grep -c '^./mnt/onboard/.adds/koboy/LICENSES/[^/][^/]*$$')" -eq 6
+	test "$$(tar -tzf $(KOBOY_PACKAGE) | grep -c '^./mnt/onboard/.adds/koboy/LICENSES/[^/][^/]*$$')" -eq 7
 	cd build && sha256sum $$(basename $(KOBOY_PACKAGE)) > \
 		$$(basename $(KOBOY_PACKAGE_CHECKSUM))
 

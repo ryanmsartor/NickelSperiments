@@ -202,7 +202,7 @@ Stopping Nickel for approximately one watchdog interval can reboot the reader, s
 - Confirm that diagnostics remain opt-in and decide whether to bound their separate breadcrumb log.
 - Publish installation instructions, supported-device scope, source availability, and known limitations with the release.
 
-Ko Boy and armGBA are distributed under GPL version 2. The release bundle must include `LICENSES/KOBOY/KOBOY-LICENSES.md` and every license file it links. Corresponding source, build scripts, and exact pinned submodule revisions must remain available for each released binary. A formal legal review may still be appropriate before broad distribution.
+Ko Boy and its combined armGBA and armNES core distributions are distributed under GPL version 2. Individual bundled components retain the compatible MPL, MIT, BSD 3-Clause, Expat, and public-domain terms identified in `LICENSES/KOBOY/KOBOY-LICENSES.md`. The release bundle must include that manifest and every license file it links. Corresponding source, build scripts, and exact pinned submodule revisions must remain available from the matching release tag for each released binary. A formal legal review may still be appropriate before broad distribution.
 
 ## Deferred enhancements
 
