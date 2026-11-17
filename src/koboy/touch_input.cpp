@@ -11,6 +11,7 @@
 #include <fcntl.h>
 #include <stdexcept>
 #include <string>
+#include <sys/time.h>
 #include <sys/ioctl.h>
 #include <unistd.h>
 
@@ -26,8 +27,10 @@ bool inside_circle(int x, int y, int center_x, int center_y, int radius) {
 } // namespace
 
 TouchInput::TouchInput(unsigned screen_width, unsigned screen_height)
-    : fd_(-1), screen_width_(screen_width), screen_height_(screen_height),
-      current_slot_(0U), physical_buttons_(0U), buttons_(0U),
+    : fd_(-1), trace_fd_(-1), screen_width_(screen_width),
+      screen_height_(screen_height),
+      current_slot_(0U), slot_protocol_(false), physical_buttons_(0U),
+      buttons_(0U),
       ui_touch_active_(false), suppress_gameplay_until_release_(false),
       shoulder_buttons_enabled_(false) {
     std::memset(&x_info_, 0, sizeof(x_info_));
@@ -36,6 +39,8 @@ TouchInput::TouchInput(unsigned screen_width, unsigned screen_height)
 }
 
 TouchInput::~TouchInput() {
+    if (trace_fd_ >= 0)
+        close(trace_fd_);
     if (fd_ >= 0) {
         ioctl(fd_, EVIOCGRAB, 0);
         close(fd_);
@@ -62,9 +67,15 @@ void TouchInput::open_device() {
     if (ioctl(fd_, EVIOCGABS(ABS_MT_POSITION_X), &x_info_) < 0 ||
         ioctl(fd_, EVIOCGABS(ABS_MT_POSITION_Y), &y_info_) < 0)
         throw std::runtime_error("cannot query touchscreen axes");
+    input_absinfo slot_info;
+    std::memset(&slot_info, 0, sizeof(slot_info));
+    slot_protocol_ = ioctl(fd_, EVIOCGABS(ABS_MT_SLOT), &slot_info) == 0;
     if (ioctl(fd_, EVIOCGRAB, 1) < 0)
         throw std::runtime_error(std::string("cannot grab touchscreen: ") +
                                  std::strerror(errno));
+    if (access("/mnt/onboard/KoBoy/touch-diagnostics", F_OK) == 0)
+        trace_fd_ = open("/tmp/koboy-touch-events.bin",
+                         O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0644);
 }
 
 int TouchInput::normalize(int value, const input_absinfo &axis,
@@ -107,12 +118,18 @@ unsigned TouchInput::hit_test(int raw_x, int raw_y) const {
     const int dpad_extent = static_cast<int>(screen_width_ * 16U / 100U);
     const int dpad_half_width = static_cast<int>(screen_width_ * 6U / 100U);
     if (dx >= -dpad_extent && dx <= dpad_extent &&
-        dy >= -dpad_extent && dy <= dpad_extent &&
-        (std::abs(dx) <= dpad_half_width ||
-         std::abs(dy) <= dpad_half_width)) {
-        if (std::abs(dx) > std::abs(dy))
-            return dx < 0 ? CORE_BUTTON_LEFT : CORE_BUTTON_RIGHT;
-        return dy < 0 ? CORE_BUTTON_UP : CORE_BUTTON_DOWN;
+        dy >= -dpad_extent && dy <= dpad_extent) {
+        const int diagonal_threshold = dpad_half_width / 2;
+        unsigned directions = 0U;
+        if (dx < -diagonal_threshold)
+            directions |= CORE_BUTTON_LEFT;
+        else if (dx > diagonal_threshold)
+            directions |= CORE_BUTTON_RIGHT;
+        if (dy < -diagonal_threshold)
+            directions |= CORE_BUTTON_UP;
+        else if (dy > diagonal_threshold)
+            directions |= CORE_BUTTON_DOWN;
+        return directions;
     }
 
     const int radius = static_cast<int>(screen_width_ * 9U / 100U);
@@ -257,6 +274,10 @@ UiAction TouchInput::ui_hit_test(int raw_x, int raw_y,
 }
 
 void TouchInput::handle(const input_event &event) {
+    if (trace_fd_ >= 0) {
+        const ssize_t ignored = write(trace_fd_, &event, sizeof(event));
+        (void)ignored;
+    }
     if (event.type == EV_KEY &&
         (event.code == BTN_TOUCH || event.code == BTN_TOOL_FINGER) &&
         event.value == 0) {
@@ -265,21 +286,59 @@ void TouchInput::handle(const input_event &event) {
          * slot data.  Treat it as authoritative so a missing/stale slot
          * release cannot leave a Game Boy button held indefinitely.
          */
-        for (unsigned slot = 0; slot < 16U; ++slot)
+        for (unsigned slot = 0; slot < 16U; ++slot) {
             contacts_[slot].active = false;
+            contacts_[slot].primary_face_button = 0U;
+        }
     } else if (event.type == EV_ABS) {
         if (event.code == ABS_MT_SLOT) {
             if (event.value >= 0 && event.value < 16)
                 current_slot_ = static_cast<unsigned>(event.value);
         } else if (event.code == ABS_MT_TRACKING_ID) {
-            contacts_[current_slot_].active = event.value >= 0;
+            Contact &contact = contacts_[current_slot_];
+            if (event.value < 0) {
+                contact.active = false;
+                contact.primary_face_button = 0U;
+            } else {
+                if (!contact.active || contact.tracking_id != event.value)
+                    contact.primary_face_button = 0U;
+                contact.active = true;
+                contact.tracking_id = event.value;
+            }
         } else if (event.code == ABS_MT_POSITION_X) {
             contacts_[current_slot_].x = event.value;
         } else if (event.code == ABS_MT_POSITION_Y) {
             contacts_[current_slot_].y = event.value;
         }
+    } else if (event.type == EV_SYN && event.code == SYN_MT_REPORT) {
+        /*
+         * Protocol-A devices describe each contact in sequence and separate
+         * them with SYN_MT_REPORT.  Some cyttsp5 kernels misleadingly expose
+         * ABS_MT_SLOT as a capability while never emitting slot events, so
+         * the observed report format must override the capability probe.
+         */
+        slot_protocol_ = false;
+        if (current_slot_ < 16U)
+            ++current_slot_;
     } else if (event.type == EV_SYN && event.code == SYN_REPORT) {
+        if (!slot_protocol_) {
+            for (unsigned slot = current_slot_; slot < 16U; ++slot) {
+                contacts_[slot].active = false;
+                contacts_[slot].primary_face_button = 0U;
+            }
+        }
         update_buttons();
+        if (trace_fd_ >= 0) {
+            input_event parsed = event;
+            parsed.type = EV_MSC;
+            parsed.code = MSC_SERIAL;
+            parsed.value = static_cast<int>(physical_buttons_) |
+                (slot_protocol_ ? 0x40000000 : 0);
+            const ssize_t ignored = write(trace_fd_, &parsed, sizeof(parsed));
+            (void)ignored;
+        }
+        if (!slot_protocol_)
+            current_slot_ = 0U;
     }
 }
 
@@ -297,9 +356,19 @@ void TouchInput::update_buttons() {
     }
 
     unsigned updated = 0U;
+    const unsigned face_buttons = CORE_BUTTON_A | CORE_BUTTON_B;
     for (unsigned slot = 0; slot < 16U; ++slot) {
-        if (contacts_[slot].active)
-            updated |= hit_test(contacts_[slot].x, contacts_[slot].y);
+        Contact &contact = contacts_[slot];
+        if (contact.active) {
+            const unsigned hit = hit_test(contact.x, contact.y);
+            const unsigned current_face_buttons = hit & face_buttons;
+            if (contact.primary_face_button == 0U &&
+                current_face_buttons != 0U)
+                contact.primary_face_button = current_face_buttons;
+            updated |= (hit & ~face_buttons) |
+                       current_face_buttons |
+                       contact.primary_face_button;
+        }
     }
     if ((updated & (CORE_BUTTON_LEFT | CORE_BUTTON_RIGHT)) ==
         (CORE_BUTTON_LEFT | CORE_BUTTON_RIGHT))
@@ -344,6 +413,16 @@ void TouchInput::advance_frame() {
         pending_states_.pop_front();
     } else {
         buttons_ = physical_buttons_;
+    }
+    if (trace_fd_ >= 0) {
+        input_event delivered;
+        std::memset(&delivered, 0, sizeof(delivered));
+        gettimeofday(&delivered.time, 0);
+        delivered.type = EV_MSC;
+        delivered.code = MSC_SCAN;
+        delivered.value = static_cast<int>(buttons_);
+        const ssize_t ignored = write(trace_fd_, &delivered, sizeof(delivered));
+        (void)ignored;
     }
 }
 

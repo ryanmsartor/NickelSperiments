@@ -70,6 +70,8 @@ private:
         bool active;
         int x;
         int y;
+        int tracking_id;
+        unsigned primary_face_button;
     };
 
     TouchInput(const TouchInput &);
@@ -84,12 +86,14 @@ private:
     int normalize(int value, const input_absinfo &axis, unsigned extent) const;
 
     int fd_;
+    int trace_fd_;
     unsigned screen_width_;
     unsigned screen_height_;
     input_absinfo x_info_;
     input_absinfo y_info_;
     Contact contacts_[16];
     unsigned current_slot_;
+    bool slot_protocol_;
     unsigned physical_buttons_;
     unsigned buttons_;
     bool ui_touch_active_;
