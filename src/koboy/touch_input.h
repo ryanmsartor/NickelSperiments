@@ -62,6 +62,9 @@ public:
     void set_disk_controls_enabled(bool enabled) {
         disk_controls_enabled_ = enabled;
     }
+    void set_audio_controls_enabled(bool enabled) {
+        audio_controls_enabled_ = enabled;
+    }
     UiAction take_ui_action(UiScreen screen);
     unsigned buttons() const { return buttons_; }
 
@@ -104,6 +107,7 @@ private:
     bool suppress_gameplay_until_release_;
     bool shoulder_buttons_enabled_;
     bool disk_controls_enabled_;
+    bool audio_controls_enabled_;
     std::deque<unsigned> pending_states_;
 };
 

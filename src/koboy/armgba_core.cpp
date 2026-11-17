@@ -276,6 +276,7 @@ struct ArmGbaCore::Impl {
     double fps;
     unsigned buttons;
     bool loaded;
+    bool audio_enabled;
     bool capture_video;
     std::string error;
     std::vector<uint32_t> frame;
@@ -286,7 +287,7 @@ struct ArmGbaCore::Impl {
     Impl()
         : pixel_format(RETRO_PIXEL_FORMAT_XRGB8888), width(160U),
           height(144U), fps(16777216.0 / 280896.0), buttons(0U),
-          loaded(false), capture_video(true), disk(),
+          loaded(false), audio_enabled(false), capture_video(true), disk(),
           has_disk_control(false) {}
 };
 
@@ -492,7 +493,8 @@ bool ArmGbaCore::load_rom(const std::string &path,
     impl_->fps = information.timing.fps;
     impl_->audio.set_sample_rate(static_cast<unsigned>(
         information.timing.sample_rate + 0.5));
-    if (impl_->audio.volume() != 0U && bluetooth_audio_connected()) {
+    impl_->audio_enabled = bluetooth_audio_connected();
+    if (impl_->audio.volume() != 0U && impl_->audio_enabled) {
         impl_->audio.start();
         std::fputs("Ko Boy: Bluetooth audio connected\n", stderr);
     } else {
@@ -523,6 +525,10 @@ void ArmGbaCore::set_audio_volume(unsigned volume) {
     } else if (impl_->loaded && bluetooth_audio_connected()) {
         impl_->audio.start();
     }
+}
+
+bool ArmGbaCore::audio_enabled() const {
+    return impl_->audio_enabled;
 }
 
 uint64_t ArmGbaCore::audio_frames_queued() const {

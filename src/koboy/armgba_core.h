@@ -30,6 +30,7 @@ public:
                            bool capture_video);
     virtual void set_audio_paused(bool paused);
     virtual void set_audio_volume(unsigned volume);
+    virtual bool audio_enabled() const;
     virtual uint64_t audio_frames_queued() const;
     virtual uint64_t audio_frames_dropped() const;
     virtual unsigned disk_count() const;

@@ -30,7 +30,8 @@ TouchInput::TouchInput(unsigned screen_width, unsigned screen_height)
       current_slot_(0U), slot_protocol_(false), physical_buttons_(0U),
       buttons_(0U),
       ui_touch_active_(false), suppress_gameplay_until_release_(false),
-      shoulder_buttons_enabled_(false), disk_controls_enabled_(false) {
+      shoulder_buttons_enabled_(false), disk_controls_enabled_(false),
+      audio_controls_enabled_(false) {
     std::memset(&x_info_, 0, sizeof(x_info_));
     std::memset(&y_info_, 0, sizeof(y_info_));
     std::memset(contacts_, 0, sizeof(contacts_));
@@ -182,14 +183,16 @@ UiAction TouchInput::ui_hit_test(int raw_x, int raw_y,
         const int half_height = static_cast<int>(screen_height_ * 3U / 100U);
         if (x < left || x > right)
             return UI_NONE;
-        const unsigned resume_y = disk_controls_enabled_ ? 24U : 27U;
-        const unsigned state_y = disk_controls_enabled_ ? 33U : 37U;
-        const unsigned settings_y = disk_controls_enabled_ ? 42U : 47U;
-        const unsigned volume_y = disk_controls_enabled_ ? 51U : 57U;
-        const unsigned disk_y = 60U;
-        const unsigned reset_y = disk_controls_enabled_ ? 69U : 67U;
-        const unsigned select_y = disk_controls_enabled_ ? 78U : 77U;
-        const unsigned exit_y = disk_controls_enabled_ ? 87U : 87U;
+        const unsigned extras = (disk_controls_enabled_ ? 1U : 0U) +
+                                (audio_controls_enabled_ ? 1U : 0U);
+        const unsigned resume_y = extras == 2U ? 24U : 27U;
+        const unsigned state_y = extras == 2U ? 33U : extras == 1U ? 37U : 39U;
+        const unsigned settings_y = extras == 2U ? 42U : extras == 1U ? 47U : 51U;
+        const unsigned volume_y = extras == 2U ? 51U : 57U;
+        const unsigned disk_y = extras == 2U ? 60U : 57U;
+        const unsigned reset_y = extras == 2U ? 69U : extras == 1U ? 67U : 63U;
+        const unsigned select_y = extras == 2U ? 78U : extras == 1U ? 77U : 75U;
+        const unsigned exit_y = 87U;
         if (std::abs(y - static_cast<int>(screen_height_ * resume_y / 100U)) <=
             half_height)
             return UI_RESUME_GAME;
@@ -206,7 +209,8 @@ UiAction TouchInput::ui_hit_test(int raw_x, int raw_y,
         if (std::abs(y - static_cast<int>(screen_height_ * settings_y / 100U)) <=
             half_height)
             return UI_DISPLAY_SETTINGS;
-        if (std::abs(y - static_cast<int>(screen_height_ * volume_y / 100U)) <=
+        if (audio_controls_enabled_ &&
+            std::abs(y - static_cast<int>(screen_height_ * volume_y / 100U)) <=
             half_height)
             return x < static_cast<int>(screen_width_ / 2U)
                 ? UI_VOLUME_DOWN : UI_VOLUME_UP;

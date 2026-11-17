@@ -41,6 +41,7 @@ public:
                            bool capture_video) = 0;
     virtual void set_audio_paused(bool) {}
     virtual void set_audio_volume(unsigned) {}
+    virtual bool audio_enabled() const { return false; }
     virtual uint64_t audio_frames_queued() const { return 0; }
     virtual uint64_t audio_frames_dropped() const { return 0; }
     virtual unsigned disk_count() const { return 0; }

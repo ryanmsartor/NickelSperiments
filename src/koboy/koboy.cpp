@@ -1164,13 +1164,20 @@ void draw_menu(std::vector<uint32_t> &screen, unsigned width,
     const int right = width * 82 / 100;
     const int half_height = height * 3 / 100;
     const bool disk_controls = core.disk_count() != 0U;
-    const int resume_y = height * (disk_controls ? 24 : 27) / 100;
-    const int state_y = height * (disk_controls ? 33 : 37) / 100;
-    const int settings_y = height * (disk_controls ? 42 : 47) / 100;
-    const int volume_y = height * (disk_controls ? 51 : 57) / 100;
-    const int disk_y = height * 60 / 100;
-    const int reset_y = height * (disk_controls ? 69 : 67) / 100;
-    const int select_y = height * (disk_controls ? 78 : 77) / 100;
+    const bool audio_controls = core.audio_enabled();
+    const unsigned extras = (disk_controls ? 1U : 0U) +
+                            (audio_controls ? 1U : 0U);
+    const int resume_y = height * (extras == 2U ? 24 : 27) / 100;
+    const int state_y = height * (extras == 2U ? 33 : extras == 1U ? 37 : 39) /
+                        100;
+    const int settings_y = height *
+        (extras == 2U ? 42 : extras == 1U ? 47 : 51) / 100;
+    const int volume_y = height * (extras == 2U ? 51 : 57) / 100;
+    const int disk_y = height * (extras == 2U ? 60 : 57) / 100;
+    const int reset_y = height * (extras == 2U ? 69 : extras == 1U ? 67 : 63) /
+                        100;
+    const int select_y = height * (extras == 2U ? 78 : extras == 1U ? 77 : 75) /
+                         100;
     const int exit_y = height * 87 / 100;
     const int state_gap = width * 1 / 100;
     const int state_middle = width / 2;
@@ -1186,8 +1193,9 @@ void draw_menu(std::vector<uint32_t> &screen, unsigned width,
                    right, select_y + half_height, dark);
     fill_rectangle(screen, width, height, left, settings_y - half_height,
                    right, settings_y + half_height, dark);
-    fill_rectangle(screen, width, height, left, volume_y - half_height,
-                   right, volume_y + half_height, dark);
+    if (audio_controls)
+        fill_rectangle(screen, width, height, left, volume_y - half_height,
+                       right, volume_y + half_height, dark);
     if (disk_controls)
         fill_rectangle(screen, width, height, left, disk_y - half_height,
                        right, disk_y + half_height, dark);
@@ -1205,11 +1213,13 @@ void draw_menu(std::vector<uint32_t> &screen, unsigned width,
                "CHANGE GAME", 6, light);
     draw_label(screen, width, height, width / 2, settings_y,
                "DISPLAY SETTINGS", 5, light);
-    char volume_label[32];
-    std::snprintf(volume_label, sizeof(volume_label),
-                  "< VOLUME: %u/20 >", volume);
-    draw_label(screen, width, height, width / 2, volume_y,
-               volume_label, 5, light);
+    if (audio_controls) {
+        char volume_label[32];
+        std::snprintf(volume_label, sizeof(volume_label),
+                      "< VOLUME: %u/20 >", volume);
+        draw_label(screen, width, height, width / 2, volume_y,
+                   volume_label, 5, light);
+    }
     if (disk_controls) {
         const unsigned count = core.disk_count();
         const unsigned current = core.disk_index();
@@ -1705,6 +1715,7 @@ int main(int argc, char **argv) {
                                 core->video_height() == 160U;
         input.set_shoulder_buttons_enabled(shoulder_buttons);
         input.set_disk_controls_enabled(core->disk_count() != 0U);
+        input.set_audio_controls_enabled(core->audio_enabled());
         std::string automatic_state = state_path(rom_path.c_str(), 0U);
         std::string manual_state = state_path(rom_path.c_str(), 1U);
         std::string sram_path = save_path(rom_path.c_str());
@@ -1793,14 +1804,18 @@ int main(int argc, char **argv) {
                     last_wait_seconds = drain_elapsed;
                     a2_markers.clear();
                     framebuffer.read_viewport(scaled);
+                    bool menu_refresh_healthy = true;
+                    bool entering_pause_menu = true;
+                    for (;;) {
                     draw_menu(screen, screen_width, screen_height, developer,
                               audio_volume, *core);
                     framebuffer.draw_screen(screen);
                     koboy::UiAction menu_action =
                         koboy::UI_NONE;
-                    bool menu_refresh_healthy =
-                        refresh_menu_screen(framebuffer, input, marker++,
-                                            diagnostics, true);
+                    menu_refresh_healthy = refresh_menu_screen(
+                        framebuffer, input, marker++, diagnostics,
+                        entering_pause_menu);
+                    entering_pause_menu = false;
                     if (!menu_refresh_healthy)
                         menu_action = koboy::UI_RESUME_GAME;
                     while (!interrupted) {
@@ -1948,6 +1963,8 @@ int main(int argc, char **argv) {
                                 shoulder_buttons);
                             input.set_disk_controls_enabled(
                                 core->disk_count() != 0U);
+                            input.set_audio_controls_enabled(
+                                core->audio_enabled());
                             rom.swap(selected_rom);
                             rom_path = selected;
                             automatic_state = state_path(rom_path.c_str(), 0U);
@@ -1960,7 +1977,11 @@ int main(int argc, char **argv) {
                             scaled.clear();
                             previous_rgb.clear();
                             force_first_frame_gc16 = true;
+                        } else {
+                            continue;
                         }
+                    }
+                    break;
                     }
                     const double paused_for = monotonic_seconds() - menu_started;
                     if (options.seconds)
