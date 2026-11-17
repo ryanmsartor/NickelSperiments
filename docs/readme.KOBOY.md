@@ -107,7 +107,7 @@ Each display tick draws the complete latest frame and submits one A2 update. Bef
 
 Create `/mnt/onboard/KoBoy/diagnostics` to enable durable refresh and performance diagnostics. Normal release-style operation leaves diagnostics off to avoid extra VFAT writes, sysfs reads, log growth, and timing changes.
 
-Diagnostics record menu and gameplay refresh markers, waveform timing, update counts, memory availability, resident memory, CPU clock and utilization, and available thermal readings. An unmatched refresh `begin` after a reset can identify an update which entered the display driver but never returned. Player output is written to `/mnt/onboard/.adds/koboy/koboy.log`.
+Diagnostics record menu and gameplay refresh markers, waveform timing, update counts, memory availability, resident memory, CPU clock and utilization, and available thermal readings. An unmatched refresh `begin` after a reset can identify an update which entered the display driver but never returned. Player output is written to `/mnt/onboard/.adds/koboy/koboy.log`. To prevent growth across repeated sessions, the supervisor resets this log before a launch when it exceeds 1 MiB.
 
 Two additional developer flags isolate hard-reset causes. A strict test requires launching a ROM directly rather than using the game browser:
 

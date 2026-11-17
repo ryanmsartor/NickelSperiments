@@ -12,6 +12,8 @@ endif
 
 KOBO_CPU_FLAGS := -march=armv7-a -mtune=cortex-a53 \
 	-mfpu=neon-vfpv4 -mfloat-abi=hard
+KOBO_DEPFLAGS := -MMD -MP
 KOBO_CXXFLAGS := -O3 -std=c++11 -Wall -Wextra -fomit-frame-pointer \
+	$(KOBO_DEPFLAGS) \
 	$(KOBO_CPU_FLAGS)
 KOBO_LDFLAGS := -static-libgcc -static-libstdc++

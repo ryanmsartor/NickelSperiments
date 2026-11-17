@@ -12,6 +12,7 @@
 #include <iostream>
 #include <stdexcept>
 #include <string>
+#include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <unistd.h>
@@ -20,6 +21,7 @@
 namespace {
 
 volatile sig_atomic_t child_pid = -1;
+const off_t kMaximumLogBytes = 1024 * 1024;
 
 void forward_signal(int signal_number) {
     const pid_t child = static_cast<pid_t>(child_pid);
@@ -42,6 +44,17 @@ std::string player_path() {
     return path.substr(0, slash + 1U) + "koboy";
 }
 
+void bound_log_file(const std::string &player) {
+    const std::string::size_type slash = player.rfind('/');
+    if (slash == std::string::npos)
+        return;
+    const std::string log_path = player.substr(0, slash + 1U) + "koboy.log";
+    struct stat information;
+    if (stat(log_path.c_str(), &information) == 0 &&
+        information.st_size > kMaximumLogBytes)
+        truncate(log_path.c_str(), 0);
+}
+
 int child_exit_code(int status) {
     if (WIFEXITED(status))
         return WEXITSTATUS(status);
@@ -55,6 +68,7 @@ int child_exit_code(int status) {
 int main(int argc, char **argv) {
     try {
         const std::string player = player_path();
+        bound_log_file(player);
         koboy::FramebufferBackend framebuffer;
 
         framebuffer.open_device("/dev/fb0");

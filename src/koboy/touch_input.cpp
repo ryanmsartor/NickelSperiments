@@ -11,7 +11,6 @@
 #include <fcntl.h>
 #include <stdexcept>
 #include <string>
-#include <sys/time.h>
 #include <sys/ioctl.h>
 #include <unistd.h>
 
@@ -27,8 +26,7 @@ bool inside_circle(int x, int y, int center_x, int center_y, int radius) {
 } // namespace
 
 TouchInput::TouchInput(unsigned screen_width, unsigned screen_height)
-    : fd_(-1), trace_fd_(-1), screen_width_(screen_width),
-      screen_height_(screen_height),
+    : fd_(-1), screen_width_(screen_width), screen_height_(screen_height),
       current_slot_(0U), slot_protocol_(false), physical_buttons_(0U),
       buttons_(0U),
       ui_touch_active_(false), suppress_gameplay_until_release_(false),
@@ -39,8 +37,6 @@ TouchInput::TouchInput(unsigned screen_width, unsigned screen_height)
 }
 
 TouchInput::~TouchInput() {
-    if (trace_fd_ >= 0)
-        close(trace_fd_);
     if (fd_ >= 0) {
         ioctl(fd_, EVIOCGRAB, 0);
         close(fd_);
@@ -73,9 +69,6 @@ void TouchInput::open_device() {
     if (ioctl(fd_, EVIOCGRAB, 1) < 0)
         throw std::runtime_error(std::string("cannot grab touchscreen: ") +
                                  std::strerror(errno));
-    if (access("/mnt/onboard/KoBoy/touch-diagnostics", F_OK) == 0)
-        trace_fd_ = open("/tmp/koboy-touch-events.bin",
-                         O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0644);
 }
 
 int TouchInput::normalize(int value, const input_absinfo &axis,
@@ -274,10 +267,6 @@ UiAction TouchInput::ui_hit_test(int raw_x, int raw_y,
 }
 
 void TouchInput::handle(const input_event &event) {
-    if (trace_fd_ >= 0) {
-        const ssize_t ignored = write(trace_fd_, &event, sizeof(event));
-        (void)ignored;
-    }
     if (event.type == EV_KEY &&
         (event.code == BTN_TOUCH || event.code == BTN_TOOL_FINGER) &&
         event.value == 0) {
@@ -328,15 +317,6 @@ void TouchInput::handle(const input_event &event) {
             }
         }
         update_buttons();
-        if (trace_fd_ >= 0) {
-            input_event parsed = event;
-            parsed.type = EV_MSC;
-            parsed.code = MSC_SERIAL;
-            parsed.value = static_cast<int>(physical_buttons_) |
-                (slot_protocol_ ? 0x40000000 : 0);
-            const ssize_t ignored = write(trace_fd_, &parsed, sizeof(parsed));
-            (void)ignored;
-        }
         if (!slot_protocol_)
             current_slot_ = 0U;
     }
@@ -413,16 +393,6 @@ void TouchInput::advance_frame() {
         pending_states_.pop_front();
     } else {
         buttons_ = physical_buttons_;
-    }
-    if (trace_fd_ >= 0) {
-        input_event delivered;
-        std::memset(&delivered, 0, sizeof(delivered));
-        gettimeofday(&delivered.time, 0);
-        delivered.type = EV_MSC;
-        delivered.code = MSC_SCAN;
-        delivered.value = static_cast<int>(buttons_);
-        const ssize_t ignored = write(trace_fd_, &delivered, sizeof(delivered));
-        (void)ignored;
     }
 }
 

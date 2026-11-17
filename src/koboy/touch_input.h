@@ -86,7 +86,6 @@ private:
     int normalize(int value, const input_absinfo &axis, unsigned extent) const;
 
     int fd_;
-    int trace_fd_;
     unsigned screen_width_;
     unsigned screen_height_;
     input_absinfo x_info_;

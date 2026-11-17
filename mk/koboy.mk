@@ -24,6 +24,12 @@ KOBOY_DISPLAY_TEST_OBJECTS := \
 KOBOY_FB_ISOLATION_OBJECTS := \
 	$(KOBOY_OBJ_DIR)/framebuffer_isolation.o \
 	$(KOBOY_OBJ_DIR)/framebuffer_backend.o
+KOBOY_ALL_OBJECTS := $(sort $(KOBOY_PLAYER_OBJECTS) \
+	$(KOBOY_SUPERVISOR_OBJECTS) $(KOBOY_DISPLAY_TEST_OBJECTS) \
+	$(KOBOY_FB_ISOLATION_OBJECTS))
+KOBOY_DEPENDENCIES := $(KOBOY_ALL_OBJECTS:.o=.d)
+
+-include $(KOBOY_DEPENDENCIES)
 
 .PHONY: koboy koboy-supervisor koboy-display-test koboy-framebuffer-isolation koboy-package koboy-clean
 
