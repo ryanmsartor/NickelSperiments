@@ -20,6 +20,7 @@ enum UiAction {
     UI_DISPLAY_SETTINGS,
     UI_VOLUME_DOWN,
     UI_VOLUME_UP,
+    UI_TOGGLE_DISK,
     UI_EXIT_TO_NICKEL,
     UI_SETTING_FULL_REFRESH,
     UI_SETTING_SCREEN_EFFECT,
@@ -56,6 +57,9 @@ public:
     void wait_for_release();
     void set_shoulder_buttons_enabled(bool enabled) {
         shoulder_buttons_enabled_ = enabled;
+    }
+    void set_disk_controls_enabled(bool enabled) {
+        disk_controls_enabled_ = enabled;
     }
     UiAction take_ui_action(UiScreen screen);
     unsigned buttons() const { return buttons_; }
@@ -98,6 +102,7 @@ private:
     bool ui_touch_active_;
     bool suppress_gameplay_until_release_;
     bool shoulder_buttons_enabled_;
+    bool disk_controls_enabled_;
     std::deque<unsigned> pending_states_;
 };
 

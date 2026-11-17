@@ -43,6 +43,10 @@ public:
     virtual void set_audio_volume(unsigned) {}
     virtual uint64_t audio_frames_queued() const { return 0; }
     virtual uint64_t audio_frames_dropped() const { return 0; }
+    virtual unsigned disk_count() const { return 0; }
+    virtual unsigned disk_index() const { return 0; }
+    virtual bool disk_ejected() const { return false; }
+    virtual bool toggle_disk() { return false; }
 
     virtual std::size_t state_size() const = 0;
     virtual bool save_state(void *data, std::size_t size) = 0;

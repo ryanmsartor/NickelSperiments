@@ -30,7 +30,7 @@ TouchInput::TouchInput(unsigned screen_width, unsigned screen_height)
       current_slot_(0U), slot_protocol_(false), physical_buttons_(0U),
       buttons_(0U),
       ui_touch_active_(false), suppress_gameplay_until_release_(false),
-      shoulder_buttons_enabled_(false) {
+      shoulder_buttons_enabled_(false), disk_controls_enabled_(false) {
     std::memset(&x_info_, 0, sizeof(x_info_));
     std::memset(&y_info_, 0, sizeof(y_info_));
     std::memset(contacts_, 0, sizeof(contacts_));
@@ -182,13 +182,14 @@ UiAction TouchInput::ui_hit_test(int raw_x, int raw_y,
         const int half_height = static_cast<int>(screen_height_ * 3U / 100U);
         if (x < left || x > right)
             return UI_NONE;
-        const unsigned resume_y = 27U;
-        const unsigned state_y = 37U;
-        const unsigned settings_y = 47U;
-        const unsigned volume_y = 57U;
-        const unsigned reset_y = 67U;
-        const unsigned select_y = 77U;
-        const unsigned exit_y = 87U;
+        const unsigned resume_y = disk_controls_enabled_ ? 24U : 27U;
+        const unsigned state_y = disk_controls_enabled_ ? 33U : 37U;
+        const unsigned settings_y = disk_controls_enabled_ ? 42U : 47U;
+        const unsigned volume_y = disk_controls_enabled_ ? 51U : 57U;
+        const unsigned disk_y = 60U;
+        const unsigned reset_y = disk_controls_enabled_ ? 69U : 67U;
+        const unsigned select_y = disk_controls_enabled_ ? 78U : 77U;
+        const unsigned exit_y = disk_controls_enabled_ ? 87U : 87U;
         if (std::abs(y - static_cast<int>(screen_height_ * resume_y / 100U)) <=
             half_height)
             return UI_RESUME_GAME;
@@ -209,6 +210,10 @@ UiAction TouchInput::ui_hit_test(int raw_x, int raw_y,
             half_height)
             return x < static_cast<int>(screen_width_ / 2U)
                 ? UI_VOLUME_DOWN : UI_VOLUME_UP;
+        if (disk_controls_enabled_ &&
+            std::abs(y - static_cast<int>(screen_height_ * disk_y / 100U)) <=
+                half_height)
+            return UI_TOGGLE_DISK;
         if (std::abs(y - static_cast<int>(screen_height_ * exit_y / 100U)) <=
             half_height)
             return UI_EXIT_TO_NICKEL;

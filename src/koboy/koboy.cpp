@@ -1121,7 +1121,8 @@ void draw_controls(std::vector<uint32_t> &screen, unsigned width,
 }
 
 void draw_menu(std::vector<uint32_t> &screen, unsigned width,
-               unsigned height, bool developer, unsigned volume) {
+               unsigned height, bool developer, unsigned volume,
+               const koboy::EmulatorCore &core) {
     (void)developer;
     const uint32_t dark = 0xFF000000U;
     const uint32_t light = 0xFFFFFFFFU;
@@ -1132,12 +1133,14 @@ void draw_menu(std::vector<uint32_t> &screen, unsigned width,
     const int left = width * 18 / 100;
     const int right = width * 82 / 100;
     const int half_height = height * 3 / 100;
-    const int resume_y = height * 27 / 100;
-    const int state_y = height * 37 / 100;
-    const int settings_y = height * 47 / 100;
-    const int volume_y = height * 57 / 100;
-    const int reset_y = height * 67 / 100;
-    const int select_y = height * 77 / 100;
+    const bool disk_controls = core.disk_count() != 0U;
+    const int resume_y = height * (disk_controls ? 24 : 27) / 100;
+    const int state_y = height * (disk_controls ? 33 : 37) / 100;
+    const int settings_y = height * (disk_controls ? 42 : 47) / 100;
+    const int volume_y = height * (disk_controls ? 51 : 57) / 100;
+    const int disk_y = height * 60 / 100;
+    const int reset_y = height * (disk_controls ? 69 : 67) / 100;
+    const int select_y = height * (disk_controls ? 78 : 77) / 100;
     const int exit_y = height * 87 / 100;
     const int state_gap = width * 1 / 100;
     const int state_middle = width / 2;
@@ -1155,6 +1158,9 @@ void draw_menu(std::vector<uint32_t> &screen, unsigned width,
                    right, settings_y + half_height, dark);
     fill_rectangle(screen, width, height, left, volume_y - half_height,
                    right, volume_y + half_height, dark);
+    if (disk_controls)
+        fill_rectangle(screen, width, height, left, disk_y - half_height,
+                       right, disk_y + half_height, dark);
     fill_rectangle(screen, width, height, left, exit_y - half_height,
                    right, exit_y + half_height, dark);
     draw_label(screen, width, height, width / 2, resume_y,
@@ -1174,6 +1180,23 @@ void draw_menu(std::vector<uint32_t> &screen, unsigned width,
                   "< VOLUME: %u/20 >", volume);
     draw_label(screen, width, height, width / 2, volume_y,
                volume_label, 5, light);
+    if (disk_controls) {
+        const unsigned count = core.disk_count();
+        const unsigned current = core.disk_index();
+        const unsigned shown = core.disk_ejected()
+            ? (current + 1U) % count : current;
+        char disk_label[40];
+        if (count > 2U)
+            std::snprintf(disk_label, sizeof(disk_label), "%s DISK %u SIDE %c",
+                          core.disk_ejected() ? "INSERT" : "EJECT",
+                          shown / 2U + 1U, 'A' + shown % 2U);
+        else
+            std::snprintf(disk_label, sizeof(disk_label), "%s SIDE %c",
+                          core.disk_ejected() ? "INSERT" : "EJECT",
+                          'A' + shown % 2U);
+        draw_label(screen, width, height, width / 2, disk_y,
+                   disk_label, 5, light);
+    }
     draw_label(screen, width, height, width / 2, exit_y,
                "EXIT TO NICKEL", 5, light);
 }
@@ -1649,6 +1672,7 @@ int main(int argc, char **argv) {
         bool shoulder_buttons = core->video_width() == 240U &&
                                 core->video_height() == 160U;
         input.set_shoulder_buttons_enabled(shoulder_buttons);
+        input.set_disk_controls_enabled(core->disk_count() != 0U);
         std::string automatic_state = state_path(rom_path.c_str(), 0U);
         std::string manual_state = state_path(rom_path.c_str(), 1U);
         std::string sram_path = save_path(rom_path.c_str());
@@ -1722,7 +1746,7 @@ int main(int argc, char **argv) {
                     a2_markers.clear();
                     framebuffer.read_viewport(scaled);
                     draw_menu(screen, screen_width, screen_height, developer,
-                              audio_volume);
+                              audio_volume, *core);
                     framebuffer.draw_screen(screen);
                     koboy::UiAction menu_action =
                         koboy::UI_NONE;
@@ -1751,7 +1775,7 @@ int main(int argc, char **argv) {
                         core->set_audio_volume(audio_volume);
                         save_audio_volume(audio_volume);
                         draw_menu(screen, screen_width, screen_height,
-                                  developer, audio_volume);
+                                  developer, audio_volume, *core);
                         framebuffer.draw_screen(screen);
                         refresh_menu_screen(framebuffer, input, marker++,
                                             diagnostics, false);
@@ -1809,7 +1833,10 @@ int main(int argc, char **argv) {
                     }
                     if (interrupted)
                         break;
-                    if (menu_action == koboy::UI_SAVE_STATE) {
+                    if (menu_action == koboy::UI_TOGGLE_DISK) {
+                        if (!core->toggle_disk())
+                            std::cerr << "warning: disk change failed\n";
+                    } else if (menu_action == koboy::UI_SAVE_STATE) {
                         if (!save_state(*core, manual_state))
                             std::cerr << "warning: manual save state failed\n";
                         sram_saved = save_sram(*core, sram_path);
@@ -1868,6 +1895,8 @@ int main(int argc, char **argv) {
                                                core->video_height() == 160U;
                             input.set_shoulder_buttons_enabled(
                                 shoulder_buttons);
+                            input.set_disk_controls_enabled(
+                                core->disk_count() != 0U);
                             rom.swap(selected_rom);
                             rom_path = selected;
                             automatic_state = state_path(rom_path.c_str(), 0U);

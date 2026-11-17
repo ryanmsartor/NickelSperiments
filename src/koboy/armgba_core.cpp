@@ -281,11 +281,14 @@ struct ArmGbaCore::Impl {
     std::string error;
     std::vector<uint32_t> frame;
     AudioOutput audio;
+    retro_disk_control_callback disk;
+    bool has_disk_control;
 
     Impl()
         : pixel_format(RETRO_PIXEL_FORMAT_XRGB8888), width(160U),
           height(144U), fps(16777216.0 / 280896.0), buttons(0U),
-          loaded(false), capture_video(true) {}
+          loaded(false), capture_video(true), disk(),
+          has_disk_control(false) {}
 };
 
 static bool environment_callback(unsigned command, void *data) {
@@ -335,6 +338,14 @@ static bool environment_callback(unsigned command, void *data) {
         case RETRO_ENVIRONMENT_GET_FASTFORWARDING:
             *static_cast<bool *>(data) = false;
             return true;
+        case RETRO_ENVIRONMENT_SET_DISK_CONTROL_INTERFACE:
+            if (!data)
+                return false;
+            impl.disk = *static_cast<retro_disk_control_callback *>(data);
+            impl.has_disk_control = impl.disk.set_eject_state &&
+                impl.disk.get_eject_state && impl.disk.get_image_index &&
+                impl.disk.set_image_index && impl.disk.get_num_images;
+            return impl.has_disk_control;
         case RETRO_ENVIRONMENT_SET_GEOMETRY: {
             const retro_game_geometry *geometry =
                 static_cast<const retro_game_geometry *>(data);
@@ -483,6 +494,8 @@ bool ArmGbaCore::load_rom(const std::string &path,
         impl_->loaded = false;
     }
     impl_->error.clear();
+    impl_->has_disk_control = false;
+    std::memset(&impl_->disk, 0, sizeof(impl_->disk));
     retro_game_info game = {path.c_str(), rom.empty() ? 0 : &rom[0],
                             rom.size(), 0};
     if (rom.empty() || !api_.load_game(&game)) {
@@ -537,6 +550,29 @@ uint64_t ArmGbaCore::audio_frames_queued() const {
 
 uint64_t ArmGbaCore::audio_frames_dropped() const {
     return impl_->audio.dropped_frames();
+}
+
+unsigned ArmGbaCore::disk_count() const {
+    return impl_->has_disk_control ? impl_->disk.get_num_images() : 0U;
+}
+
+unsigned ArmGbaCore::disk_index() const {
+    return impl_->has_disk_control ? impl_->disk.get_image_index() : 0U;
+}
+
+bool ArmGbaCore::disk_ejected() const {
+    return impl_->has_disk_control && impl_->disk.get_eject_state();
+}
+
+bool ArmGbaCore::toggle_disk() {
+    const unsigned count = disk_count();
+    if (!count)
+        return false;
+    if (!disk_ejected())
+        return impl_->disk.set_eject_state(true);
+    const unsigned next = (disk_index() + 1U) % count;
+    return impl_->disk.set_image_index(next) &&
+           impl_->disk.set_eject_state(false);
 }
 
 std::size_t ArmGbaCore::state_size() const { return api_.serialize_size(); }
