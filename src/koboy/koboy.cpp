@@ -62,10 +62,10 @@ enum RefreshType {
 
 struct DisplaySettings {
     unsigned full_refresh_seconds;
-    bool grid_effect;
+    koboy::ScreenEffect screen_effect;
     unsigned target_refresh_quarters;
     DisplaySettings()
-        : full_refresh_seconds(60U), grid_effect(false),
+        : full_refresh_seconds(60U), screen_effect(koboy::SCREEN_EFFECT_OFF),
           target_refresh_quarters(40U) {}
 };
 
@@ -243,8 +243,11 @@ void load_display_settings(DisplaySettings &settings) {
         if (key == "full_refresh_seconds" &&
                  valid_full_refresh_seconds(value))
             settings.full_refresh_seconds = value;
+        else if (key == "screen_effect" && value <= 2U)
+            settings.screen_effect = static_cast<koboy::ScreenEffect>(value);
         else if (key == "grid_effect" && value <= 1U)
-            settings.grid_effect = value != 0U;
+            settings.screen_effect = value ? koboy::SCREEN_EFFECT_GRID
+                                           : koboy::SCREEN_EFFECT_OFF;
         else if (key == "target_refresh_quarters" &&
                  valid_target_refresh_quarters(value))
             settings.target_refresh_quarters = value;
@@ -257,9 +260,10 @@ void save_display_settings(const DisplaySettings &settings) {
     char text[192];
     const int length = std::snprintf(
         text, sizeof(text),
-        "full_refresh_seconds=%u\ngrid_effect=%u\n"
+        "full_refresh_seconds=%u\nscreen_effect=%u\n"
         "target_refresh_quarters=%u\n",
-        settings.full_refresh_seconds, settings.grid_effect ? 1U : 0U,
+        settings.full_refresh_seconds,
+        static_cast<unsigned>(settings.screen_effect),
         settings.target_refresh_quarters);
     const std::string temporary = std::string(kDisplayConfig) + ".tmp";
     const int output = open(temporary.c_str(),
@@ -325,6 +329,19 @@ void cycle_target_refresh_rate(DisplaySettings &settings) {
         ++index;
     settings.target_refresh_quarters =
         values[(index + 1U) % (sizeof(values) / sizeof(values[0]))];
+}
+
+const char *screen_effect_name(koboy::ScreenEffect effect) {
+    switch (effect) {
+        case koboy::SCREEN_EFFECT_GRID: return "GRID";
+        case koboy::SCREEN_EFFECT_SCANLINES: return "SCANLINES";
+        default: return "OFF";
+    }
+}
+
+void cycle_screen_effect(DisplaySettings &settings) {
+    settings.screen_effect = static_cast<koboy::ScreenEffect>(
+        (static_cast<unsigned>(settings.screen_effect) + 1U) % 3U);
 }
 
 unsigned long long read_unsigned_file(const char *path) {
@@ -1199,8 +1216,8 @@ void draw_display_settings(std::vector<uint32_t> &screen, unsigned width,
     const std::string developer_rows[] = {
         std::string("FULL REFRESH  ") +
             full_refresh_frequency_name(settings.full_refresh_seconds),
-        std::string("GRID EFFECT  ") +
-            (settings.grid_effect ? "ON" : "OFF"),
+        std::string("SCREEN EFFECT  ") +
+            screen_effect_name(settings.screen_effect),
         std::string("TARGET REFRESH  ") +
             target_refresh_rate_name(settings.target_refresh_quarters)
     };
@@ -1208,8 +1225,8 @@ void draw_display_settings(std::vector<uint32_t> &screen, unsigned width,
     const std::string user_rows[] = {
         std::string("FULL REFRESH  ") +
             full_refresh_frequency_name(settings.full_refresh_seconds),
-        std::string("GRID EFFECT  ") +
-            (settings.grid_effect ? "ON" : "OFF")
+        std::string("SCREEN EFFECT  ") +
+            screen_effect_name(settings.screen_effect)
     };
     const unsigned *centers = developer ? developer_centers : user_centers;
     const std::string *rows = developer ? developer_rows : user_rows;
@@ -1741,7 +1758,8 @@ int main(int argc, char **argv) {
                         menu_action = koboy::UI_NONE;
                     }
                     if (menu_action == koboy::UI_DISPLAY_SETTINGS) {
-                        const bool previous_grid = display_settings.grid_effect;
+                        const koboy::ScreenEffect previous_screen_effect =
+                            display_settings.screen_effect;
                         koboy::UiAction settings_action = koboy::UI_NONE;
                         while (!interrupted &&
                                settings_action != koboy::UI_LIST_CANCEL) {
@@ -1766,9 +1784,8 @@ int main(int argc, char **argv) {
                                 koboy::UI_SETTING_FULL_REFRESH)
                                 cycle_full_refresh_frequency(display_settings);
                             else if (settings_action ==
-                                     koboy::UI_SETTING_GRID_EFFECT)
-                                display_settings.grid_effect =
-                                    !display_settings.grid_effect;
+                                     koboy::UI_SETTING_SCREEN_EFFECT)
+                                cycle_screen_effect(display_settings);
                             else if (settings_action ==
                                      koboy::UI_SETTING_TARGET_REFRESH)
                                 cycle_target_refresh_rate(display_settings);
@@ -1778,7 +1795,8 @@ int main(int argc, char **argv) {
                             }
                         }
                         save_display_settings(display_settings);
-                        if (display_settings.grid_effect != previous_grid) {
+                        if (display_settings.screen_effect !=
+                            previous_screen_effect) {
                             scaled.clear();
                             previous_rgb.clear();
                             force_first_frame_gc16 = true;
@@ -1939,7 +1957,7 @@ int main(int argc, char **argv) {
                 rgb, core->video_width(), core->video_height(),
                 effective_scale, previous_rgb,
                 framebuffer,
-                display_settings.grid_effect);
+                display_settings.screen_effect);
 
             const double now = monotonic_seconds();
             bool submitted_refresh = false;

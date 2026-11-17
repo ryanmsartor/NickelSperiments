@@ -15,6 +15,12 @@ enum {
     kGameBoyHeight = 144
 };
 
+enum ScreenEffect {
+    SCREEN_EFFECT_OFF = 0,
+    SCREEN_EFFECT_GRID = 1,
+    SCREEN_EFFECT_SCANLINES = 2
+};
+
 void render_test_pattern(std::vector<uint8_t> &frame, unsigned frame_number);
 
 void scale_monochrome(const std::vector<uint8_t> &source,
@@ -27,7 +33,8 @@ void scale_rgb32_dithered_bichrome(const std::vector<uint32_t> &source,
                                    unsigned scale,
                                    std::vector<uint32_t> &previous_source,
                                    FramebufferBackend &framebuffer,
-                                   bool grid_effect = false);
+                                   ScreenEffect screen_effect =
+                                       SCREEN_EFFECT_OFF);
 
 } // namespace koboy
 

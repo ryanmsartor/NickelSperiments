@@ -67,7 +67,7 @@ void scale_rgb32_dithered_bichrome(const std::vector<uint32_t> &source,
                                    unsigned scale,
                                    std::vector<uint32_t> &previous_source,
                                    FramebufferBackend &framebuffer,
-                                   bool grid_effect) {
+                                   ScreenEffect screen_effect) {
     struct DitherTable {
         uint32_t pixel[256][4][4];
         DitherTable() {
@@ -120,15 +120,17 @@ void scale_rgb32_dithered_bichrome(const std::vector<uint32_t> &source,
                 uint32_t *framebuffer_row =
                     framebuffer.mutable_viewport_row(output_y) + output_x;
                 const uint32_t *pattern = dither.pixel[gray][output_y & 3U];
-                if (!grid_effect && scale == 4U) {
+                if (screen_effect == SCREEN_EFFECT_OFF && scale == 4U) {
                     std::memcpy(framebuffer_row, pattern,
                                 4U * sizeof(*framebuffer_row));
                     continue;
                 }
                 for (unsigned dx = 0; dx < scale; ++dx) {
-                    const bool vertical_grid = grid_effect &&
+                    const bool vertical_grid =
+                        screen_effect == SCREEN_EFFECT_GRID &&
                         dx + 1U == scale && source_x + 1U < source_width;
-                    const bool horizontal_grid = grid_effect &&
+                    const bool horizontal_grid =
+                        screen_effect != SCREEN_EFFECT_OFF &&
                         dy + 1U == scale && source_y + 1U < source_height;
                     const uint32_t pixel = vertical_grid || horizontal_grid ||
                         pattern[(output_x + dx) & 3U] == 0xFFFFFFFFU ?

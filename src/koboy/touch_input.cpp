@@ -227,12 +227,12 @@ UiAction TouchInput::ui_hit_test(int raw_x, int raw_y,
             return UI_NONE;
         const unsigned developer_centers[] = {30U, 50U, 70U};
         const UiAction developer_actions[] = {
-            UI_SETTING_FULL_REFRESH, UI_SETTING_GRID_EFFECT,
+            UI_SETTING_FULL_REFRESH, UI_SETTING_SCREEN_EFFECT,
             UI_SETTING_TARGET_REFRESH
         };
         const unsigned user_centers[] = {36U, 60U};
         const UiAction user_actions[] = {
-            UI_SETTING_FULL_REFRESH, UI_SETTING_GRID_EFFECT
+            UI_SETTING_FULL_REFRESH, UI_SETTING_SCREEN_EFFECT
         };
         const unsigned *centers = developer ? developer_centers : user_centers;
         const UiAction *actions = developer ? developer_actions : user_actions;
