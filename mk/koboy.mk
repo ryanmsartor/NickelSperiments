@@ -14,6 +14,7 @@ KOBOY_PLAYER_OBJECTS := \
 	$(KOBOY_OBJ_DIR)/koboy.o \
 	$(KOBOY_OBJ_DIR)/core_factory.o \
 	$(KOBOY_OBJ_DIR)/libretro_library.o \
+	$(ARMGBA_ARCHIVE_OBJECTS) \
 	$(KOBOY_COMMON_OBJECTS) \
 	$(KOBOY_OBJ_DIR)/touch_input.o
 KOBOY_SUPERVISOR_OBJECTS := \
@@ -42,7 +43,7 @@ koboy-display-test: $(KOBOY_DISPLAY_TEST_OUTPUT)
 
 koboy-framebuffer-isolation: $(KOBOY_FB_ISOLATION_OUTPUT)
 
-koboy-package: koboy koboy-supervisor armnes-core
+koboy-package: koboy koboy-supervisor armgba-core armnes-core
 	$(MAKE) koboy-lifecycle
 	rm -rf $(KOBOY_PACKAGE_ROOT)
 	install -d $(KOBOY_PACKAGE_ROOT)/mnt/onboard/.adds/koboy/LICENSES
@@ -59,6 +60,8 @@ koboy-package: koboy koboy-supervisor armnes-core
 		$(KOBOY_PACKAGE_ROOT)/mnt/onboard/.adds/koboy/koboy
 	install -m755 $(KOBOY_SUPERVISOR_OUTPUT) \
 		$(KOBOY_PACKAGE_ROOT)/mnt/onboard/.adds/koboy/koboy-supervisor
+	install -m755 $(ARMGBA_OUTPUT) \
+		$(KOBOY_PACKAGE_ROOT)/mnt/onboard/.adds/koboy/cores/armgba_libretro.so
 	install -m755 $(ARMNES_OUTPUT) \
 		$(KOBOY_PACKAGE_ROOT)/mnt/onboard/.adds/koboy/cores/armnes_libretro.so
 	install -m644 libkoboylifecycle.so \
@@ -76,6 +79,8 @@ koboy-package: koboy koboy-supervisor armnes-core
 		grep -q 'ELF 32-bit.*ARM'
 	file $(KOBOY_PACKAGE_ROOT)/mnt/onboard/.adds/koboy/koboy-supervisor | \
 		grep -q 'ELF 32-bit.*ARM'
+	file $(KOBOY_PACKAGE_ROOT)/mnt/onboard/.adds/koboy/cores/armgba_libretro.so | \
+		grep -q 'ELF 32-bit.*shared object, ARM'
 	file $(KOBOY_PACKAGE_ROOT)/mnt/onboard/.adds/koboy/cores/armnes_libretro.so | \
 		grep -q 'ELF 32-bit.*shared object, ARM'
 	file $(KOBOY_PACKAGE_ROOT)/usr/local/Kobo/imageformats/libkoboylifecycle.so | \
@@ -84,7 +89,7 @@ koboy-package: koboy koboy-supervisor armnes-core
 	cd build && sha256sum $$(basename $(KOBOY_PACKAGE)) > \
 		$$(basename $(KOBOY_PACKAGE_CHECKSUM))
 
-$(KOBOY_OUTPUT): $(ARMGBA_PLAYER_OBJECTS) $(KOBOY_PLAYER_OBJECTS)
+$(KOBOY_OUTPUT): $(ARMGBA_ADAPTER_CHECK_OBJECT) $(KOBOY_PLAYER_OBJECTS)
 	@mkdir -p $(@D)
 	$(KOBO_LINK) $(KOBO_LDFLAGS) -o $@ $^ -lpthread -lz -ldl
 

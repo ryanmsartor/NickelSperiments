@@ -4,7 +4,6 @@
  */
 
 #include "armgba_core.h"
-#include "libretro_api.h"
 #include "libretro_library.h"
 
 #include <algorithm>
@@ -423,24 +422,6 @@ static int16_t input_state_callback(unsigned port, unsigned device,
         case RETRO_DEVICE_ID_JOYPAD_R: return buttons & CORE_BUTTON_R;
         default: return 0;
     }
-}
-
-ArmGbaCore::ArmGbaCore()
-    : impl_(new Impl), api_(armgba_libretro_api()), library_(0),
-      name_("armGBA") {
-    if (active_core) {
-        delete impl_;
-        throw std::runtime_error("libretro host only supports one active core");
-    }
-    active_core = this;
-    signal(SIGPIPE, SIG_IGN);
-    api_.set_environment(environment_callback);
-    api_.set_video_refresh(video_callback);
-    api_.set_audio_sample(0);
-    api_.set_audio_sample_batch(audio_callback);
-    api_.set_input_poll(input_poll_callback);
-    api_.set_input_state(input_state_callback);
-    api_.init();
 }
 
 ArmGbaCore::ArmGbaCore(const std::string &library_path)

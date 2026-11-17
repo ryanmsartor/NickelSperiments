@@ -56,7 +56,8 @@ std::unique_ptr<EmulatorCore> create_core_for_rom(const std::string &path) {
     if (!extension_in(extension, armgba_extensions,
                       sizeof(armgba_extensions) / sizeof(armgba_extensions[0])))
         throw std::runtime_error("no emulator core supports this ROM extension");
-    return std::unique_ptr<EmulatorCore>(new ArmGbaCore);
+    return std::unique_ptr<EmulatorCore>(new ArmGbaCore(
+        "/mnt/onboard/.adds/koboy/cores/armgba_libretro.so"));
 }
 
 } // namespace koboy

@@ -13,6 +13,7 @@ help:
 	@echo "  ewdb-binary            Build the pinned ARMv7 EWDB daemon"
 	@echo "  ewdb-package           Build build/EWDB-KoboRoot.tgz"
 	@echo "  armgba-adapter-check   Compile the in-progress armGBA frontend adapter"
+	@echo "  armgba-core            Build the pinned ARMv7 armGBA libretro core"
 	@echo "  armgba-core-check      Compile armGBA's ARMv7/NEON/JIT core"
 	@echo "  armgba-libretro-check  Compile armGBA's libretro support layer"
 	@echo "  armgba-probe           Build the headless armGBA Kobo probe"

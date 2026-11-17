@@ -1,7 +1,7 @@
 ARMGBA_ROOT := deps/armgba
 ARMGBA_OBJ_DIR := build/obj/armgba
+ARMGBA_OUTPUT := build/armgba_libretro.so
 ARMGBA_ADAPTER_CHECK_OBJECT := $(ARMGBA_OBJ_DIR)/koboy/armgba_core.o
-ARMGBA_API_OBJECT := $(ARMGBA_OBJ_DIR)/koboy/armgba_libretro_api.o
 
 ARMGBA_CORE_SOURCES := \
 	src/bios-image.c src/bus.c src/cheats.c src/gba.c src/memory.c \
@@ -47,12 +47,12 @@ ARMGBA_ARCHIVE_OBJECTS := \
 	$(patsubst %.c,$(ARMGBA_OBJ_DIR)/%.o,$(ARMGBA_ARCHIVE_SOURCES))
 ARMGBA_PROBE_OBJECT := $(ARMGBA_OBJ_DIR)/koboy/armgba_probe.o
 ARMGBA_PROBE_OUTPUT := build/armgba-probe
-ARMGBA_PLAYER_OBJECTS := \
+ARMGBA_CORE_LIBRARY_OBJECTS := \
 	$(ARMGBA_CORE_OBJECTS) $(ARMGBA_LIBRETRO_C_OBJECTS) \
 	$(ARMGBA_LCD_COMPAT_OBJECT) $(ARMGBA_GB_ADAPTER_OBJECT) \
-	$(ARMGBA_GAMBATTE_OBJECTS) $(ARMGBA_ARCHIVE_OBJECTS) \
-	$(ARMGBA_ADAPTER_CHECK_OBJECT) $(ARMGBA_API_OBJECT)
-ARMGBA_DEPENDENCIES := $(ARMGBA_PLAYER_OBJECTS:.o=.d) \
+	$(ARMGBA_GAMBATTE_OBJECTS) $(ARMGBA_ARCHIVE_OBJECTS)
+ARMGBA_DEPENDENCIES := $(ARMGBA_CORE_LIBRARY_OBJECTS:.o=.d) \
+	$(ARMGBA_ADAPTER_CHECK_OBJECT:.o=.d) \
 	$(ARMGBA_PROBE_OBJECT:.o=.d)
 
 -include $(ARMGBA_DEPENDENCIES)
@@ -66,7 +66,8 @@ ARMGBA_CORE_CPPFLAGS := \
 	-I$(ARMGBA_ROOT)/libretro/deps \
 	-I$(ARMGBA_ROOT)/libretro/deps/libretro-common/include \
 	-I$(ARMGBA_ROOT)/src
-ARMGBA_CFLAGS := -O3 -std=gnu11 -Wall -Wextra -fwrapv \
+ARMGBA_CFLAGS := -O3 -std=gnu11 -Wall -Wextra -fwrapv -fPIC \
+	-fvisibility=hidden \
 	$(KOBO_DEPFLAGS) \
 	$(KOBO_CPU_FLAGS)
 ARMGBA_GAMBATTE_CPPFLAGS := \
@@ -79,7 +80,14 @@ ARMGBA_ARCHIVE_CPPFLAGS := \
 	-I$(ARMGBA_ROOT)/libretro/deps/libretro-common/include \
 	-DHAVE_ZLIB -DHAVE_7ZIP
 
-.PHONY: armgba-core-check armgba-libretro-check armgba-adapter-check armgba-probe armgba-clean
+.PHONY: armgba-core armgba-core-check armgba-libretro-check armgba-adapter-check armgba-probe armgba-clean
+
+armgba-core: $(ARMGBA_OUTPUT)
+
+$(ARMGBA_OUTPUT): $(ARMGBA_CORE_LIBRARY_OBJECTS)
+	@mkdir -p $(@D)
+	./scripts/nickeltc-core-link --version-script \
+		$(ARMGBA_ROOT)/libretro/link.T -o $@ $^ -lpthread
 
 armgba-core-check: $(ARMGBA_CORE_OBJECTS)
 
@@ -87,7 +95,7 @@ armgba-libretro-check: $(ARMGBA_LIBRETRO_C_OBJECTS)
 
 armgba-probe: $(ARMGBA_PROBE_OUTPUT)
 
-$(ARMGBA_PROBE_OUTPUT): $(ARMGBA_PLAYER_OBJECTS) $(ARMGBA_PROBE_OBJECT) \
+$(ARMGBA_PROBE_OUTPUT): $(ARMGBA_ADAPTER_CHECK_OBJECT) $(ARMGBA_PROBE_OBJECT) \
 	build/obj/koboy/libretro_library.o
 	@mkdir -p $(@D)
 	$(KOBO_LINK) $(KOBO_LDFLAGS) -o $@ $^ -lpthread -lz -ldl
@@ -95,10 +103,6 @@ $(ARMGBA_PROBE_OUTPUT): $(ARMGBA_PLAYER_OBJECTS) $(ARMGBA_PROBE_OBJECT) \
 armgba-adapter-check: $(ARMGBA_ADAPTER_CHECK_OBJECT)
 
 $(ARMGBA_ADAPTER_CHECK_OBJECT): src/koboy/armgba_core.cpp
-	@mkdir -p $(@D)
-	$(KOBO_CXX) $(ARMGBA_CPPFLAGS) $(KOBO_CXXFLAGS) -c -o $@ $<
-
-$(ARMGBA_API_OBJECT): src/koboy/armgba_libretro_api.cpp
 	@mkdir -p $(@D)
 	$(KOBO_CXX) $(ARMGBA_CPPFLAGS) $(KOBO_CXXFLAGS) -c -o $@ $<
 
@@ -113,12 +117,12 @@ $(ARMGBA_LCD_COMPAT_OBJECT): src/koboy/armgba_lcd_compat.c
 $(ARMGBA_GB_ADAPTER_OBJECT): $(ARMGBA_ROOT)/libretro/gb-gambatte.cpp
 	@mkdir -p $(@D)
 	$(KOBO_CXX) $(ARMGBA_CORE_CPPFLAGS) $(ARMGBA_GAMBATTE_CPPFLAGS) \
-		$(KOBO_CXXFLAGS) -c -o $@ $<
+		$(KOBO_CXXFLAGS) -fPIC -fvisibility=hidden -c -o $@ $<
 
 $(ARMGBA_OBJ_DIR)/gambatte/%.o: $(ARMGBA_ROOT)/gambatte/%.cpp
 	@mkdir -p $(@D)
 	$(KOBO_CXX) $(ARMGBA_GAMBATTE_CPPFLAGS) $(KOBO_CXXFLAGS) \
-		-fno-exceptions -fno-rtti -c -o $@ $<
+		-fPIC -fvisibility=hidden -fno-exceptions -fno-rtti -c -o $@ $<
 
 $(ARMGBA_OBJ_DIR)/libretro/deps/%.o: $(ARMGBA_ROOT)/libretro/deps/%.c
 	@mkdir -p $(@D)
@@ -129,4 +133,4 @@ $(ARMGBA_OBJ_DIR)/%.o: $(ARMGBA_ROOT)/%.c
 	$(KOBO_CC) $(ARMGBA_CORE_CPPFLAGS) $(ARMGBA_CFLAGS) -c -o $@ $<
 
 armgba-clean:
-	rm -rf $(ARMGBA_OBJ_DIR) $(ARMGBA_PROBE_OUTPUT)
+	rm -rf $(ARMGBA_OBJ_DIR) $(ARMGBA_OUTPUT) $(ARMGBA_PROBE_OUTPUT)

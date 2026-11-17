@@ -35,8 +35,6 @@ struct LibretroApi {
     std::size_t (*get_memory_size)(unsigned);
 };
 
-const LibretroApi &armgba_libretro_api();
-
 } // namespace koboy
 
 #endif

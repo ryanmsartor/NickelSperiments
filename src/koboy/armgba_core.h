@@ -15,7 +15,6 @@ class LibretroLibrary;
 
 class ArmGbaCore : public EmulatorCore {
 public:
-    ArmGbaCore();
     explicit ArmGbaCore(const std::string &library_path);
     virtual ~ArmGbaCore();
 

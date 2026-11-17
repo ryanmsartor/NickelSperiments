@@ -45,7 +45,8 @@ int main(int argc, char **argv) {
             return 2;
         }
         const std::vector<unsigned char> rom = read_file(argv[1]);
-        koboy::ArmGbaCore core;
+        koboy::ArmGbaCore core(
+            "/mnt/onboard/.adds/koboy/cores/armgba_libretro.so");
         std::string error;
         if (!core.load_rom(argv[1], rom, error))
             throw std::runtime_error(error);

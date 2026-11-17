@@ -9,6 +9,7 @@ tools="$target/arm-nickel-linux-gnueabihf/bin"
 output=libretro.so
 version_script=
 objects=
+libraries=
 
 while [ "$#" -gt 0 ]; do
     case "$1" in
@@ -22,6 +23,10 @@ while [ "$#" -gt 0 ]; do
             ;;
         *.o)
             objects="$objects $1"
+            shift
+            ;;
+        -lpthread)
+            libraries="$libraries $1"
             shift
             ;;
         *)
@@ -44,4 +49,5 @@ exec "$workspace/scripts/nickeltc-exec" "$tools/ld.bfd.x86_64" \
     $version_option -o "$output" \
     -L"$gcc" -L"$target/arm-nickel-linux-gnueabihf/lib" \
     -L"$sysroot/lib" -L"$sysroot/usr/lib" "$gcc/crtbeginS.o" $objects \
+    -Bstatic -lstdc++ -Bdynamic $libraries \
     -lz -lm -lgcc_s -lc -lgcc_s "$gcc/crtendS.o"
