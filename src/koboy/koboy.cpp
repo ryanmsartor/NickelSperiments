@@ -1220,20 +1220,23 @@ void draw_menu(std::vector<uint32_t> &screen, unsigned width,
     const int half_height = height * 3 / 100;
     const bool disk_controls = core.disk_count() != 0U;
     const bool audio_controls = core.audio_enabled();
+    const bool core_settings = core.core_option_count(developer) != 0U;
     const unsigned extras = (disk_controls ? 1U : 0U) +
-                            (audio_controls ? 1U : 0U);
-    const int resume_y = height * (extras == 2U ? 24 : 27) / 100;
-    const int state_y = height * (extras == 2U ? 33 : extras == 1U ? 37 : 39) /
-                        100;
-    const int settings_y = height *
-        (extras == 2U ? 42 : extras == 1U ? 47 : 51) / 100;
-    const int volume_y = height * (extras == 2U ? 51 : 57) / 100;
-    const int disk_y = height * (extras == 2U ? 60 : 57) / 100;
-    const int reset_y = height * (extras == 2U ? 69 : extras == 1U ? 67 : 63) /
-                        100;
-    const int select_y = height * (extras == 2U ? 78 : extras == 1U ? 77 : 75) /
-                         100;
-    const int exit_y = height * 87 / 100;
+                            (audio_controls ? 1U : 0U) +
+                            (core_settings ? 1U : 0U);
+    const unsigned count = 6U + extras;
+    unsigned row = 0U;
+#define MENU_Y() (height * (24U + row++ * 63U / (count - 1U)) / 100U)
+    const int resume_y = MENU_Y();
+    const int state_y = MENU_Y();
+    const int settings_y = MENU_Y();
+    const int core_settings_y = core_settings ? MENU_Y() : 0;
+    const int volume_y = audio_controls ? MENU_Y() : 0;
+    const int disk_y = disk_controls ? MENU_Y() : 0;
+    const int reset_y = MENU_Y();
+    const int select_y = MENU_Y();
+    const int exit_y = MENU_Y();
+#undef MENU_Y
     const int state_gap = width * 1 / 100;
     const int state_middle = width / 2;
     fill_rectangle(screen, width, height, left, resume_y - half_height,
@@ -1248,6 +1251,10 @@ void draw_menu(std::vector<uint32_t> &screen, unsigned width,
                    right, select_y + half_height, dark);
     fill_rectangle(screen, width, height, left, settings_y - half_height,
                    right, settings_y + half_height, dark);
+    if (core_settings)
+        fill_rectangle(screen, width, height, left,
+                       core_settings_y - half_height, right,
+                       core_settings_y + half_height, dark);
     if (audio_controls)
         fill_rectangle(screen, width, height, left, volume_y - half_height,
                        right, volume_y + half_height, dark);
@@ -1268,6 +1275,9 @@ void draw_menu(std::vector<uint32_t> &screen, unsigned width,
                "CHANGE GAME", 6, light);
     draw_label(screen, width, height, width / 2, settings_y,
                "DISPLAY SETTINGS", 5, light);
+    if (core_settings)
+        draw_label(screen, width, height, width / 2, core_settings_y,
+                   "GAME SETTINGS", 5, light);
     if (audio_controls) {
         char volume_label[32];
         std::snprintf(volume_label, sizeof(volume_label),
@@ -1294,6 +1304,36 @@ void draw_menu(std::vector<uint32_t> &screen, unsigned width,
     }
     draw_label(screen, width, height, width / 2, exit_y,
                "EXIT TO NICKEL", 5, light);
+}
+
+void draw_core_settings(std::vector<uint32_t> &screen, unsigned width,
+                        unsigned height, const koboy::EmulatorCore &core,
+                        bool developer) {
+    const uint32_t dark = 0xFF000000U;
+    const uint32_t light = 0xFFFFFFFFU;
+    screen.assign(static_cast<size_t>(width) * height, light);
+    draw_label(screen, width, height, width / 2, height * 10 / 100,
+               "GAME SETTINGS", 6, dark);
+    const unsigned count = std::min(core.core_option_count(developer), 4U);
+    const int left = width * 8 / 100;
+    const int right = width * 92 / 100;
+    const int row_top = height * 18 / 100;
+    const int row_height = height * 15 / 100;
+    const int half_height = height * 4 / 100;
+    for (unsigned index = 0; index < count; ++index) {
+        const int center = row_top + static_cast<int>(index) * row_height +
+                           row_height / 2;
+        fill_rectangle(screen, width, height, left, center - half_height,
+                       right, center + half_height, dark);
+        const char *name = core.core_option_label(index, developer);
+        const char *value = core.core_option_value(index, developer);
+        const std::string label = std::string(name ? name : "OPTION") +
+                                  "  " + (value ? value : "");
+        draw_label(screen, width, height, width / 2, center,
+                   label.c_str(), 4, light);
+    }
+    draw_label(screen, width, height, width / 2, height * 91 / 100,
+               "BACK", 5, dark);
 }
 
 std::string full_refresh_frequency_name(unsigned seconds) {
@@ -1771,6 +1811,8 @@ int main(int argc, char **argv) {
         input.set_shoulder_buttons_enabled(shoulder_buttons);
         input.set_disk_controls_enabled(core->disk_count() != 0U);
         input.set_audio_controls_enabled(core->audio_enabled());
+        input.set_core_settings_enabled(
+            core->core_option_count(developer) != 0U);
         std::string automatic_state = state_path(rom_path.c_str(), 0U);
         std::string manual_state = state_path(rom_path.c_str(), 1U);
         std::string sram_path = save_path(rom_path.c_str());
@@ -1953,6 +1995,34 @@ int main(int argc, char **argv) {
                         }
                         menu_action = koboy::UI_RESUME_GAME;
                     }
+                    if (menu_action == koboy::UI_GAME_SETTINGS) {
+                        koboy::UiAction settings_action = koboy::UI_NONE;
+                        while (!interrupted &&
+                               settings_action != koboy::UI_LIST_CANCEL) {
+                            draw_core_settings(screen, screen_width,
+                                               screen_height, *core,
+                                               developer);
+                            framebuffer.draw_screen(screen);
+                            refresh_menu_screen(framebuffer, input, marker++,
+                                                diagnostics, false);
+                            settings_action = koboy::UI_NONE;
+                            while (!interrupted &&
+                                   settings_action == koboy::UI_NONE) {
+                                settings_action = input.take_ui_action(
+                                    koboy::UI_SCREEN_CORE_SETTINGS);
+                                if (settings_action == koboy::UI_NONE)
+                                    usleep(20000);
+                            }
+                            if (settings_action >= koboy::UI_GAME_0 &&
+                                settings_action <= koboy::UI_GAME_3) {
+                                core->cycle_core_option(
+                                    static_cast<unsigned>(settings_action -
+                                        koboy::UI_GAME_0), developer);
+                                settings_action = koboy::UI_NONE;
+                            }
+                        }
+                        menu_action = koboy::UI_RESUME_GAME;
+                    }
                     if (menu_action == koboy::UI_EXIT_TO_NICKEL) {
                         exit_to_nickel = true;
                         break;
@@ -2025,6 +2095,8 @@ int main(int argc, char **argv) {
                                 core->disk_count() != 0U);
                             input.set_audio_controls_enabled(
                                 core->audio_enabled());
+                            input.set_core_settings_enabled(
+                                core->core_option_count(developer) != 0U);
                             rom.swap(selected_rom);
                             rom_path = selected;
                             automatic_state = state_path(rom_path.c_str(), 0U);

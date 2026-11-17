@@ -348,6 +348,22 @@ static bool environment_callback(unsigned command, void *data) {
                 options && options->us ? options->us->definitions : 0);
             return true;
         }
+        case RETRO_ENVIRONMENT_SET_CORE_OPTIONS_DISPLAY: {
+            const retro_core_option_display *display =
+                static_cast<const retro_core_option_display *>(data);
+            if (!display || !display->key)
+                return false;
+            impl.options.set_visible(display->key, display->visible);
+            return true;
+        }
+        case RETRO_ENVIRONMENT_SET_CORE_OPTIONS_UPDATE_DISPLAY_CALLBACK: {
+            const retro_core_options_update_display_callback *callback =
+                static_cast<const retro_core_options_update_display_callback *>(
+                    data);
+            impl.options.set_update_display_callback(
+                callback ? callback->callback : 0);
+            return true;
+        }
         case RETRO_ENVIRONMENT_GET_LOG_INTERFACE:
             static_cast<retro_log_callback *>(data)->log = core_log;
             return true;
@@ -590,6 +606,24 @@ bool ArmGbaCore::toggle_disk() {
     const unsigned next = (disk_index() + 1U) % count;
     return impl_->disk.set_image_index(next) &&
            impl_->disk.set_eject_state(false);
+}
+
+unsigned ArmGbaCore::core_option_count(bool developer) const {
+    return impl_->options.curated_count(developer);
+}
+
+const char *ArmGbaCore::core_option_label(unsigned index,
+                                          bool developer) const {
+    return impl_->options.curated_label(index, developer);
+}
+
+const char *ArmGbaCore::core_option_value(unsigned index,
+                                          bool developer) const {
+    return impl_->options.curated_value_label(index, developer);
+}
+
+bool ArmGbaCore::cycle_core_option(unsigned index, bool developer) {
+    return impl_->options.cycle_curated(index, developer);
 }
 
 std::size_t ArmGbaCore::state_size() const { return api_.serialize_size(); }

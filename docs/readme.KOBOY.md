@@ -1,6 +1,6 @@
 # Ko Boy
 
-Ko Boy is an e-ink-focused Game Boy, Game Boy Color, Game Boy Advance, and Mega Duck player for Kobo e-readers, built around armGBA. It combines full-speed emulation with a display scheduler designed for e-ink, touchscreen controls, Bluetooth audio, an on-device game browser, persistent saves and states, suspend handling, and supervised return to Nickel.
+Ko Boy is an e-ink-focused Game Boy, Game Boy Color, Game Boy Advance, Mega Duck, Nintendo Entertainment System, and Famicom Disk System player for Kobo e-readers, built around armGBA and armNES. It combines full-speed emulation with a display scheduler designed for e-ink, touchscreen controls, Bluetooth audio, an on-device game browser, persistent saves and states, suspend handling, and supervised return to Nickel.
 
 Ko Boy currently targets the MediaTek-based Kobo Clara BW. Other models may differ in framebuffer, touchscreen, lifecycle, and audio behavior and are not supported until tested explicitly. Turn-based games, puzzle games, and slower adventures are the best fit; action games remain constrained by e-ink latency and touchscreen controls even when emulation itself runs at full speed.
 
@@ -22,6 +22,8 @@ Put games in system folders directly below `/mnt/onboard/KoBoy/Roms/`. On first 
 - `Game Boy Color`
 - `Game Boy Advance`
 - `Mega Duck`
+- `Nintendo Entertainment System`
+- `Famicom Disc System`
 
 The system browser is dynamic. Adding, renaming, or removing a top-level system folder changes the systems shown; intentionally removed stock folders are not recreated. Games must live directly inside a system folder because nested ROM folders are not currently supported.
 
@@ -47,6 +49,7 @@ The in-game Menu button pauses emulation and opens these controls:
 - Resume Game
 - Load State and Save State
 - Display Settings
+- Game Settings when the active game has an applicable curated option
 - Software volume from 0 through 20
 - Reset Game
 - Change Game
@@ -57,6 +60,22 @@ Reset Game starts the emulated system from power-on without reading or writing e
 GBA games add L and R buttons above the A and B controls. The default 6× integer scale produces a 960-by-864 game viewport on the Clara BW; direct development launches may use `--scale 5` for a smaller viewport.
 
 Input is drained at game, menu, and Nickel boundaries so one touch cannot activate controls on both sides of a transition. Repeated Menu presses cannot queue multiple menu transitions. The Clara BW's sequential multitouch reports are handled as independent contacts, allowing a direction and face button to remain held together. A single D-pad touch can select any of eight directions. On the face buttons, rolling one finger from A to B or B to A keeps the original button held, adds the second while the finger remains over it, and releases only the second when the finger rolls away.
+
+## Game and core settings
+
+Ko Boy deliberately does not expose every option advertised by its libretro cores. Core options fall into three groups: fixed frontend policy, a small set of useful player preferences, and developer-only compatibility controls. Ko Boy supplies deterministic values for hidden options, translates the approved options into its own concise Game Settings menu, and ignores the rest of each core's menu surface. Adding or updating a core therefore cannot silently add new user-facing settings.
+
+Game settings persist in `/mnt/onboard/KoBoy/core-options.conf`. They are currently system-wide rather than per game. The menu is assembled from the active core and loaded cartridge, so an option appears only when both Ko Boy has approved it and the core reports that it applies.
+
+The current armNES options are:
+
+- **Sprite Limit:** available for NES and FDS games. The authentic default limits each scanline to eight sprites; the alternate removes visual flicker without changing what the game detects.
+- **Disk System Fast Loading:** shown only when armNES detects an FDS disk game. It may run disk reads and writes faster while suppressing drive audio.
+- **PPU Accuracy:** shown only when `/mnt/onboard/KoBoy/developer` exists. Fast is the default; Balanced and Exact are intended for compatibility investigation. A changed PPU mode takes effect when the game is next loaded.
+
+For armGBA, **Solar Level** is shown only when the core detects a cartridge with light-sensor hardware. Tilt input is fixed to the touchscreen D-pad but is consulted only by games with applicable tilt hardware, so it does not replace ordinary D-pad controls in other games.
+
+BIOS choice, scaling, e-ink processing, save placement, unsupported controller mappings, link features, and core-provided LCD effects remain frontend policy rather than player preferences. Cartridge-clock and audio-character controls are intentionally deferred until their behavior and presentation can be designed without exposing the cores' full configuration surface.
 
 ## Sleep and wake
 
@@ -134,9 +153,9 @@ ROM + SRAM + save states
  MediaTek framebuffer and HWTCON interface
 ```
 
-The frontend uses a core-neutral interface for ROM loading, video, input, reset, states, and battery-backed save RAM. armGBA is pinned as the `deps/armgba` submodule and supplies every current system. Its GB/GBC implementation contains Gambatte-derived code, but Ko Boy has no separate Gambatte dependency or adapter.
+The frontend uses a core-neutral interface for ROM loading, video, input, reset, states, battery-backed save RAM, disk control, and curated core options. armGBA is pinned as `deps/armgba` and supplies GB, GBC, GBA, and Mega Duck; armNES is pinned as `deps/armnes` and supplies NES and FDS. Both cores are loaded as shared libretro libraries through the same frontend adapter. armGBA's GB/GBC implementation contains Gambatte-derived code, but Ko Boy has no separate Gambatte dependency or adapter.
 
-The `ArmGbaCore` adapter connects that interface to armGBA's libretro API, including dynamic GB/GBA video formats, input, reset, states, save RAM, and ZIP support. armGBA's optional CPU LCD effects require a compiler intrinsic unavailable in NickelTC, so Ko Boy supplies a no-effects compatibility layer and performs display processing in its own frontend.
+The libretro adapter supports legacy, v1, and v2 core-option registration while keeping exposure under Ko Boy's control. It owns stable copies of advertised values, applies hidden policy overrides, tracks each core's dynamic visibility signals, persists approved selections, and reports changes through libretro's variable-update protocol. armGBA's optional CPU LCD effects require a compiler intrinsic unavailable in NickelTC, so Ko Boy supplies a no-effects compatibility layer and performs display processing in its own frontend.
 
 The player and supervisor are separate processes. Nickel remains running while Ko Boy exclusively grabs the touchscreen, avoiding the watchdog resets observed when Nickel was stopped for extended periods. The NickelHook-based plugin provides the More-screen launcher and lifecycle signals.
 
@@ -189,8 +208,9 @@ Ko Boy and armGBA are distributed under GPL version 2. The release bundle must i
 
 - Nested game-library folders.
 - Maximum emulation speed as an alternative to fast forward.
-- Advanced core options, including RTC settings.
+- Cartridge-clock controls for RTC games; keep the core defaults hidden until their frontend behavior and presentation have been designed.
+- armGBA audio-character controls such as speaker/headphone response and low-pass filtering; keep the current core defaults for now.
 - Per-game display profiles.
-- Solar-level and tilt mappings for games that require them.
+- Additional cartridge-sensor mappings beyond the automatic solar-level and D-pad tilt support.
 - Physical controller support.
 - Additional libretro-compatible systems suited to the hardware and display.

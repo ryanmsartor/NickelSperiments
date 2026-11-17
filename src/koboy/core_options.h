@@ -7,6 +7,7 @@
 
 #include <map>
 #include <string>
+#include <vector>
 
 namespace koboy {
 
@@ -27,12 +28,45 @@ public:
 
     const char *value(const char *key) const;
     bool take_updated();
+    void set_visible(const char *key, bool visible);
+    void set_update_display_callback(
+        retro_core_options_update_display_callback_t callback);
+
+    unsigned curated_count(bool developer) const;
+    const char *curated_label(unsigned index, bool developer) const;
+    const char *curated_value_label(unsigned index, bool developer) const;
+    bool cycle_curated(unsigned index, bool developer);
 
 private:
-    void register_default(const char *key, const char *value);
+    struct Option {
+        std::string value;
+        std::vector<std::string> values;
+        std::vector<std::string> labels;
+        bool visible;
+        Option() : visible(true) {}
+    };
+    struct Curated {
+        std::string key;
+        std::string label;
+        bool developer_only;
+        Curated(const char *option_key, const char *option_label,
+                bool developer)
+            : key(option_key), label(option_label),
+              developer_only(developer) {}
+    };
 
-    std::map<std::string, std::string> values_;
+    void register_option(const char *key, const char *default_value,
+                         const std::vector<std::string> &values,
+                         const std::vector<std::string> &labels);
+    const Curated *curated_at(unsigned index, bool developer) const;
+    void load_config();
+    void save_config() const;
+
+    std::map<std::string, Option> options_;
     std::map<std::string, std::string> policy_;
+    std::map<std::string, std::string> configured_;
+    std::vector<Curated> curated_;
+    retro_core_options_update_display_callback_t update_display_callback_;
     bool updated_;
 };
 

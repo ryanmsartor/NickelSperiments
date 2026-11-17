@@ -37,6 +37,12 @@ public:
     virtual unsigned disk_index() const;
     virtual bool disk_ejected() const;
     virtual bool toggle_disk();
+    virtual unsigned core_option_count(bool developer) const;
+    virtual const char *core_option_label(unsigned index,
+                                          bool developer) const;
+    virtual const char *core_option_value(unsigned index,
+                                          bool developer) const;
+    virtual bool cycle_core_option(unsigned index, bool developer);
     virtual std::size_t state_size() const;
     virtual bool save_state(void *data, std::size_t size);
     virtual bool load_state(const void *data, std::size_t size);

@@ -31,7 +31,7 @@ TouchInput::TouchInput(unsigned screen_width, unsigned screen_height)
       buttons_(0U),
       ui_touch_active_(false), suppress_gameplay_until_release_(false),
       shoulder_buttons_enabled_(false), disk_controls_enabled_(false),
-      audio_controls_enabled_(false) {
+      audio_controls_enabled_(false), core_settings_enabled_(false) {
     std::memset(&x_info_, 0, sizeof(x_info_));
     std::memset(&y_info_, 0, sizeof(y_info_));
     std::memset(contacts_, 0, sizeof(contacts_));
@@ -199,15 +199,21 @@ UiAction TouchInput::ui_hit_test(int raw_x, int raw_y,
         if (x < left || x > right)
             return UI_NONE;
         const unsigned extras = (disk_controls_enabled_ ? 1U : 0U) +
-                                (audio_controls_enabled_ ? 1U : 0U);
-        const unsigned resume_y = extras == 2U ? 24U : 27U;
-        const unsigned state_y = extras == 2U ? 33U : extras == 1U ? 37U : 39U;
-        const unsigned settings_y = extras == 2U ? 42U : extras == 1U ? 47U : 51U;
-        const unsigned volume_y = extras == 2U ? 51U : 57U;
-        const unsigned disk_y = extras == 2U ? 60U : 57U;
-        const unsigned reset_y = extras == 2U ? 69U : extras == 1U ? 67U : 63U;
-        const unsigned select_y = extras == 2U ? 78U : extras == 1U ? 77U : 75U;
-        const unsigned exit_y = 87U;
+                                (audio_controls_enabled_ ? 1U : 0U) +
+                                (core_settings_enabled_ ? 1U : 0U);
+        const unsigned count = 6U + extras;
+        unsigned row = 0U;
+#define MENU_Y() (24U + row++ * 63U / (count - 1U))
+        const unsigned resume_y = MENU_Y();
+        const unsigned state_y = MENU_Y();
+        const unsigned display_y = MENU_Y();
+        const unsigned core_y = core_settings_enabled_ ? MENU_Y() : 0U;
+        const unsigned volume_y = audio_controls_enabled_ ? MENU_Y() : 0U;
+        const unsigned disk_y = disk_controls_enabled_ ? MENU_Y() : 0U;
+        const unsigned reset_y = MENU_Y();
+        const unsigned select_y = MENU_Y();
+        const unsigned exit_y = MENU_Y();
+#undef MENU_Y
         if (std::abs(y - static_cast<int>(screen_height_ * resume_y / 100U)) <=
             half_height)
             return UI_RESUME_GAME;
@@ -221,9 +227,13 @@ UiAction TouchInput::ui_hit_test(int raw_x, int raw_y,
         if (std::abs(y - static_cast<int>(screen_height_ * select_y / 100U)) <=
             half_height)
             return UI_SELECT_GAME;
-        if (std::abs(y - static_cast<int>(screen_height_ * settings_y / 100U)) <=
+        if (std::abs(y - static_cast<int>(screen_height_ * display_y / 100U)) <=
             half_height)
             return UI_DISPLAY_SETTINGS;
+        if (core_settings_enabled_ &&
+            std::abs(y - static_cast<int>(screen_height_ * core_y / 100U)) <=
+                half_height)
+            return UI_GAME_SETTINGS;
         if (audio_controls_enabled_ &&
             std::abs(y - static_cast<int>(screen_height_ * volume_y / 100U)) <=
             half_height)
@@ -265,6 +275,20 @@ UiAction TouchInput::ui_hit_test(int raw_x, int raw_y,
             if (std::abs(y - static_cast<int>(screen_height_ * centers[i] /
                                               100U)) <= half_height)
                 return actions[i];
+        if (y >= static_cast<int>(screen_height_ * 86U / 100U))
+            return UI_LIST_CANCEL;
+        return UI_NONE;
+    }
+
+    if (screen == UI_SCREEN_CORE_SETTINGS) {
+        const int left = static_cast<int>(screen_width_ * 8U / 100U);
+        const int right = static_cast<int>(screen_width_ * 92U / 100U);
+        const int row_top = static_cast<int>(screen_height_ * 18U / 100U);
+        const int row_height = static_cast<int>(screen_height_ * 15U / 100U);
+        if (x >= left && x <= right && y >= row_top &&
+            y < row_top + 4 * row_height)
+            return static_cast<UiAction>(UI_GAME_0 +
+                                         (y - row_top) / row_height);
         if (y >= static_cast<int>(screen_height_ * 86U / 100U))
             return UI_LIST_CANCEL;
         return UI_NONE;

@@ -48,6 +48,10 @@ public:
     virtual unsigned disk_index() const { return 0; }
     virtual bool disk_ejected() const { return false; }
     virtual bool toggle_disk() { return false; }
+    virtual unsigned core_option_count(bool) const { return 0U; }
+    virtual const char *core_option_label(unsigned, bool) const { return 0; }
+    virtual const char *core_option_value(unsigned, bool) const { return 0; }
+    virtual bool cycle_core_option(unsigned, bool) { return false; }
 
     virtual std::size_t state_size() const = 0;
     virtual bool save_state(void *data, std::size_t size) = 0;
