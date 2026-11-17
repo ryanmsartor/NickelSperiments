@@ -4,6 +4,7 @@
  */
 
 #include "armgba_core.h"
+#include "core_options.h"
 #include "libretro_library.h"
 
 #include <algorithm>
@@ -283,12 +284,13 @@ struct ArmGbaCore::Impl {
     AudioOutput audio;
     retro_disk_control_callback disk;
     bool has_disk_control;
+    CoreOptions options;
 
-    Impl()
+    explicit Impl(const std::string &core_id)
         : pixel_format(RETRO_PIXEL_FORMAT_XRGB8888), width(160U),
           height(144U), fps(16777216.0 / 280896.0), buttons(0U),
           loaded(false), audio_enabled(false), capture_video(true), disk(),
-          has_disk_control(false) {}
+          has_disk_control(false), options(core_id) {}
 };
 
 static bool environment_callback(unsigned command, void *data) {
@@ -312,14 +314,38 @@ static bool environment_callback(unsigned command, void *data) {
             retro_variable *variable = static_cast<retro_variable *>(data);
             if (!variable || !variable->key)
                 return false;
-            if (std::strcmp(variable->key, "armgba_skip_bios") == 0)
-                variable->value = "disabled";
-            else if (std::strcmp(variable->key, "armgba_bios") == 0)
-                variable->value = "nintendo";
-            else if (std::strcmp(variable->key, "armgba_gb_boot_rom") == 0)
-                variable->value = "enabled";
-            else
-                return false;
+            variable->value = impl.options.value(variable->key);
+            return variable->value != 0;
+        }
+        case RETRO_ENVIRONMENT_SET_VARIABLES:
+            impl.options.register_variables(
+                static_cast<const retro_variable *>(data));
+            return true;
+        case RETRO_ENVIRONMENT_GET_CORE_OPTIONS_VERSION:
+            *static_cast<unsigned *>(data) = 2U;
+            return true;
+        case RETRO_ENVIRONMENT_SET_CORE_OPTIONS:
+            impl.options.register_definitions(
+                static_cast<const retro_core_option_definition *>(data));
+            return true;
+        case RETRO_ENVIRONMENT_SET_CORE_OPTIONS_INTL: {
+            const retro_core_options_intl *options =
+                static_cast<const retro_core_options_intl *>(data);
+            impl.options.register_definitions(options ? options->us : 0);
+            return true;
+        }
+        case RETRO_ENVIRONMENT_SET_CORE_OPTIONS_V2: {
+            const retro_core_options_v2 *options =
+                static_cast<const retro_core_options_v2 *>(data);
+            impl.options.register_definitions_v2(
+                options ? options->definitions : 0);
+            return true;
+        }
+        case RETRO_ENVIRONMENT_SET_CORE_OPTIONS_V2_INTL: {
+            const retro_core_options_v2_intl *options =
+                static_cast<const retro_core_options_v2_intl *>(data);
+            impl.options.register_definitions_v2(
+                options && options->us ? options->us->definitions : 0);
             return true;
         }
         case RETRO_ENVIRONMENT_GET_LOG_INTERFACE:
@@ -329,7 +355,7 @@ static bool environment_callback(unsigned command, void *data) {
             *static_cast<bool *>(data) = true;
             return true;
         case RETRO_ENVIRONMENT_GET_VARIABLE_UPDATE:
-            *static_cast<bool *>(data) = false;
+            *static_cast<bool *>(data) = impl.options.take_updated();
             return true;
         case RETRO_ENVIRONMENT_GET_AUDIO_VIDEO_ENABLE:
             *static_cast<int *>(data) = RETRO_AV_ENABLE_AUDIO |
@@ -426,7 +452,11 @@ static int16_t input_state_callback(unsigned port, unsigned device,
 }
 
 ArmGbaCore::ArmGbaCore(const std::string &library_path)
-    : impl_(new Impl), api_(), library_(new LibretroLibrary), name_("libretro") {
+    : impl_(new Impl(library_path.find("armgba") != std::string::npos
+                         ? "armgba" :
+                     library_path.find("armnes") != std::string::npos
+                         ? "armnes" : "unknown")),
+      api_(), library_(new LibretroLibrary), name_("libretro") {
     if (active_core) {
         delete impl_;
         delete library_;

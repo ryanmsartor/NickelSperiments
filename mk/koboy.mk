@@ -13,6 +13,7 @@ KOBOY_COMMON_OBJECTS := \
 KOBOY_PLAYER_OBJECTS := \
 	$(KOBOY_OBJ_DIR)/koboy.o \
 	$(KOBOY_OBJ_DIR)/core_factory.o \
+	$(KOBOY_OBJ_DIR)/core_options.o \
 	$(KOBOY_OBJ_DIR)/libretro_library.o \
 	$(ARMGBA_ARCHIVE_OBJECTS) \
 	$(KOBOY_COMMON_OBJECTS) \
@@ -116,6 +117,10 @@ $(KOBOY_OBJ_DIR)/libretro_library.o: src/koboy/libretro_library.cpp
 $(KOBOY_OBJ_DIR)/core_factory.o: src/koboy/core_factory.cpp
 	@mkdir -p $(@D)
 	$(KOBO_CXX) $(ARMGBA_CPPFLAGS) $(KOBO_CXXFLAGS) -c -o $@ $<
+
+$(KOBOY_OBJ_DIR)/core_options.o: src/koboy/core_options.cpp
+	@mkdir -p $(@D)
+	$(KOBO_CXX) $(ARMGBA_ARCHIVE_CPPFLAGS) $(KOBO_CXXFLAGS) -c -o $@ $<
 
 $(KOBOY_OBJ_DIR)/%.o: src/koboy/%.cpp
 	@mkdir -p $(@D)
