@@ -9,7 +9,7 @@
 
 namespace koboy {
 
-std::unique_ptr<EmulatorCore> create_default_core();
+std::unique_ptr<EmulatorCore> create_core_for_rom(const std::string &path);
 
 } // namespace koboy
 

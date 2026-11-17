@@ -4,14 +4,19 @@
 #define NICKELSPERIMENTS_ARMGBA_CORE_H
 
 #include "emulator_core.h"
+#include "libretro_api.h"
+
+#include <string>
 
 namespace koboy {
 
 struct LibretroApi;
+class LibretroLibrary;
 
 class ArmGbaCore : public EmulatorCore {
 public:
     ArmGbaCore();
+    explicit ArmGbaCore(const std::string &library_path);
     virtual ~ArmGbaCore();
 
     virtual const char *name() const;
@@ -42,7 +47,9 @@ private:
     ArmGbaCore(const ArmGbaCore &);
     ArmGbaCore &operator=(const ArmGbaCore &);
 
-    const LibretroApi &api_;
+    LibretroApi api_;
+    LibretroLibrary *library_;
+    std::string name_;
 };
 
 } // namespace koboy

@@ -52,6 +52,8 @@ koboy-package: koboy koboy-supervisor armnes-core
 	install -d "$(KOBOY_PACKAGE_ROOT)/mnt/onboard/KoBoy/Roms/Game Boy Color"
 	install -d "$(KOBOY_PACKAGE_ROOT)/mnt/onboard/KoBoy/Roms/Game Boy Advance"
 	install -d "$(KOBOY_PACKAGE_ROOT)/mnt/onboard/KoBoy/Roms/Mega Duck"
+	install -d "$(KOBOY_PACKAGE_ROOT)/mnt/onboard/KoBoy/Roms/Nintendo Entertainment System"
+	install -d "$(KOBOY_PACKAGE_ROOT)/mnt/onboard/KoBoy/Roms/Famicom Disc System"
 	install -d $(KOBOY_PACKAGE_ROOT)/usr/local/Kobo/imageformats
 	install -m755 $(KOBOY_OUTPUT) \
 		$(KOBOY_PACKAGE_ROOT)/mnt/onboard/.adds/koboy/koboy
@@ -105,6 +107,10 @@ $(KOBOY_OBJ_DIR)/koboy.o: src/koboy/koboy.cpp
 $(KOBOY_OBJ_DIR)/libretro_library.o: src/koboy/libretro_library.cpp
 	@mkdir -p $(@D)
 	$(KOBO_CXX) $(ARMGBA_ARCHIVE_CPPFLAGS) $(KOBO_CXXFLAGS) -c -o $@ $<
+
+$(KOBOY_OBJ_DIR)/core_factory.o: src/koboy/core_factory.cpp
+	@mkdir -p $(@D)
+	$(KOBO_CXX) $(ARMGBA_CPPFLAGS) $(KOBO_CXXFLAGS) -c -o $@ $<
 
 $(KOBOY_OBJ_DIR)/%.o: src/koboy/%.cpp
 	@mkdir -p $(@D)

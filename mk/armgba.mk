@@ -87,9 +87,10 @@ armgba-libretro-check: $(ARMGBA_LIBRETRO_C_OBJECTS)
 
 armgba-probe: $(ARMGBA_PROBE_OUTPUT)
 
-$(ARMGBA_PROBE_OUTPUT): $(ARMGBA_PLAYER_OBJECTS) $(ARMGBA_PROBE_OBJECT)
+$(ARMGBA_PROBE_OUTPUT): $(ARMGBA_PLAYER_OBJECTS) $(ARMGBA_PROBE_OBJECT) \
+	build/obj/koboy/libretro_library.o
 	@mkdir -p $(@D)
-	$(KOBO_LINK) $(KOBO_LDFLAGS) -o $@ $^ -lpthread -lz
+	$(KOBO_LINK) $(KOBO_LDFLAGS) -o $@ $^ -lpthread -lz -ldl
 
 armgba-adapter-check: $(ARMGBA_ADAPTER_CHECK_OBJECT)
 

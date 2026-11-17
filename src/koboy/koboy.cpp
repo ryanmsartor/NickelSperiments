@@ -170,7 +170,9 @@ std::string loadable_rom_path(const std::string &path) {
         return path;
 
     struct string_list *entries = file_archive_get_file_list(
-        path.c_str(), "gb|gbc|gba|bin|duck|md0|md1|md2|md20s|md25s");
+        path.c_str(),
+        "gb|gbc|gb2|gba|gba2|bin|duck|md0|md1|md2|md20s|md25s|"
+        "nes|fds|unf|unif|nsf");
     if (!entries || entries->size == 0U) {
         string_list_free(entries);
         throw std::runtime_error("ZIP contains no supported ROM");
@@ -606,22 +608,23 @@ bool is_directory(const std::string &path) {
 }
 
 void initialize_system_folders() {
-    if (file_exists(kSystemFoldersInitialized))
-        return;
     if (!ensure_directory(kKoBoyRoot) ||
         !ensure_directory(kKoBoyRomDirectory))
         return;
     const char *const names[] = {
-        "Game Boy", "Game Boy Color", "Game Boy Advance", "Mega Duck"
+        "Game Boy", "Game Boy Color", "Game Boy Advance", "Mega Duck",
+        "Nintendo Entertainment System", "Famicom Disc System"
     };
     for (unsigned i = 0; i < sizeof(names) / sizeof(names[0]); ++i) {
         const std::string path = std::string(kKoBoyRomDirectory) + "/" +
                                  names[i];
         ensure_directory(path.c_str());
     }
-    std::ofstream marker(kSystemFoldersInitialized,
-                         std::ios::out | std::ios::trunc);
-    marker << "Ko Boy system folders initialized\n";
+    if (!file_exists(kSystemFoldersInitialized)) {
+        std::ofstream marker(kSystemFoldersInitialized,
+                             std::ios::out | std::ios::trunc);
+        marker << "Ko Boy system folders initialized\n";
+    }
 }
 
 std::vector<SystemFolder> list_systems() {
@@ -647,13 +650,14 @@ std::vector<SystemFolder> list_systems() {
               [](const SystemFolder &left, const SystemFolder &right) {
                   const char *const stock[] = {
                       "game boy", "game boy color", "game boy advance",
-                      "mega duck"
+                      "mega duck", "nintendo entertainment system",
+                      "famicom disc system"
                   };
-                  unsigned left_rank = 4U;
-                  unsigned right_rank = 4U;
+                  unsigned left_rank = 6U;
+                  unsigned right_rank = 6U;
                   const std::string left_name = lowercase(left.name);
                   const std::string right_name = lowercase(right.name);
-                  for (unsigned i = 0; i < 4U; ++i) {
+                  for (unsigned i = 0; i < 6U; ++i) {
                       if (left_name == stock[i]) left_rank = i;
                       if (right_name == stock[i]) right_rank = i;
                   }
@@ -668,7 +672,8 @@ bool is_supported_rom(const std::string &name) {
     const std::string folded = lowercase(name);
     const char *const extensions[] = {
         ".gb", ".gbc", ".gb2", ".gba", ".gba2", ".bin", ".duck",
-        ".md0", ".md1", ".md2", ".md20s", ".md25s", ".zip"
+        ".md0", ".md1", ".md2", ".md20s", ".md25s", ".nes",
+        ".fds", ".unf", ".unif", ".nsf", ".zip"
     };
     for (unsigned i = 0; i < sizeof(extensions) / sizeof(extensions[0]); ++i) {
         const std::string extension(extensions[i]);
@@ -1515,11 +1520,6 @@ int main(int argc, char **argv) {
         unsigned audio_volume = load_audio_volume();
         ensure_directory(kKoBoyRoot);
         ensure_directory(kKoBoyBiosDirectory);
-        std::unique_ptr<koboy::EmulatorCore> selected_core =
-            koboy::create_default_core();
-        koboy::EmulatorCore &core = *selected_core;
-        core.set_audio_volume(audio_volume);
-
         std::signal(SIGINT, handle_signal);
         std::signal(SIGTERM, handle_signal);
         std::signal(SIGHUP, handle_signal);
@@ -1560,28 +1560,31 @@ int main(int argc, char **argv) {
         }
         const std::string load_path = loadable_rom_path(rom_path);
         std::vector<unsigned char> rom = read_file(load_path.c_str());
+        std::unique_ptr<koboy::EmulatorCore> core =
+            koboy::create_core_for_rom(load_path);
+        core->set_audio_volume(audio_volume);
         std::string core_error;
-        if (!core.load_rom(load_path, rom, core_error))
+        if (!core->load_rom(load_path, rom, core_error))
             throw std::runtime_error(core_error);
         const unsigned horizontal_scale =
-            framebuffer.variable_info().xres / core.video_width();
+            framebuffer.variable_info().xres / core->video_width();
         const unsigned vertical_scale =
-            framebuffer.variable_info().yres / core.video_height();
+            framebuffer.variable_info().yres / core->video_height();
         unsigned effective_scale = std::min(
             options.scale, std::min(horizontal_scale, vertical_scale));
         if (effective_scale == 0U)
             throw std::runtime_error("ROM video size does not fit the display");
-        framebuffer.configure_viewport(core.video_width() * effective_scale,
-                                       core.video_height() * effective_scale);
-        bool shoulder_buttons = core.video_width() == 240U &&
-                                core.video_height() == 160U;
+        framebuffer.configure_viewport(core->video_width() * effective_scale,
+                                       core->video_height() * effective_scale);
+        bool shoulder_buttons = core->video_width() == 240U &&
+                                core->video_height() == 160U;
         input.set_shoulder_buttons_enabled(shoulder_buttons);
         std::string automatic_state = state_path(rom_path.c_str(), 0U);
         std::string manual_state = state_path(rom_path.c_str(), 1U);
         std::string sram_path = save_path(rom_path.c_str());
-        bool sram_loaded = load_sram(core, sram_path);
+        bool sram_loaded = load_sram(*core, sram_path);
         bool sram_saved = false;
-        bool automatic_state_loaded = load_state(core, automatic_state);
+        bool automatic_state_loaded = load_state(*core, automatic_state);
         bool automatic_state_saved = false;
 
         draw_controls(screen, screen_width, screen_height, shoulder_buttons);
@@ -1623,7 +1626,7 @@ int main(int argc, char **argv) {
                (!options.seconds || monotonic_seconds() < deadline)) {
             const double emulation_time = monotonic_seconds();
             emulation_accumulator +=
-                (emulation_time - last_emulation_time) * core.frame_rate();
+                (emulation_time - last_emulation_time) * core->frame_rate();
             last_emulation_time = emulation_time;
             unsigned frames_this_update = static_cast<unsigned>(emulation_accumulator);
             emulation_accumulator -= frames_this_update;
@@ -1633,14 +1636,14 @@ int main(int argc, char **argv) {
                     input.take_ui_action(koboy::UI_SCREEN_GAME) ==
                     koboy::UI_OPEN_MENU) {
                     const double menu_started = monotonic_seconds();
-                    core.set_audio_paused(true);
+                    core->set_audio_paused(true);
                     if (diagnostics)
                         record_simple_breadcrumb("menu_press", marker - 1U);
                     double drain_elapsed = 0.0;
                     if (!drain_gameplay_refresh(framebuffer, input,
                                                 marker - 1U, diagnostics,
                                                 drain_elapsed)) {
-                        core.set_audio_paused(false);
+                        core->set_audio_paused(false);
                         next_display = monotonic_seconds();
                         continue;
                     }
@@ -1675,7 +1678,7 @@ int main(int argc, char **argv) {
                         } else if (audio_volume < 20U) {
                             ++audio_volume;
                         }
-                        core.set_audio_volume(audio_volume);
+                        core->set_audio_volume(audio_volume);
                         save_audio_volume(audio_volume);
                         draw_menu(screen, screen_width, screen_height,
                                   developer, audio_volume);
@@ -1736,11 +1739,11 @@ int main(int argc, char **argv) {
                     if (interrupted)
                         break;
                     if (menu_action == koboy::UI_SAVE_STATE) {
-                        if (!save_state(core, manual_state))
+                        if (!save_state(*core, manual_state))
                             std::cerr << "warning: manual save state failed\n";
-                        sram_saved = save_sram(core, sram_path);
+                        sram_saved = save_sram(*core, sram_path);
                     } else if (menu_action == koboy::UI_LOAD_STATE) {
-                        if (load_state(core, manual_state)) {
+                        if (load_state(*core, manual_state)) {
                             scaled.clear();
                             previous_rgb.clear();
                             force_first_frame_gc16 = true;
@@ -1748,14 +1751,14 @@ int main(int argc, char **argv) {
                             std::cerr << "warning: no usable manual save state\n";
                         }
                     } else if (menu_action == koboy::UI_RESET_GAME) {
-                        core.reset();
+                        core->reset();
                         scaled.clear();
                         previous_rgb.clear();
                         force_first_frame_gc16 = true;
                     }
                     if (menu_action == koboy::UI_SELECT_GAME) {
-                        automatic_state_saved = save_state(core, automatic_state);
-                        sram_saved = save_sram(core, sram_path);
+                        automatic_state_saved = save_state(*core, automatic_state);
+                        sram_saved = save_sram(*core, sram_path);
                         const std::string selected = choose_game(
                             framebuffer, input, screen, marker, true);
                         if (!selected.empty()) {
@@ -1767,13 +1770,19 @@ int main(int argc, char **argv) {
                                 loadable_rom_path(selected);
                             std::vector<unsigned char> selected_rom =
                                 read_file(selected_load_path.c_str());
-                            if (!core.load_rom(selected_load_path, selected_rom,
-                                               core_error))
+                            core.reset();
+                            std::unique_ptr<koboy::EmulatorCore> selected_core =
+                                koboy::create_core_for_rom(selected_load_path);
+                            selected_core->set_audio_volume(audio_volume);
+                            if (!selected_core->load_rom(selected_load_path,
+                                                        selected_rom,
+                                                        core_error))
                                 throw std::runtime_error(core_error);
+                            core.swap(selected_core);
                             const unsigned selected_horizontal_scale =
-                                screen_width / core.video_width();
+                                screen_width / core->video_width();
                             const unsigned selected_vertical_scale =
-                                screen_height / core.video_height();
+                                screen_height / core->video_height();
                             effective_scale = std::min(
                                 options.scale,
                                 std::min(selected_horizontal_scale,
@@ -1782,10 +1791,10 @@ int main(int argc, char **argv) {
                                 throw std::runtime_error(
                                     "ROM video size does not fit the display");
                             framebuffer.configure_viewport(
-                                core.video_width() * effective_scale,
-                                core.video_height() * effective_scale);
-                            shoulder_buttons = core.video_width() == 240U &&
-                                               core.video_height() == 160U;
+                                core->video_width() * effective_scale,
+                                core->video_height() * effective_scale);
+                            shoulder_buttons = core->video_width() == 240U &&
+                                               core->video_height() == 160U;
                             input.set_shoulder_buttons_enabled(
                                 shoulder_buttons);
                             rom.swap(selected_rom);
@@ -1793,9 +1802,9 @@ int main(int argc, char **argv) {
                             automatic_state = state_path(rom_path.c_str(), 0U);
                             manual_state = state_path(rom_path.c_str(), 1U);
                             sram_path = save_path(rom_path.c_str());
-                            sram_loaded = load_sram(core, sram_path);
+                            sram_loaded = load_sram(*core, sram_path);
                             automatic_state_loaded =
-                                load_state(core, automatic_state);
+                                load_state(*core, automatic_state);
                             automatic_state_saved = false;
                             scaled.clear();
                             previous_rgb.clear();
@@ -1829,10 +1838,10 @@ int main(int argc, char **argv) {
                     last_emulation_time = menu_resumed;
                     emulation_accumulator = 0.0;
                     frames_this_update = 0U;
-                    core.set_audio_paused(false);
+                    core->set_audio_paused(false);
                 }
                 if (sleep_requested || wake_requested) {
-                    core.set_audio_paused(true);
+                    core->set_audio_paused(true);
                     frames_this_update = 0U;
                     emulation_accumulator = 0.0;
                     for (std::size_t i = 0; i < a2_markers.size(); ++i)
@@ -1851,7 +1860,7 @@ int main(int argc, char **argv) {
                     next_full_refresh = display_settings.full_refresh_seconds ?
                         resumed_at + display_settings.full_refresh_seconds :
                         0.0;
-                    core.set_audio_paused(false);
+                    core->set_audio_paused(false);
                     continue;
                 }
                 const unsigned current_buttons = input.buttons();
@@ -1861,8 +1870,8 @@ int main(int argc, char **argv) {
                 }
                 if (current_buttons != 0U)
                     ++input_nonzero_polls;
-                core.run_frame(current_buttons, rgb,
-                               frames_this_update == 0U);
+                core->run_frame(current_buttons, rgb,
+                                frames_this_update == 0U);
                 ++emulated_frames;
             }
             if (exit_to_nickel || interrupted)
@@ -1874,7 +1883,7 @@ int main(int argc, char **argv) {
             }
             a2_markers.clear();
             koboy::scale_rgb32_dithered_bichrome(
-                rgb, core.video_width(), core.video_height(),
+                rgb, core->video_width(), core->video_height(),
                 effective_scale, previous_rgb,
                 framebuffer,
                 display_settings.grid_effect);
@@ -1932,8 +1941,8 @@ int main(int argc, char **argv) {
                     last_submitted_marker, last_submitted_type,
                     last_completed_marker, last_wait_seconds, refresh_counts,
                     system_cpu_tenths, process_cpu_tenths,
-                    core.audio_frames_queued(),
-                    core.audio_frames_dropped());
+                    core->audio_frames_queued(),
+                    core->audio_frames_dropped());
                 next_heartbeat = now + 5.0;
             }
             if (submitted_refresh)
@@ -1954,8 +1963,8 @@ int main(int argc, char **argv) {
             framebuffer.wait_for_update(a2_markers[i]);
         a2_markers.clear();
         const double elapsed = monotonic_seconds() - started;
-        automatic_state_saved = save_state(core, automatic_state);
-        sram_saved = save_sram(core, sram_path);
+        automatic_state_saved = save_state(*core, automatic_state);
+        sram_saved = save_sram(*core, sram_path);
         if (exit_to_nickel)
             input.wait_for_release();
         if (!supervised)
@@ -1968,8 +1977,8 @@ int main(int argc, char **argv) {
                   << (automatic_state_loaded ? "yes" : "no") << '\n';
         std::cout << "state0_saved="
                   << (automatic_state_saved ? "yes" : "no") << '\n';
-        std::cout << "core=" << core.name() << '\n';
-        std::cout << "sram_bytes=" << core.save_ram_size() << '\n';
+        std::cout << "core=" << core->name() << '\n';
+        std::cout << "sram_bytes=" << core->save_ram_size() << '\n';
         std::cout << "sram_loaded=" << (sram_loaded ? "yes" : "no") << '\n';
         std::cout << "sram_saved=" << (sram_saved ? "yes" : "no") << '\n';
         std::cout << "rom_bytes=" << rom.size() << '\n';
@@ -1977,9 +1986,9 @@ int main(int argc, char **argv) {
         std::cout << "emulated_frames=" << emulated_frames << '\n';
         std::cout << "displayed_frames=" << displayed_frames << '\n';
         std::cout << "audio_frames_queued="
-                  << core.audio_frames_queued() << '\n';
+                  << core->audio_frames_queued() << '\n';
         std::cout << "audio_frames_dropped="
-                  << core.audio_frames_dropped() << '\n';
+                  << core->audio_frames_dropped() << '\n';
         std::cout << "input_transitions=" << input_transitions << '\n';
         std::cout << "input_nonzero_polls=" << input_nonzero_polls << '\n';
         std::cout << "result="

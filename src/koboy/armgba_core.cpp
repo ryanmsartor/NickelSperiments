@@ -5,6 +5,7 @@
 
 #include "armgba_core.h"
 #include "libretro_api.h"
+#include "libretro_library.h"
 
 #include <algorithm>
 #include <atomic>
@@ -60,7 +61,8 @@ class AudioOutput {
 public:
     AudioOutput()
         : pipe_fd_(-1), child_(-1), stopping_(false), paused_(false),
-          volume_(10U), queued_frames_(0), dropped_frames_(0), read_(0), used_(0),
+          volume_(10U), sample_rate_(32768U), queued_frames_(0),
+          dropped_frames_(0), read_(0), used_(0),
           samples_(65536U * 2U) {}
 
     ~AudioOutput() { stop(); }
@@ -74,6 +76,10 @@ public:
             return;
         const pid_t child = fork();
         if (child == 0) {
+            char caps[96];
+            std::snprintf(caps, sizeof(caps),
+                          "audio/x-raw,format=S16LE,rate=%u,channels=2,layout=interleaved",
+                          sample_rate_);
             dup2(descriptors[0], STDIN_FILENO);
             close(descriptors[0]);
             close(descriptors[1]);
@@ -82,7 +88,7 @@ public:
                 close(fd);
             execlp("gst-launch-1.0", "gst-launch-1.0", "-q",
                    "fdsrc", "fd=0", "!",
-                   "audio/x-raw,format=S16LE,rate=32768,channels=2,layout=interleaved",
+                   caps,
                    "!", "audioresample", "quality=0", "!",
                    "audio/x-raw,format=S16LE,rate=48000,channels=2,layout=interleaved",
                    "!", "mtkbtmwrpcaudiosink", "sync=false",
@@ -171,6 +177,11 @@ public:
         volume_ = std::min(volume, 20U);
     }
 
+    void set_sample_rate(unsigned sample_rate) {
+        if (sample_rate != 0U)
+            sample_rate_ = sample_rate;
+    }
+
     unsigned volume() const { return volume_; }
 
     uint64_t queued_frames() const {
@@ -228,6 +239,7 @@ private:
     std::atomic<bool> stopping_;
     bool paused_;
     std::atomic<unsigned> volume_;
+    unsigned sample_rate_;
     uint64_t queued_frames_;
     uint64_t dropped_frames_;
     std::size_t read_;
@@ -402,11 +414,42 @@ static int16_t input_state_callback(unsigned port, unsigned device,
     }
 }
 
-ArmGbaCore::ArmGbaCore() : impl_(new Impl), api_(armgba_libretro_api()) {
+ArmGbaCore::ArmGbaCore()
+    : impl_(new Impl), api_(armgba_libretro_api()), library_(0),
+      name_("armGBA") {
     if (active_core) {
         delete impl_;
-        throw std::runtime_error("armGBA only supports one active core");
+        throw std::runtime_error("libretro host only supports one active core");
     }
+    active_core = this;
+    signal(SIGPIPE, SIG_IGN);
+    api_.set_environment(environment_callback);
+    api_.set_video_refresh(video_callback);
+    api_.set_audio_sample(0);
+    api_.set_audio_sample_batch(audio_callback);
+    api_.set_input_poll(input_poll_callback);
+    api_.set_input_state(input_state_callback);
+    api_.init();
+}
+
+ArmGbaCore::ArmGbaCore(const std::string &library_path)
+    : impl_(new Impl), api_(), library_(new LibretroLibrary), name_("libretro") {
+    if (active_core) {
+        delete impl_;
+        delete library_;
+        throw std::runtime_error("libretro host only supports one active core");
+    }
+    std::string error;
+    if (!library_->open(library_path, &error)) {
+        delete impl_;
+        delete library_;
+        throw std::runtime_error(error);
+    }
+    api_ = library_->api();
+    retro_system_info information = {0, 0, 0, false, false};
+    api_.get_system_info(&information);
+    if (information.library_name)
+        name_ = information.library_name;
     active_core = this;
     signal(SIGPIPE, SIG_IGN);
     api_.set_environment(environment_callback);
@@ -423,10 +466,11 @@ ArmGbaCore::~ArmGbaCore() {
         api_.unload_game();
     api_.deinit();
     active_core = 0;
+    delete library_;
     delete impl_;
 }
 
-const char *ArmGbaCore::name() const { return "armGBA"; }
+const char *ArmGbaCore::name() const { return name_.c_str(); }
 unsigned ArmGbaCore::video_width() const { return impl_->width; }
 unsigned ArmGbaCore::video_height() const { return impl_->height; }
 double ArmGbaCore::frame_rate() const { return impl_->fps; }
@@ -447,17 +491,19 @@ bool ArmGbaCore::load_rom(const std::string &path,
         return false;
     }
     impl_->loaded = true;
+    retro_system_av_info information;
+    api_.get_system_av_info(&information);
+    impl_->width = information.geometry.base_width;
+    impl_->height = information.geometry.base_height;
+    impl_->fps = information.timing.fps;
+    impl_->audio.set_sample_rate(static_cast<unsigned>(
+        information.timing.sample_rate + 0.5));
     if (impl_->audio.volume() != 0U && bluetooth_audio_connected()) {
         impl_->audio.start();
         std::fputs("Ko Boy: Bluetooth audio connected\n", stderr);
     } else {
         std::fputs("Ko Boy: no connected Bluetooth audio device\n", stderr);
     }
-    retro_system_av_info information;
-    api_.get_system_av_info(&information);
-    impl_->width = information.geometry.base_width;
-    impl_->height = information.geometry.base_height;
-    impl_->fps = information.timing.fps;
     return true;
 }
 
