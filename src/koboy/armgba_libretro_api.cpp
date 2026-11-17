@@ -14,6 +14,7 @@ const LibretroApi &armgba_libretro_api() {
         retro_set_input_state,
         retro_init,
         retro_deinit,
+        retro_get_system_info,
         retro_load_game,
         retro_unload_game,
         retro_get_system_av_info,

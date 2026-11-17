@@ -23,7 +23,7 @@ while [ "$#" -gt 0 ]; do
             objects="$objects $1"
             shift
             ;;
-        -lpthread|-lz)
+        -lpthread|-lz|-ldl)
             libraries="$libraries $1"
             shift
             ;;

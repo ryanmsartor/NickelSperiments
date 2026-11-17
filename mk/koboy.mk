@@ -13,6 +13,7 @@ KOBOY_COMMON_OBJECTS := \
 KOBOY_PLAYER_OBJECTS := \
 	$(KOBOY_OBJ_DIR)/koboy.o \
 	$(KOBOY_OBJ_DIR)/core_factory.o \
+	$(KOBOY_OBJ_DIR)/libretro_library.o \
 	$(KOBOY_COMMON_OBJECTS) \
 	$(KOBOY_OBJ_DIR)/touch_input.o
 KOBOY_SUPERVISOR_OBJECTS := \
@@ -78,7 +79,7 @@ koboy-package: koboy koboy-supervisor
 
 $(KOBOY_OUTPUT): $(ARMGBA_PLAYER_OBJECTS) $(KOBOY_PLAYER_OBJECTS)
 	@mkdir -p $(@D)
-	$(KOBO_LINK) $(KOBO_LDFLAGS) -o $@ $^ -lpthread -lz
+	$(KOBO_LINK) $(KOBO_LDFLAGS) -o $@ $^ -lpthread -lz -ldl
 
 $(KOBOY_SUPERVISOR_OUTPUT): $(KOBOY_SUPERVISOR_OBJECTS)
 	@mkdir -p $(@D)
@@ -93,6 +94,10 @@ $(KOBOY_FB_ISOLATION_OUTPUT): $(KOBOY_FB_ISOLATION_OBJECTS)
 	$(KOBO_LINK) $(KOBO_LDFLAGS) -o $@ $^
 
 $(KOBOY_OBJ_DIR)/koboy.o: src/koboy/koboy.cpp
+	@mkdir -p $(@D)
+	$(KOBO_CXX) $(ARMGBA_ARCHIVE_CPPFLAGS) $(KOBO_CXXFLAGS) -c -o $@ $<
+
+$(KOBOY_OBJ_DIR)/libretro_library.o: src/koboy/libretro_library.cpp
 	@mkdir -p $(@D)
 	$(KOBO_CXX) $(ARMGBA_ARCHIVE_CPPFLAGS) $(KOBO_CXXFLAGS) -c -o $@ $<
 

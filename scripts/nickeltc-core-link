@@ -1,0 +1,47 @@
+#!/bin/sh
+set -eu
+
+workspace=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+target="$workspace/.toolchains/nickeltc-root/tc/arm-nickel-linux-gnueabihf"
+gcc="$target/lib/gcc/arm-nickel-linux-gnueabihf/4.9.4"
+sysroot="$target/arm-nickel-linux-gnueabihf/sysroot"
+tools="$target/arm-nickel-linux-gnueabihf/bin"
+output=libretro.so
+version_script=
+objects=
+
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        -o)
+            output=$2
+            shift 2
+            ;;
+        --version-script)
+            version_script=$2
+            shift 2
+            ;;
+        *.o)
+            objects="$objects $1"
+            shift
+            ;;
+        *)
+            echo "nickeltc-core-link: unsupported argument: $1" >&2
+            exit 2
+            ;;
+    esac
+done
+
+version_option=
+if [ -n "$version_script" ]; then
+    version_option="--version-script=$version_script"
+fi
+
+# Word splitting is intentional; repository object paths contain no spaces.
+# shellcheck disable=SC2086
+exec "$workspace/scripts/nickeltc-exec" "$tools/ld.bfd.x86_64" \
+    --sysroot="$sysroot" --eh-frame-hdr --hash-style=gnu --no-undefined \
+    -shared -X -m armelf_linux_eabi -soname "$(basename "$output")" \
+    $version_option -o "$output" \
+    -L"$gcc" -L"$target/arm-nickel-linux-gnueabihf/lib" \
+    -L"$sysroot/lib" -L"$sysroot/usr/lib" "$gcc/crtbeginS.o" $objects \
+    -lz -lm -lgcc_s -lc -lgcc_s "$gcc/crtendS.o"

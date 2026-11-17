@@ -22,6 +22,7 @@ struct LibretroApi {
     void (*set_input_state)(retro_input_state_t);
     void (*init)();
     void (*deinit)();
+    void (*get_system_info)(retro_system_info *);
     bool (*load_game)(const retro_game_info *);
     void (*unload_game)();
     void (*get_system_av_info)(retro_system_av_info *);
