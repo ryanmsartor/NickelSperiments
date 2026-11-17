@@ -42,10 +42,11 @@ koboy-display-test: $(KOBOY_DISPLAY_TEST_OUTPUT)
 
 koboy-framebuffer-isolation: $(KOBOY_FB_ISOLATION_OUTPUT)
 
-koboy-package: koboy koboy-supervisor
+koboy-package: koboy koboy-supervisor armnes-core
 	$(MAKE) koboy-lifecycle
 	rm -rf $(KOBOY_PACKAGE_ROOT)
 	install -d $(KOBOY_PACKAGE_ROOT)/mnt/onboard/.adds/koboy/LICENSES
+	install -d $(KOBOY_PACKAGE_ROOT)/mnt/onboard/.adds/koboy/cores
 	install -d $(KOBOY_PACKAGE_ROOT)/mnt/onboard/KoBoy/BIOS
 	install -d "$(KOBOY_PACKAGE_ROOT)/mnt/onboard/KoBoy/Roms/Game Boy"
 	install -d "$(KOBOY_PACKAGE_ROOT)/mnt/onboard/KoBoy/Roms/Game Boy Color"
@@ -56,6 +57,8 @@ koboy-package: koboy koboy-supervisor
 		$(KOBOY_PACKAGE_ROOT)/mnt/onboard/.adds/koboy/koboy
 	install -m755 $(KOBOY_SUPERVISOR_OUTPUT) \
 		$(KOBOY_PACKAGE_ROOT)/mnt/onboard/.adds/koboy/koboy-supervisor
+	install -m755 $(ARMNES_OUTPUT) \
+		$(KOBOY_PACKAGE_ROOT)/mnt/onboard/.adds/koboy/cores/armnes_libretro.so
 	install -m644 libkoboylifecycle.so \
 		$(KOBOY_PACKAGE_ROOT)/usr/local/Kobo/imageformats/libkoboylifecycle.so
 	install -m644 package/koboy/README.txt \
@@ -71,6 +74,8 @@ koboy-package: koboy koboy-supervisor
 		grep -q 'ELF 32-bit.*ARM'
 	file $(KOBOY_PACKAGE_ROOT)/mnt/onboard/.adds/koboy/koboy-supervisor | \
 		grep -q 'ELF 32-bit.*ARM'
+	file $(KOBOY_PACKAGE_ROOT)/mnt/onboard/.adds/koboy/cores/armnes_libretro.so | \
+		grep -q 'ELF 32-bit.*shared object, ARM'
 	file $(KOBOY_PACKAGE_ROOT)/usr/local/Kobo/imageformats/libkoboylifecycle.so | \
 		grep -q 'ELF 32-bit.*shared object, ARM'
 	test "$$(tar -tzf $(KOBOY_PACKAGE) | grep -c '^./mnt/onboard/.adds/koboy/LICENSES/[^/][^/]*$$')" -eq 6

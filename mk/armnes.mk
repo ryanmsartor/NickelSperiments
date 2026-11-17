@@ -1,6 +1,8 @@
 ARMNES_ROOT := deps/armnes
 ARMNES_OBJ_DIR := build/obj/armnes
 ARMNES_OUTPUT := build/armnes_libretro.so
+ARMNES_PROBE_OBJECT := $(ARMNES_OBJ_DIR)/koboy/armnes_probe.o
+ARMNES_PROBE_OUTPUT := build/armnes-probe
 
 ARMNES_CORE_SOURCES := \
 	src/apu.c src/boards/asic.c src/boards/bandai.c \
@@ -33,9 +35,16 @@ ARMNES_CFLAGS := -O3 -std=gnu11 -Wall -Wextra -fwrapv -fPIC \
 
 -include $(ARMNES_DEPENDENCIES)
 
-.PHONY: armnes-core armnes-clean
+.PHONY: armnes-core armnes-probe armnes-clean
 
 armnes-core: $(ARMNES_OUTPUT)
+
+armnes-probe: $(ARMNES_PROBE_OUTPUT)
+
+$(ARMNES_PROBE_OUTPUT): $(ARMNES_PROBE_OBJECT) \
+	build/obj/koboy/libretro_library.o
+	@mkdir -p $(@D)
+	$(KOBO_LINK) $(KOBO_LDFLAGS) -o $@ $^ -ldl
 
 $(ARMNES_OUTPUT): $(ARMNES_OBJECTS)
 	@mkdir -p $(@D)
@@ -46,9 +55,14 @@ $(ARMNES_OBJ_DIR)/src/fceu/boards/%.o: $(ARMNES_ROOT)/src/fceu/boards/%.c
 	@mkdir -p $(@D)
 	$(KOBO_CC) $(ARMNES_CPPFLAGS) $(ARMNES_CFLAGS) -w -c -o $@ $<
 
+$(ARMNES_PROBE_OBJECT): src/koboy/armnes_probe.cpp
+	@mkdir -p $(@D)
+	$(KOBO_CXX) -I$(ARMNES_ROOT)/libretro/deps/libretro-common/include \
+		$(KOBO_CXXFLAGS) -c -o $@ $<
+
 $(ARMNES_OBJ_DIR)/%.o: $(ARMNES_ROOT)/%.c
 	@mkdir -p $(@D)
 	$(KOBO_CC) $(ARMNES_CPPFLAGS) $(ARMNES_CFLAGS) -c -o $@ $<
 
 armnes-clean:
-	rm -rf $(ARMNES_OBJ_DIR) $(ARMNES_OUTPUT)
+	rm -rf $(ARMNES_OBJ_DIR) $(ARMNES_OUTPUT) $(ARMNES_PROBE_OUTPUT)
