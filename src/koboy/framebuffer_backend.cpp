@@ -181,6 +181,20 @@ void FramebufferBackend::draw_screen(const std::vector<uint32_t> &pixels) {
                     &pixels[static_cast<size_t>(y) * variable_.xres], row_bytes);
 }
 
+void FramebufferBackend::draw_screen_region(
+        const std::vector<uint32_t> &pixels, const Viewport &region) {
+    if (pixels.size() != static_cast<size_t>(variable_.xres) * variable_.yres)
+        throw std::runtime_error("screen frame dimensions do not match display");
+    if (region.x + region.width > variable_.xres ||
+        region.y + region.height > variable_.yres)
+        throw std::runtime_error("screen region is outside display");
+    const size_t row_bytes = static_cast<size_t>(region.width) * 4U;
+    for (uint32_t y = region.y; y < region.y + region.height; ++y)
+        std::memcpy(screen_row_address(y) + static_cast<size_t>(region.x) * 4U,
+                    &pixels[static_cast<size_t>(y) * variable_.xres + region.x],
+                    row_bytes);
+}
+
 double FramebufferBackend::submit(uint32_t waveform,
                                   uint32_t update_mode,
                                   uint32_t marker,
@@ -216,6 +230,12 @@ double FramebufferBackend::refresh_a2(uint32_t marker,
                                       bool wait_for_completion) {
     return submit(HWTCON_WAVEFORM_A2, HWTCON_UPDATE_PARTIAL, marker,
                   wait_for_completion, viewport_);
+}
+
+double FramebufferBackend::refresh_a2_region(
+        uint32_t marker, const Viewport &region, bool wait_for_completion) {
+    return submit(HWTCON_WAVEFORM_A2, HWTCON_UPDATE_PARTIAL, marker,
+                  wait_for_completion, region);
 }
 
 double FramebufferBackend::refresh_screen_du(

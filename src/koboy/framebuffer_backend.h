@@ -31,10 +31,14 @@ public:
     void draw(const std::vector<uint32_t> &pixels);
     void read_viewport(std::vector<uint32_t> &pixels);
     void draw_screen(const std::vector<uint32_t> &pixels);
+    void draw_screen_region(const std::vector<uint32_t> &pixels,
+                            const Viewport &region);
     uint32_t *mutable_viewport_row(uint32_t y);
     double refresh_screen_du(uint32_t marker,
                              bool wait_for_completion = false);
     double refresh_a2(uint32_t marker, bool wait_for_completion = false);
+    double refresh_a2_region(uint32_t marker, const Viewport &region,
+                             bool wait_for_completion = false);
     double refresh_gc16(uint32_t marker, bool wait_for_completion);
     double refresh_screen_gc16(uint32_t marker, bool wait_for_completion);
     double wait_for_update(uint32_t marker);

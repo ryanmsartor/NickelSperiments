@@ -64,9 +64,10 @@ struct DisplaySettings {
     unsigned full_refresh_seconds;
     koboy::ScreenEffect screen_effect;
     unsigned target_refresh_quarters;
+    bool fps_counter;
     DisplaySettings()
         : full_refresh_seconds(60U), screen_effect(koboy::SCREEN_EFFECT_OFF),
-          target_refresh_quarters(40U) {}
+          target_refresh_quarters(40U), fps_counter(false) {}
 };
 
 void handle_signal(int) { interrupted = 1; }
@@ -251,20 +252,23 @@ void load_display_settings(DisplaySettings &settings) {
         else if (key == "target_refresh_quarters" &&
                  valid_target_refresh_quarters(value))
             settings.target_refresh_quarters = value;
+        else if (key == "fps_counter" && value <= 1U)
+            settings.fps_counter = value != 0U;
     }
 }
 
 void save_display_settings(const DisplaySettings &settings) {
     if (!ensure_directory(kKoBoyRoot))
         return;
-    char text[192];
+    char text[224];
     const int length = std::snprintf(
         text, sizeof(text),
         "full_refresh_seconds=%u\nscreen_effect=%u\n"
-        "target_refresh_quarters=%u\n",
+        "target_refresh_quarters=%u\nfps_counter=%u\n",
         settings.full_refresh_seconds,
         static_cast<unsigned>(settings.screen_effect),
-        settings.target_refresh_quarters);
+        settings.target_refresh_quarters,
+        settings.fps_counter ? 1U : 0U);
     const std::string temporary = std::string(kDisplayConfig) + ".tmp";
     const int output = open(temporary.c_str(),
                             O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0644);
@@ -343,6 +347,10 @@ const char *screen_effect_name(koboy::ScreenEffect effect) {
 void cycle_screen_effect(DisplaySettings &settings) {
     settings.screen_effect = static_cast<koboy::ScreenEffect>(
         (static_cast<unsigned>(settings.screen_effect) + 1U) % 4U);
+}
+
+void cycle_fps_counter(DisplaySettings &settings) {
+    settings.fps_counter = !settings.fps_counter;
 }
 
 unsigned long long read_unsigned_file(const char *path) {
@@ -1060,6 +1068,27 @@ void draw_label(std::vector<uint32_t> &screen, unsigned width,
     }
 }
 
+koboy::Viewport draw_fps_counter(std::vector<uint32_t> &screen,
+                                 unsigned width, unsigned height,
+                                 unsigned emulated_tenths,
+                                 unsigned panel_tenths) {
+    const uint32_t dark = 0xFF000000U;
+    const uint32_t light = 0xFFFFFFFFU;
+    koboy::Viewport region = {
+        width * 8U / 100U, height / 100U,
+        width * 84U / 100U, height * 5U / 100U
+    };
+    fill_rectangle(screen, width, height, region.x, region.y,
+                   region.x + region.width, region.y + region.height, light);
+    char label[48];
+    std::snprintf(label, sizeof(label), "EMU %u.%u  PANEL %u.%u",
+                  emulated_tenths / 10U, emulated_tenths % 10U,
+                  panel_tenths / 10U, panel_tenths % 10U);
+    draw_label(screen, width, height, width / 2,
+               region.y + region.height / 2U, label, 3, dark);
+    return region;
+}
+
 void draw_controls(std::vector<uint32_t> &screen, unsigned width,
                    unsigned height, bool shoulder_buttons) {
     const uint32_t dark = 0xFF202020U;
@@ -1236,14 +1265,16 @@ void draw_display_settings(std::vector<uint32_t> &screen, unsigned width,
     const int left = width * 8 / 100;
     const int right = width * 92 / 100;
     const int half_height = height * 4 / 100;
-    const unsigned developer_centers[] = {30U, 50U, 70U};
+    const unsigned developer_centers[] = {25U, 42U, 59U, 76U};
     const std::string developer_rows[] = {
         std::string("FULL REFRESH  ") +
             full_refresh_frequency_name(settings.full_refresh_seconds),
         std::string("SCREEN EFFECT  ") +
             screen_effect_name(settings.screen_effect),
         std::string("TARGET REFRESH  ") +
-            target_refresh_rate_name(settings.target_refresh_quarters)
+            target_refresh_rate_name(settings.target_refresh_quarters),
+        std::string("FPS COUNTER  ") +
+            (settings.fps_counter ? "ON" : "OFF")
     };
     const unsigned user_centers[] = {36U, 60U};
     const std::string user_rows[] = {
@@ -1254,7 +1285,7 @@ void draw_display_settings(std::vector<uint32_t> &screen, unsigned width,
     };
     const unsigned *centers = developer ? developer_centers : user_centers;
     const std::string *rows = developer ? developer_rows : user_rows;
-    const unsigned count = developer ? 3U : 2U;
+    const unsigned count = developer ? 4U : 2U;
     for (unsigned i = 0U; i < count; ++i) {
         const int center = height * centers[i] / 100;
         fill_rectangle(screen, width, height, left, center - half_height,
@@ -1700,6 +1731,22 @@ int main(int argc, char **argv) {
         double last_emulation_time = started;
         unsigned emulated_frames = 0U;
         unsigned displayed_frames = 0U;
+        unsigned cadence_emulated_frames = 0U;
+        double first_emulated_at = 0.0;
+        double last_emulated_at = 0.0;
+        unsigned a2_submissions = 0U;
+        double first_a2_submitted_at = 0.0;
+        double last_a2_submitted_at = 0.0;
+        double a2_submit_seconds = 0.0;
+        double a2_wait_seconds = 0.0;
+        unsigned a2_waits = 0U;
+        bool fps_counter_active = developer && display_settings.fps_counter;
+        bool fps_header_pending = false;
+        double fps_window_started = started;
+        double next_fps_update = started + 1.0;
+        unsigned fps_emulated_frames = 0U;
+        unsigned fps_panel_frames = 0U;
+        koboy::Viewport fps_region = {0U, 0U, 0U, 0U};
         unsigned last_buttons = 0U;
         unsigned input_transitions = 0U;
         unsigned input_nonzero_polls = 0U;
@@ -1814,6 +1861,9 @@ int main(int argc, char **argv) {
                             else if (settings_action ==
                                      koboy::UI_SETTING_TARGET_REFRESH)
                                 cycle_target_refresh_rate(display_settings);
+                            else if (settings_action ==
+                                     koboy::UI_SETTING_FPS_COUNTER)
+                                cycle_fps_counter(display_settings);
                             if (settings_action != koboy::UI_LIST_CANCEL) {
                                 save_display_settings(display_settings);
                                 settings_action = koboy::UI_NONE;
@@ -1938,6 +1988,13 @@ int main(int argc, char **argv) {
                         0.0;
                     last_emulation_time = menu_resumed;
                     emulation_accumulator = 0.0;
+                    fps_counter_active =
+                        developer && display_settings.fps_counter;
+                    fps_header_pending = false;
+                    fps_window_started = menu_resumed;
+                    next_fps_update = menu_resumed + 1.0;
+                    fps_emulated_frames = 0U;
+                    fps_panel_frames = 0U;
                     frames_this_update = 0U;
                     core->set_audio_paused(false);
                 }
@@ -1958,6 +2015,10 @@ int main(int argc, char **argv) {
                     const double resumed_at = monotonic_seconds();
                     last_emulation_time = resumed_at;
                     next_display = resumed_at;
+                    fps_window_started = resumed_at;
+                    next_fps_update = resumed_at + 1.0;
+                    fps_emulated_frames = 0U;
+                    fps_panel_frames = 0U;
                     next_full_refresh = display_settings.full_refresh_seconds ?
                         resumed_at + display_settings.full_refresh_seconds :
                         0.0;
@@ -1974,19 +2035,50 @@ int main(int argc, char **argv) {
                 core->run_frame(current_buttons, rgb,
                                 frames_this_update == 0U);
                 ++emulated_frames;
+                if (fps_counter_active)
+                    ++fps_emulated_frames;
+                if (!force_first_frame_gc16) {
+                    const double frame_completed_at = monotonic_seconds();
+                    if (first_emulated_at == 0.0)
+                        first_emulated_at = frame_completed_at;
+                    last_emulated_at = frame_completed_at;
+                    ++cadence_emulated_frames;
+                }
             }
             if (exit_to_nickel || interrupted)
                 break;
             for (std::size_t i = 0; i < a2_markers.size(); ++i) {
                 last_wait_seconds =
                     framebuffer.wait_for_update(a2_markers[i]);
+                a2_wait_seconds += last_wait_seconds;
+                ++a2_waits;
+                if (fps_counter_active)
+                    ++fps_panel_frames;
                 last_completed_marker = a2_markers[i];
             }
             a2_markers.clear();
+            const double fps_now = monotonic_seconds();
+            if (fps_counter_active && fps_now >= next_fps_update) {
+                const double fps_elapsed = fps_now - fps_window_started;
+                const unsigned emulated_tenths = fps_elapsed > 0.0
+                    ? static_cast<unsigned>(fps_emulated_frames * 10.0 /
+                                            fps_elapsed + 0.5) : 0U;
+                const unsigned panel_tenths = fps_elapsed > 0.0
+                    ? static_cast<unsigned>(fps_panel_frames * 10.0 /
+                                            fps_elapsed + 0.5) : 0U;
+                fps_region = draw_fps_counter(
+                    screen, screen_width, screen_height,
+                    emulated_tenths, panel_tenths);
+                framebuffer.draw_screen_region(screen, fps_region);
+                fps_header_pending = true;
+                fps_window_started = fps_now;
+                next_fps_update = fps_now + 1.0;
+                fps_emulated_frames = 0U;
+                fps_panel_frames = 0U;
+            }
             koboy::scale_rgb32_dithered_bichrome(
                 rgb, core->video_width(), core->video_height(),
-                effective_scale, previous_rgb,
-                framebuffer,
+                effective_scale, previous_rgb, framebuffer,
                 display_settings.screen_effect);
 
             const double now = monotonic_seconds();
@@ -2008,6 +2100,10 @@ int main(int argc, char **argv) {
                 force_first_frame_gc16 = false;
                 last_emulation_time = monotonic_seconds();
                 emulation_accumulator = 0.0;
+                fps_window_started = last_emulation_time;
+                next_fps_update = last_emulation_time + 1.0;
+                fps_emulated_frames = 0U;
+                fps_panel_frames = 0U;
                 next_full_refresh = display_settings.full_refresh_seconds ?
                     last_emulation_time + display_settings.full_refresh_seconds :
                     0.0;
@@ -2032,8 +2128,25 @@ int main(int argc, char **argv) {
                 last_submitted_marker = a2_marker;
                 last_submitted_type = REFRESH_A2;
                 ++refresh_counts[REFRESH_A2];
-                last_wait_seconds = framebuffer.refresh_a2(a2_marker, false);
+                if (fps_header_pending) {
+                    koboy::Viewport combined = framebuffer.viewport();
+                    const uint32_t bottom = combined.y + combined.height;
+                    combined.y = fps_region.y;
+                    combined.height = bottom - combined.y;
+                    last_wait_seconds = framebuffer.refresh_a2_region(
+                        a2_marker, combined, false);
+                    fps_header_pending = false;
+                } else {
+                    last_wait_seconds =
+                        framebuffer.refresh_a2(a2_marker, false);
+                }
+                a2_submit_seconds += last_wait_seconds;
                 a2_markers.push_back(a2_marker);
+                const double submitted_at = monotonic_seconds();
+                if (first_a2_submitted_at == 0.0)
+                    first_a2_submitted_at = submitted_at;
+                last_a2_submitted_at = submitted_at;
+                ++a2_submissions;
                 submitted_refresh = true;
             }
             if (diagnostics && now >= next_heartbeat) {
@@ -2060,10 +2173,21 @@ int main(int argc, char **argv) {
             }
         }
 
-        for (std::size_t i = 0; i < a2_markers.size(); ++i)
-            framebuffer.wait_for_update(a2_markers[i]);
+        for (std::size_t i = 0; i < a2_markers.size(); ++i) {
+            a2_wait_seconds += framebuffer.wait_for_update(a2_markers[i]);
+            ++a2_waits;
+        }
         a2_markers.clear();
         const double elapsed = monotonic_seconds() - started;
+        const double emulation_span = cadence_emulated_frames > 1U
+            ? last_emulated_at - first_emulated_at : 0.0;
+        const double emulation_fps = emulation_span > 0.0
+            ? static_cast<double>(cadence_emulated_frames - 1U) /
+                emulation_span : 0.0;
+        const double a2_span = a2_submissions > 1U
+            ? last_a2_submitted_at - first_a2_submitted_at : 0.0;
+        const double a2_refresh_hz = a2_span > 0.0
+            ? static_cast<double>(a2_submissions - 1U) / a2_span : 0.0;
         automatic_state_saved = save_state(*core, automatic_state);
         sram_saved = save_sram(*core, sram_path);
         if (exit_to_nickel)
@@ -2086,6 +2210,14 @@ int main(int argc, char **argv) {
         std::cout << "elapsed_seconds=" << elapsed << '\n';
         std::cout << "emulated_frames=" << emulated_frames << '\n';
         std::cout << "displayed_frames=" << displayed_frames << '\n';
+        std::cout << "emulation_fps=" << emulation_fps << '\n';
+        std::cout << "a2_refresh_hz=" << a2_refresh_hz << '\n';
+        std::cout << "a2_submit_ms="
+                  << (a2_submissions ? a2_submit_seconds * 1000.0 /
+                      a2_submissions : 0.0) << '\n';
+        std::cout << "a2_wait_ms="
+                  << (a2_waits ? a2_wait_seconds * 1000.0 / a2_waits : 0.0)
+                  << '\n';
         std::cout << "audio_frames_queued="
                   << core->audio_frames_queued() << '\n';
         std::cout << "audio_frames_dropped="
