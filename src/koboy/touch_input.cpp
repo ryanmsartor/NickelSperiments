@@ -123,6 +123,21 @@ unsigned TouchInput::hit_test(int raw_x, int raw_y) const {
             directions |= CORE_BUTTON_UP;
         else if (dy > diagonal_threshold)
             directions |= CORE_BUTTON_DOWN;
+        const unsigned horizontal = CORE_BUTTON_LEFT | CORE_BUTTON_RIGHT;
+        const unsigned vertical = CORE_BUTTON_UP | CORE_BUTTON_DOWN;
+        if ((directions & horizontal) && (directions & vertical)) {
+            const int absolute_x = std::abs(dx);
+            const int absolute_y = std::abs(dy);
+            /*
+             * Keep single-touch diagonals around the corner bisectors, but
+             * let a clearly dominant axis claim the surrounding area.  This
+             * makes grid movement less prone to accidental diagonal steps.
+             */
+            if (absolute_x * 5 < absolute_y * 3)
+                directions &= ~horizontal;
+            else if (absolute_y * 5 < absolute_x * 3)
+                directions &= ~vertical;
+        }
         return directions;
     }
 

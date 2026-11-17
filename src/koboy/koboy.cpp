@@ -428,6 +428,24 @@ unsigned system_memory_usage_tenths() {
     return static_cast<unsigned>(used_kb * 1000ULL / total_kb);
 }
 
+struct PanelTemperature {
+    int degrees_c;
+    int waveform_zone;
+    bool available;
+    PanelTemperature() : degrees_c(0), waveform_zone(0), available(false) {}
+};
+
+PanelTemperature read_panel_temperature() {
+    PanelTemperature result;
+    std::ifstream input("/proc/hwtcon/temp");
+    std::string line;
+    if (std::getline(input, line) &&
+        std::sscanf(line.c_str(), "temp:%d temp_zone:%d",
+                    &result.degrees_c, &result.waveform_zone) == 2)
+        result.available = true;
+    return result;
+}
+
 class CpuUsageSampler {
 public:
     CpuUsageSampler() : total_(0ULL), idle_(0ULL), process_(0ULL) {}
@@ -1095,7 +1113,8 @@ koboy::Viewport draw_fps_counter(std::vector<uint32_t> &screen,
                                  unsigned emulated_tenths,
                                  unsigned panel_tenths,
                                  unsigned cpu_tenths,
-                                 unsigned ram_tenths) {
+                                 unsigned ram_tenths,
+                                 const PanelTemperature &panel_temperature) {
     const uint32_t dark = 0xFF000000U;
     const uint32_t light = 0xFFFFFFFFU;
     koboy::Viewport region = {
@@ -1106,12 +1125,22 @@ koboy::Viewport draw_fps_counter(std::vector<uint32_t> &screen,
                    region.x + region.width, region.y + region.height, light);
     char label[80];
     std::snprintf(label, sizeof(label),
-                  "EMU %u.%u  PANEL %u.%u  CPU %u%%  RAM %u%%",
+                  "EMU %u.%u  PANEL %u.%u",
                   emulated_tenths / 10U, emulated_tenths % 10U,
-                  panel_tenths / 10U, panel_tenths % 10U,
-                  (cpu_tenths + 5U) / 10U, (ram_tenths + 5U) / 10U);
+                  panel_tenths / 10U, panel_tenths % 10U);
     draw_label(screen, width, height, width / 2,
-               region.y + region.height / 2U, label, 3, dark);
+               region.y + region.height / 3U, label, 3, dark);
+    if (panel_temperature.available)
+        std::snprintf(label, sizeof(label),
+                      "CPU %u%%  RAM %u%%  EPD %dC/Z%d",
+                      (cpu_tenths + 5U) / 10U, (ram_tenths + 5U) / 10U,
+                      panel_temperature.degrees_c,
+                      panel_temperature.waveform_zone);
+    else
+        std::snprintf(label, sizeof(label), "CPU %u%%  RAM %u%%  EPD N/A",
+                      (cpu_tenths + 5U) / 10U, (ram_tenths + 5U) / 10U);
+    draw_label(screen, width, height, width / 2,
+               region.y + region.height * 2U / 3U, label, 3, dark);
     return region;
 }
 
@@ -2127,10 +2156,13 @@ int main(int argc, char **argv) {
                 fps_cpu_usage.sample(fps_system_cpu_tenths,
                                      fps_process_cpu_tenths);
                 const unsigned ram_tenths = system_memory_usage_tenths();
+                const PanelTemperature panel_temperature =
+                    read_panel_temperature();
                 fps_region = draw_fps_counter(
                     screen, screen_width, screen_height,
                     emulated_tenths, panel_tenths,
-                    fps_system_cpu_tenths, ram_tenths);
+                    fps_system_cpu_tenths, ram_tenths,
+                    panel_temperature);
                 framebuffer.draw_screen_region(screen, fps_region);
                 fps_header_pending = true;
                 fps_window_started = fps_now;
