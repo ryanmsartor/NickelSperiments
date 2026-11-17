@@ -18,7 +18,8 @@ enum {
 enum ScreenEffect {
     SCREEN_EFFECT_OFF = 0,
     SCREEN_EFFECT_GRID = 1,
-    SCREEN_EFFECT_SCANLINES = 2
+    SCREEN_EFFECT_SCANLINES = 2,
+    SCREEN_EFFECT_CRT = 3
 };
 
 void render_test_pattern(std::vector<uint8_t> &frame, unsigned frame_number);

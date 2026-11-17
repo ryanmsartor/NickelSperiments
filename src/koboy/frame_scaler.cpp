@@ -6,6 +6,7 @@
 #include "frame_scaler.h"
 #include "framebuffer_backend.h"
 
+#include <algorithm>
 #include <cstring>
 #include <stdexcept>
 
@@ -96,6 +97,28 @@ void scale_rgb32_dithered_bichrome(const std::vector<uint32_t> &source,
 
     const unsigned width = source_width * scale;
     const unsigned height = source_height * scale;
+    std::vector<unsigned> crt_side_inset;
+    std::vector<unsigned> crt_top_inset;
+    if (screen_effect == SCREEN_EFFECT_CRT) {
+        const unsigned border = scale > 1U ? scale - 1U : 1U;
+        const unsigned curve = std::min(width, height) / 17U;
+        const uint64_t half_width = width / 2U;
+        const uint64_t half_height = height / 2U;
+        crt_side_inset.resize(height);
+        crt_top_inset.resize(width);
+        for (unsigned y = 0U; y < height; ++y) {
+            const int64_t distance = static_cast<int64_t>(y) -
+                                     static_cast<int64_t>(half_height);
+            crt_side_inset[y] = border + static_cast<unsigned>(
+                curve * distance * distance / (half_height * half_height));
+        }
+        for (unsigned x = 0U; x < width; ++x) {
+            const int64_t distance = static_cast<int64_t>(x) -
+                                     static_cast<int64_t>(half_width);
+            crt_top_inset[x] = border + static_cast<unsigned>(
+                curve * distance * distance / (half_width * half_width));
+        }
+    }
     if (framebuffer.viewport().width != width ||
         framebuffer.viewport().height != height)
         throw std::runtime_error("scaled frame does not match viewport");
@@ -133,7 +156,14 @@ void scale_rgb32_dithered_bichrome(const std::vector<uint32_t> &source,
                         screen_effect != SCREEN_EFFECT_OFF &&
                         dy + 1U == scale && source_y + 1U < source_height;
                     const bool separator = vertical_grid || horizontal_grid;
-                    const uint32_t pixel = separator
+                    const unsigned x = output_x + dx;
+                    const unsigned y = output_y;
+                    const bool crt_mask = screen_effect == SCREEN_EFFECT_CRT &&
+                        (x < crt_side_inset[y] ||
+                         x + crt_side_inset[y] >= width ||
+                         y < crt_top_inset[x] ||
+                         y + crt_top_inset[x] >= height);
+                    const uint32_t pixel = crt_mask ? 0xFFFFFFFFU : separator
                         ? (((output_x + dx + output_y) & 1U)
                                ? 0xFFFFFFFFU : 0xFF000000U)
                         : pattern[(output_x + dx) & 3U];

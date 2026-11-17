@@ -243,7 +243,7 @@ void load_display_settings(DisplaySettings &settings) {
         if (key == "full_refresh_seconds" &&
                  valid_full_refresh_seconds(value))
             settings.full_refresh_seconds = value;
-        else if (key == "screen_effect" && value <= 2U)
+        else if (key == "screen_effect" && value <= 3U)
             settings.screen_effect = static_cast<koboy::ScreenEffect>(value);
         else if (key == "grid_effect" && value <= 1U)
             settings.screen_effect = value ? koboy::SCREEN_EFFECT_GRID
@@ -335,13 +335,14 @@ const char *screen_effect_name(koboy::ScreenEffect effect) {
     switch (effect) {
         case koboy::SCREEN_EFFECT_GRID: return "GRID";
         case koboy::SCREEN_EFFECT_SCANLINES: return "SCANLINES";
+        case koboy::SCREEN_EFFECT_CRT: return "CRT";
         default: return "OFF";
     }
 }
 
 void cycle_screen_effect(DisplaySettings &settings) {
     settings.screen_effect = static_cast<koboy::ScreenEffect>(
-        (static_cast<unsigned>(settings.screen_effect) + 1U) % 3U);
+        (static_cast<unsigned>(settings.screen_effect) + 1U) % 4U);
 }
 
 unsigned long long read_unsigned_file(const char *path) {
