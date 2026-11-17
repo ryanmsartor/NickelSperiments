@@ -5,13 +5,16 @@
 
 #include "touch_input.h"
 
+#include <algorithm>
 #include <cerrno>
 #include <cstdio>
 #include <cstring>
 #include <fcntl.h>
+#include <iostream>
 #include <stdexcept>
 #include <string>
 #include <sys/ioctl.h>
+#include <time.h>
 #include <unistd.h>
 
 namespace koboy {
@@ -23,17 +26,49 @@ bool inside_circle(int x, int y, int center_x, int center_y, int radius) {
     return dx * dx + dy * dy <= radius * radius;
 }
 
+double monotonic_seconds() {
+    timespec now;
+    clock_gettime(CLOCK_MONOTONIC, &now);
+    return static_cast<double>(now.tv_sec) +
+           static_cast<double>(now.tv_nsec) / 1000000000.0;
+}
+
+bool bit_set(const unsigned long *bits, unsigned bit) {
+    const unsigned bits_per_word = sizeof(unsigned long) * 8U;
+    return (bits[bit / bits_per_word] &
+            (1UL << (bit % bits_per_word))) != 0UL;
+}
+
+int axis_direction(int value, const input_absinfo &axis) {
+    if (axis.maximum <= axis.minimum)
+        return 0;
+    const int center = axis.minimum + (axis.maximum - axis.minimum) / 2;
+    const int deadzone = std::max(axis.flat,
+        (axis.maximum - axis.minimum) / 4);
+    if (value < center - deadzone)
+        return -1;
+    if (value > center + deadzone)
+        return 1;
+    return 0;
+}
+
 } // namespace
 
 TouchInput::TouchInput(unsigned screen_width, unsigned screen_height)
-    : fd_(-1), screen_width_(screen_width), screen_height_(screen_height),
+    : fd_(-1), controller_fd_(-1), screen_width_(screen_width),
+      screen_height_(screen_height),
       current_slot_(0U), slot_protocol_(false), physical_buttons_(0U),
-      buttons_(0U),
+      controller_key_buttons_(0U), controller_physical_buttons_(0U),
+      controller_x_(0), controller_y_(0), controller_hat_x_(0),
+      controller_hat_y_(0), next_controller_scan_(0.0), buttons_(0U),
       ui_touch_active_(false), suppress_gameplay_until_release_(false),
       shoulder_buttons_enabled_(false), disk_controls_enabled_(false),
-      audio_controls_enabled_(false), core_settings_enabled_(false) {
+      audio_controls_enabled_(false), core_settings_enabled_(false),
+      diagnostics_(false), suppress_controller_until_release_(false) {
     std::memset(&x_info_, 0, sizeof(x_info_));
     std::memset(&y_info_, 0, sizeof(y_info_));
+    std::memset(&controller_x_info_, 0, sizeof(controller_x_info_));
+    std::memset(&controller_y_info_, 0, sizeof(controller_y_info_));
     std::memset(contacts_, 0, sizeof(contacts_));
 }
 
@@ -42,6 +77,8 @@ TouchInput::~TouchInput() {
         ioctl(fd_, EVIOCGRAB, 0);
         close(fd_);
     }
+    if (controller_fd_ >= 0)
+        close(controller_fd_);
 }
 
 void TouchInput::open_device() {
@@ -412,47 +449,254 @@ void TouchInput::update_buttons() {
         pending_states_.push_back(updated);
 }
 
-void TouchInput::poll() {
-    if (fd_ < 0)
+void TouchInput::maybe_open_controller() {
+    if (controller_fd_ >= 0)
+        return;
+    const double now = monotonic_seconds();
+    if (now < next_controller_scan_)
+        return;
+    next_controller_scan_ = now + 1.0;
+
+    const unsigned bits_per_word = sizeof(unsigned long) * 8U;
+    for (unsigned number = 0; number < 32U; ++number) {
+        char path[64];
+        std::snprintf(path, sizeof(path), "/dev/input/event%u", number);
+        int candidate = open(path, O_RDONLY | O_NONBLOCK | O_CLOEXEC);
+        if (candidate < 0)
+            continue;
+        char name[128] = { 0 };
+        ioctl(candidate, EVIOCGNAME(sizeof(name)), name);
+        if (std::strcmp(name, "cyttsp5_mt") == 0) {
+            close(candidate);
+            continue;
+        }
+        unsigned long event_bits[(EV_MAX + bits_per_word) / bits_per_word];
+        unsigned long key_bits[(KEY_MAX + bits_per_word) / bits_per_word];
+        unsigned long abs_bits[(ABS_MAX + bits_per_word) / bits_per_word];
+        std::memset(event_bits, 0, sizeof(event_bits));
+        std::memset(key_bits, 0, sizeof(key_bits));
+        std::memset(abs_bits, 0, sizeof(abs_bits));
+        ioctl(candidate, EVIOCGBIT(0, sizeof(event_bits)), event_bits);
+        if (!bit_set(event_bits, EV_KEY) || !bit_set(event_bits, EV_ABS)) {
+            close(candidate);
+            continue;
+        }
+        ioctl(candidate, EVIOCGBIT(EV_KEY, sizeof(key_bits)), key_bits);
+        ioctl(candidate, EVIOCGBIT(EV_ABS, sizeof(abs_bits)), abs_bits);
+        const bool face_buttons = bit_set(key_bits, BTN_A) &&
+                                  bit_set(key_bits, BTN_B);
+        const bool directions =
+            (bit_set(abs_bits, ABS_X) && bit_set(abs_bits, ABS_Y)) ||
+            (bit_set(abs_bits, ABS_HAT0X) &&
+             bit_set(abs_bits, ABS_HAT0Y));
+        if (!face_buttons || !directions) {
+            close(candidate);
+            continue;
+        }
+
+        controller_fd_ = candidate;
+        controller_path_ = path;
+        controller_key_buttons_ = 0U;
+        controller_physical_buttons_ = 0U;
+        controller_hat_x_ = 0;
+        controller_hat_y_ = 0;
+        std::memset(&controller_x_info_, 0, sizeof(controller_x_info_));
+        std::memset(&controller_y_info_, 0, sizeof(controller_y_info_));
+        if (ioctl(controller_fd_, EVIOCGABS(ABS_X),
+                  &controller_x_info_) == 0)
+            controller_x_ = controller_x_info_.value;
+        if (ioctl(controller_fd_, EVIOCGABS(ABS_Y),
+                  &controller_y_info_) == 0)
+            controller_y_ = controller_y_info_.value;
+        input_id identity;
+        std::memset(&identity, 0, sizeof(identity));
+        ioctl(controller_fd_, EVIOCGID, &identity);
+        if (diagnostics_)
+            std::cerr << "controller_connected path=" << controller_path_
+                      << " name=" << name << " vendor=" << std::hex
+                      << identity.vendor << " product=" << identity.product
+                      << std::dec << '\n';
+        update_controller_buttons();
+        return;
+    }
+}
+
+void TouchInput::close_controller(const char *reason) {
+    if (controller_fd_ < 0)
+        return;
+    if (diagnostics_)
+        std::cerr << "controller_disconnected path=" << controller_path_
+                  << " reason=" << reason << '\n';
+    close(controller_fd_);
+    controller_fd_ = -1;
+    controller_path_.clear();
+    controller_key_buttons_ = 0U;
+    controller_x_ = 0;
+    controller_y_ = 0;
+    controller_hat_x_ = 0;
+    controller_hat_y_ = 0;
+    suppress_controller_until_release_ = false;
+    if (controller_physical_buttons_ != 0U)
+        controller_pending_states_.push_back(0U);
+    controller_physical_buttons_ = 0U;
+    next_controller_scan_ = monotonic_seconds() + 1.0;
+}
+
+void TouchInput::handle_controller(const input_event &event) {
+    if (event.type == EV_KEY) {
+        unsigned mapped = 0U;
+        switch (event.code) {
+            /* Switch mode reports the Nintendo-labelled face layout. */
+            case BTN_A: mapped = CORE_BUTTON_B; break;
+            case BTN_B: mapped = CORE_BUTTON_A; break;
+            case BTN_C: mapped = CORE_BUTTON_X; break; /* physical Y */
+            case BTN_X: mapped = CORE_BUTTON_Y; break; /* physical X */
+            case BTN_Y: mapped = CORE_BUTTON_L; break; /* physical L1 */
+            case BTN_Z: mapped = CORE_BUTTON_R; break; /* physical R1 */
+            case BTN_TL2: mapped = CORE_BUTTON_SELECT; break; /* minus */
+            case BTN_TR2: mapped = CORE_BUTTON_START; break; /* plus */
+            default:
+                if (diagnostics_ && event.value != 2)
+                    std::cerr << "controller_key code=" << event.code
+                              << " value=" << event.value << '\n';
+                return;
+        }
+        if (event.value)
+            controller_key_buttons_ |= mapped;
+        else
+            controller_key_buttons_ &= ~mapped;
+    } else if (event.type == EV_ABS) {
+        if (event.code == ABS_X)
+            controller_x_ = event.value;
+        else if (event.code == ABS_Y)
+            controller_y_ = event.value;
+        else if (event.code == ABS_HAT0X)
+            controller_hat_x_ = event.value;
+        else if (event.code == ABS_HAT0Y)
+            controller_hat_y_ = event.value;
+    } else if (event.type == EV_MSC && diagnostics_) {
+        std::cerr << "controller_scan code=" << event.code
+                  << " value=" << std::hex << event.value << std::dec << '\n';
+    } else if (event.type == EV_SYN && event.code == SYN_REPORT) {
+        update_controller_buttons();
+    }
+}
+
+void TouchInput::update_controller_buttons() {
+    unsigned updated = controller_key_buttons_;
+    int horizontal = controller_hat_x_;
+    int vertical = controller_hat_y_;
+    if (!horizontal)
+        horizontal = axis_direction(controller_x_, controller_x_info_);
+    if (!vertical)
+        vertical = axis_direction(controller_y_, controller_y_info_);
+    if (horizontal < 0)
+        updated |= CORE_BUTTON_LEFT;
+    else if (horizontal > 0)
+        updated |= CORE_BUTTON_RIGHT;
+    if (vertical < 0)
+        updated |= CORE_BUTTON_UP;
+    else if (vertical > 0)
+        updated |= CORE_BUTTON_DOWN;
+
+    if (suppress_controller_until_release_) {
+        controller_physical_buttons_ = 0U;
+        controller_pending_states_.clear();
+        if (updated == 0U)
+            suppress_controller_until_release_ = false;
+        return;
+    }
+    const unsigned last_queued = controller_pending_states_.empty()
+        ? controller_physical_buttons_ : controller_pending_states_.back();
+    controller_physical_buttons_ = updated;
+    if (updated != last_queued)
+        controller_pending_states_.push_back(updated);
+}
+
+void TouchInput::poll_controller() {
+    maybe_open_controller();
+    if (controller_fd_ < 0)
         return;
     for (;;) {
+        input_event event;
+        const ssize_t bytes = read(controller_fd_, &event, sizeof(event));
+        if (bytes < 0) {
+            if (errno == EAGAIN || errno == EWOULDBLOCK)
+                return;
+            if (errno == EINTR)
+                continue;
+            close_controller(std::strerror(errno));
+            return;
+        }
+        if (bytes == 0) {
+            close_controller("end of file");
+            return;
+        }
+        if (bytes != static_cast<ssize_t>(sizeof(event))) {
+            close_controller("short event read");
+            return;
+        }
+        handle_controller(event);
+    }
+}
+
+void TouchInput::poll() {
+    if (fd_ >= 0) for (;;) {
         input_event event;
         const ssize_t bytes = read(fd_, &event, sizeof(event));
         if (bytes < 0) {
             if (errno == EAGAIN || errno == EWOULDBLOCK)
-                return;
+                break;
             if (errno == EINTR)
                 continue;
             throw std::runtime_error(std::string("touchscreen read failed: ") +
                                      std::strerror(errno));
         }
         if (bytes == 0)
-            return;
+            break;
         if (bytes != static_cast<ssize_t>(sizeof(event)))
             throw std::runtime_error("short touchscreen event read");
         handle(event);
     }
+    poll_controller();
 }
 
 void TouchInput::advance_frame() {
     poll();
+    unsigned touch_buttons = physical_buttons_;
     if (!pending_states_.empty()) {
-        buttons_ = pending_states_.front();
+        touch_buttons = pending_states_.front();
         pending_states_.pop_front();
-    } else {
-        buttons_ = physical_buttons_;
     }
+    unsigned controller_buttons = controller_physical_buttons_;
+    if (!controller_pending_states_.empty()) {
+        controller_buttons = controller_pending_states_.front();
+        controller_pending_states_.pop_front();
+    }
+    buttons_ = touch_buttons | controller_buttons;
+    if ((buttons_ & (CORE_BUTTON_LEFT | CORE_BUTTON_RIGHT)) ==
+        (CORE_BUTTON_LEFT | CORE_BUTTON_RIGHT))
+        buttons_ &= ~(CORE_BUTTON_LEFT | CORE_BUTTON_RIGHT);
+    if ((buttons_ & (CORE_BUTTON_UP | CORE_BUTTON_DOWN)) ==
+        (CORE_BUTTON_UP | CORE_BUTTON_DOWN))
+        buttons_ &= ~(CORE_BUTTON_UP | CORE_BUTTON_DOWN);
 }
 
 void TouchInput::suppress_input_until_release() {
     poll();
     physical_buttons_ = 0U;
+    controller_physical_buttons_ = 0U;
     buttons_ = 0U;
     pending_states_.clear();
+    controller_pending_states_.clear();
     bool touching = false;
     for (unsigned slot = 0; slot < 16U; ++slot)
         touching = touching || contacts_[slot].active;
     suppress_gameplay_until_release_ = touching;
+    suppress_controller_until_release_ = controller_key_buttons_ != 0U ||
+        axis_direction(controller_x_, controller_x_info_) != 0 ||
+        axis_direction(controller_y_, controller_y_info_) != 0 ||
+        controller_hat_x_ != 0 || controller_hat_y_ != 0;
     ui_touch_active_ = touching;
 }
 

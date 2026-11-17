@@ -6,6 +6,7 @@
 #include "emulator_core.h"
 #include <linux/input.h>
 #include <deque>
+#include <string>
 
 namespace koboy {
 
@@ -55,6 +56,7 @@ public:
     ~TouchInput();
 
     void open_device();
+    void set_diagnostics(bool enabled) { diagnostics_ = enabled; }
     void advance_frame();
     void suppress_input_until_release();
     void wait_for_release();
@@ -93,12 +95,19 @@ private:
     void poll();
     void handle(const input_event &event);
     void update_buttons();
+    void maybe_open_controller();
+    void close_controller(const char *reason);
+    void poll_controller();
+    void handle_controller(const input_event &event);
+    void update_controller_buttons();
     unsigned hit_test(int raw_x, int raw_y) const;
     UiAction ui_hit_test(int raw_x, int raw_y, UiScreen screen) const;
     void screen_position(int raw_x, int raw_y, int &x, int &y) const;
     int normalize(int value, const input_absinfo &axis, unsigned extent) const;
 
     int fd_;
+    int controller_fd_;
+    std::string controller_path_;
     unsigned screen_width_;
     unsigned screen_height_;
     input_absinfo x_info_;
@@ -107,6 +116,15 @@ private:
     unsigned current_slot_;
     bool slot_protocol_;
     unsigned physical_buttons_;
+    unsigned controller_key_buttons_;
+    unsigned controller_physical_buttons_;
+    int controller_x_;
+    int controller_y_;
+    int controller_hat_x_;
+    int controller_hat_y_;
+    input_absinfo controller_x_info_;
+    input_absinfo controller_y_info_;
+    double next_controller_scan_;
     unsigned buttons_;
     bool ui_touch_active_;
     bool suppress_gameplay_until_release_;
@@ -114,7 +132,10 @@ private:
     bool disk_controls_enabled_;
     bool audio_controls_enabled_;
     bool core_settings_enabled_;
+    bool diagnostics_;
+    bool suppress_controller_until_release_;
     std::deque<unsigned> pending_states_;
+    std::deque<unsigned> controller_pending_states_;
 };
 
 } // namespace koboy

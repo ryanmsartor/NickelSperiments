@@ -20,7 +20,9 @@ enum CoreButton {
     CORE_BUTTON_UP = 0x40,
     CORE_BUTTON_DOWN = 0x80,
     CORE_BUTTON_L = 0x100,
-    CORE_BUTTON_R = 0x200
+    CORE_BUTTON_R = 0x200,
+    CORE_BUTTON_X = 0x400,
+    CORE_BUTTON_Y = 0x800
 };
 
 class EmulatorCore {

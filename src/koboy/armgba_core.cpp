@@ -37,24 +37,51 @@ bool bluetooth_audio_connected() {
         "r");
     if (!query)
         return false;
-    bool connected = false;
+    bool audio_connected = false;
+    bool device_connected = false;
+    bool device_audio = false;
+    bool in_device = false;
     unsigned connected_value_lines = 0U;
+    unsigned icon_value_lines = 0U;
     char line[256];
     while (std::fgets(line, sizeof(line), query)) {
+        if (std::strstr(line, "object path \"/org/bluez/hci0/")) {
+            if (in_device && device_connected && device_audio) {
+                audio_connected = true;
+                break;
+            }
+            in_device = std::strstr(line, "/dev_") != 0;
+            device_connected = false;
+            device_audio = false;
+            connected_value_lines = 0U;
+            icon_value_lines = 0U;
+            continue;
+        }
+        if (!in_device)
+            continue;
         if (std::strstr(line, "string \"Connected\"")) {
             connected_value_lines = 3U;
             continue;
         }
         if (connected_value_lines != 0U) {
-            if (std::strstr(line, "boolean true")) {
-                connected = true;
-                break;
-            }
+            if (std::strstr(line, "boolean true"))
+                device_connected = true;
             --connected_value_lines;
         }
+        if (std::strstr(line, "string \"Icon\"")) {
+            icon_value_lines = 3U;
+            continue;
+        }
+        if (icon_value_lines != 0U) {
+            if (std::strstr(line, "string \"audio-"))
+                device_audio = true;
+            --icon_value_lines;
+        }
     }
+    if (in_device && device_connected && device_audio)
+        audio_connected = true;
     pclose(query);
-    return connected;
+    return audio_connected;
 }
 
 class AudioOutput {
@@ -463,6 +490,8 @@ static int16_t input_state_callback(unsigned port, unsigned device,
         case RETRO_DEVICE_ID_JOYPAD_DOWN: return buttons & CORE_BUTTON_DOWN;
         case RETRO_DEVICE_ID_JOYPAD_L: return buttons & CORE_BUTTON_L;
         case RETRO_DEVICE_ID_JOYPAD_R: return buttons & CORE_BUTTON_R;
+        case RETRO_DEVICE_ID_JOYPAD_X: return buttons & CORE_BUTTON_X;
+        case RETRO_DEVICE_ID_JOYPAD_Y: return buttons & CORE_BUTTON_Y;
         default: return 0;
     }
 }

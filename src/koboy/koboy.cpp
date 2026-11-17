@@ -1757,6 +1757,7 @@ int main(int argc, char **argv) {
         std::signal(SIGUSR2, handle_wake_signal);
 
         koboy::TouchInput input(1072U, 1448U);
+        input.set_diagnostics(developer);
         if (!no_touch)
             input.open_device();
         koboy::FramebufferBackend framebuffer;
