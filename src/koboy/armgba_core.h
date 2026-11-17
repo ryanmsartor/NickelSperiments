@@ -7,6 +7,8 @@
 
 namespace koboy {
 
+struct LibretroApi;
+
 class ArmGbaCore : public EmulatorCore {
 public:
     ArmGbaCore();
@@ -40,6 +42,7 @@ private:
     ArmGbaCore(const ArmGbaCore &);
     ArmGbaCore &operator=(const ArmGbaCore &);
 
+    const LibretroApi &api_;
 };
 
 } // namespace koboy

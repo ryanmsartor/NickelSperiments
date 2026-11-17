@@ -4,3 +4,6 @@
 [submodule "deps/armgba"]
 	path = deps/armgba
 	url = https://github.com/MagnominusGit/armGBA.git
+[submodule "deps/armnes"]
+	path = deps/armnes
+	url = https://github.com/MagnominusGit/armNES.git

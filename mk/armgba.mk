@@ -1,6 +1,7 @@
 ARMGBA_ROOT := deps/armgba
 ARMGBA_OBJ_DIR := build/obj/armgba
 ARMGBA_ADAPTER_CHECK_OBJECT := $(ARMGBA_OBJ_DIR)/koboy/armgba_core.o
+ARMGBA_API_OBJECT := $(ARMGBA_OBJ_DIR)/koboy/armgba_libretro_api.o
 
 ARMGBA_CORE_SOURCES := \
 	src/bios-image.c src/bus.c src/cheats.c src/gba.c src/memory.c \
@@ -50,7 +51,7 @@ ARMGBA_PLAYER_OBJECTS := \
 	$(ARMGBA_CORE_OBJECTS) $(ARMGBA_LIBRETRO_C_OBJECTS) \
 	$(ARMGBA_LCD_COMPAT_OBJECT) $(ARMGBA_GB_ADAPTER_OBJECT) \
 	$(ARMGBA_GAMBATTE_OBJECTS) $(ARMGBA_ARCHIVE_OBJECTS) \
-	$(ARMGBA_ADAPTER_CHECK_OBJECT)
+	$(ARMGBA_ADAPTER_CHECK_OBJECT) $(ARMGBA_API_OBJECT)
 ARMGBA_DEPENDENCIES := $(ARMGBA_PLAYER_OBJECTS:.o=.d) \
 	$(ARMGBA_PROBE_OBJECT:.o=.d)
 
@@ -93,6 +94,10 @@ $(ARMGBA_PROBE_OUTPUT): $(ARMGBA_PLAYER_OBJECTS) $(ARMGBA_PROBE_OBJECT)
 armgba-adapter-check: $(ARMGBA_ADAPTER_CHECK_OBJECT)
 
 $(ARMGBA_ADAPTER_CHECK_OBJECT): src/koboy/armgba_core.cpp
+	@mkdir -p $(@D)
+	$(KOBO_CXX) $(ARMGBA_CPPFLAGS) $(KOBO_CXXFLAGS) -c -o $@ $<
+
+$(ARMGBA_API_OBJECT): src/koboy/armgba_libretro_api.cpp
 	@mkdir -p $(@D)
 	$(KOBO_CXX) $(ARMGBA_CPPFLAGS) $(KOBO_CXXFLAGS) -c -o $@ $<
 

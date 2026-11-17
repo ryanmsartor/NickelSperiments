@@ -4,8 +4,7 @@
  */
 
 #include "armgba_core.h"
-
-#include "libretro.h"
+#include "libretro_api.h"
 
 #include <algorithm>
 #include <atomic>
@@ -403,26 +402,26 @@ static int16_t input_state_callback(unsigned port, unsigned device,
     }
 }
 
-ArmGbaCore::ArmGbaCore() : impl_(new Impl) {
+ArmGbaCore::ArmGbaCore() : impl_(new Impl), api_(armgba_libretro_api()) {
     if (active_core) {
         delete impl_;
         throw std::runtime_error("armGBA only supports one active core");
     }
     active_core = this;
     signal(SIGPIPE, SIG_IGN);
-    retro_set_environment(environment_callback);
-    retro_set_video_refresh(video_callback);
-    retro_set_audio_sample(0);
-    retro_set_audio_sample_batch(audio_callback);
-    retro_set_input_poll(input_poll_callback);
-    retro_set_input_state(input_state_callback);
-    retro_init();
+    api_.set_environment(environment_callback);
+    api_.set_video_refresh(video_callback);
+    api_.set_audio_sample(0);
+    api_.set_audio_sample_batch(audio_callback);
+    api_.set_input_poll(input_poll_callback);
+    api_.set_input_state(input_state_callback);
+    api_.init();
 }
 
 ArmGbaCore::~ArmGbaCore() {
     if (impl_->loaded)
-        retro_unload_game();
-    retro_deinit();
+        api_.unload_game();
+    api_.deinit();
     active_core = 0;
     delete impl_;
 }
@@ -436,13 +435,13 @@ bool ArmGbaCore::load_rom(const std::string &path,
                           const std::vector<unsigned char> &rom,
                           std::string &error) {
     if (impl_->loaded) {
-        retro_unload_game();
+        api_.unload_game();
         impl_->loaded = false;
     }
     impl_->error.clear();
     retro_game_info game = {path.c_str(), rom.empty() ? 0 : &rom[0],
                             rom.size(), 0};
-    if (rom.empty() || !retro_load_game(&game)) {
+    if (rom.empty() || !api_.load_game(&game)) {
         error = impl_->error.empty() ? "armGBA rejected the ROM image"
                                      : impl_->error;
         return false;
@@ -455,20 +454,20 @@ bool ArmGbaCore::load_rom(const std::string &path,
         std::fputs("Ko Boy: no connected Bluetooth audio device\n", stderr);
     }
     retro_system_av_info information;
-    retro_get_system_av_info(&information);
+    api_.get_system_av_info(&information);
     impl_->width = information.geometry.base_width;
     impl_->height = information.geometry.base_height;
     impl_->fps = information.timing.fps;
     return true;
 }
 
-void ArmGbaCore::reset() { retro_reset(); }
+void ArmGbaCore::reset() { api_.reset(); }
 
 void ArmGbaCore::run_frame(unsigned buttons, std::vector<uint32_t> &video,
                            bool capture_video) {
     impl_->buttons = buttons;
     impl_->capture_video = capture_video;
-    retro_run();
+    api_.run();
     if (capture_video)
         video = impl_->frame;
 }
@@ -494,22 +493,22 @@ uint64_t ArmGbaCore::audio_frames_dropped() const {
     return impl_->audio.dropped_frames();
 }
 
-std::size_t ArmGbaCore::state_size() const { return retro_serialize_size(); }
+std::size_t ArmGbaCore::state_size() const { return api_.serialize_size(); }
 
 bool ArmGbaCore::save_state(void *data, std::size_t size) {
-    return retro_serialize(data, size);
+    return api_.serialize(data, size);
 }
 
 bool ArmGbaCore::load_state(const void *data, std::size_t size) {
-    return retro_unserialize(data, size);
+    return api_.unserialize(data, size);
 }
 
 void *ArmGbaCore::save_ram_data() {
-    return retro_get_memory_data(RETRO_MEMORY_SAVE_RAM);
+    return api_.get_memory_data(RETRO_MEMORY_SAVE_RAM);
 }
 
 std::size_t ArmGbaCore::save_ram_size() const {
-    return retro_get_memory_size(RETRO_MEMORY_SAVE_RAM);
+    return api_.get_memory_size(RETRO_MEMORY_SAVE_RAM);
 }
 
 } // namespace koboy
