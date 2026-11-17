@@ -132,9 +132,11 @@ void scale_rgb32_dithered_bichrome(const std::vector<uint32_t> &source,
                     const bool horizontal_grid =
                         screen_effect != SCREEN_EFFECT_OFF &&
                         dy + 1U == scale && source_y + 1U < source_height;
-                    const uint32_t pixel = vertical_grid || horizontal_grid ||
-                        pattern[(output_x + dx) & 3U] == 0xFFFFFFFFU ?
-                        0xFFFFFFFFU : 0xFF000000U;
+                    const bool separator = vertical_grid || horizontal_grid;
+                    const uint32_t pixel = separator
+                        ? (((output_x + dx + output_y) & 1U)
+                               ? 0xFFFFFFFFU : 0xFF000000U)
+                        : pattern[(output_x + dx) & 3U];
                     framebuffer_row[dx] = pixel;
                 }
             }
