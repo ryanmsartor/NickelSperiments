@@ -406,6 +406,28 @@ SystemMetrics read_system_metrics() {
     return metrics;
 }
 
+unsigned system_memory_usage_tenths() {
+    std::ifstream memory("/proc/meminfo");
+    std::string key;
+    unsigned long long value = 0ULL;
+    std::string unit;
+    unsigned long long total_kb = 0ULL;
+    unsigned long long available_kb = 0ULL;
+    while (memory >> key >> value >> unit) {
+        if (key == "MemTotal:")
+            total_kb = value;
+        else if (key == "MemAvailable:")
+            available_kb = value;
+        if (total_kb && available_kb)
+            break;
+    }
+    if (!total_kb)
+        return 0U;
+    const unsigned long long used_kb = total_kb > available_kb
+        ? total_kb - available_kb : 0ULL;
+    return static_cast<unsigned>(used_kb * 1000ULL / total_kb);
+}
+
 class CpuUsageSampler {
 public:
     CpuUsageSampler() : total_(0ULL), idle_(0ULL), process_(0ULL) {}
@@ -1071,7 +1093,9 @@ void draw_label(std::vector<uint32_t> &screen, unsigned width,
 koboy::Viewport draw_fps_counter(std::vector<uint32_t> &screen,
                                  unsigned width, unsigned height,
                                  unsigned emulated_tenths,
-                                 unsigned panel_tenths) {
+                                 unsigned panel_tenths,
+                                 unsigned cpu_tenths,
+                                 unsigned ram_tenths) {
     const uint32_t dark = 0xFF000000U;
     const uint32_t light = 0xFFFFFFFFU;
     koboy::Viewport region = {
@@ -1080,10 +1104,12 @@ koboy::Viewport draw_fps_counter(std::vector<uint32_t> &screen,
     };
     fill_rectangle(screen, width, height, region.x, region.y,
                    region.x + region.width, region.y + region.height, light);
-    char label[48];
-    std::snprintf(label, sizeof(label), "EMU %u.%u  PANEL %u.%u",
+    char label[80];
+    std::snprintf(label, sizeof(label),
+                  "EMU %u.%u  PANEL %u.%u  CPU %u%%  RAM %u%%",
                   emulated_tenths / 10U, emulated_tenths % 10U,
-                  panel_tenths / 10U, panel_tenths % 10U);
+                  panel_tenths / 10U, panel_tenths % 10U,
+                  (cpu_tenths + 5U) / 10U, (ram_tenths + 5U) / 10U);
     draw_label(screen, width, height, width / 2,
                region.y + region.height / 2U, label, 3, dark);
     return region;
@@ -1768,9 +1794,14 @@ int main(int argc, char **argv) {
         double last_wait_seconds = 0.0;
         double next_heartbeat = started + 5.0;
         CpuUsageSampler cpu_usage;
+        CpuUsageSampler fps_cpu_usage;
         unsigned system_cpu_tenths = 0U;
         unsigned process_cpu_tenths = 0U;
+        unsigned fps_system_cpu_tenths = 0U;
+        unsigned fps_process_cpu_tenths = 0U;
         cpu_usage.sample(system_cpu_tenths, process_cpu_tenths);
+        fps_cpu_usage.sample(fps_system_cpu_tenths,
+                             fps_process_cpu_tenths);
         bool exit_to_nickel = false;
         bool force_first_frame_gc16 = !no_gameplay_refresh;
         std::vector<uint32_t> a2_markers;
@@ -2016,6 +2047,9 @@ int main(int argc, char **argv) {
                     next_fps_update = menu_resumed + 1.0;
                     fps_emulated_frames = 0U;
                     fps_panel_frames = 0U;
+                    fps_cpu_usage = CpuUsageSampler();
+                    fps_cpu_usage.sample(fps_system_cpu_tenths,
+                                         fps_process_cpu_tenths);
                     frames_this_update = 0U;
                     core->set_audio_paused(false);
                 }
@@ -2040,6 +2074,9 @@ int main(int argc, char **argv) {
                     next_fps_update = resumed_at + 1.0;
                     fps_emulated_frames = 0U;
                     fps_panel_frames = 0U;
+                    fps_cpu_usage = CpuUsageSampler();
+                    fps_cpu_usage.sample(fps_system_cpu_tenths,
+                                         fps_process_cpu_tenths);
                     next_full_refresh = display_settings.full_refresh_seconds ?
                         resumed_at + display_settings.full_refresh_seconds :
                         0.0;
@@ -2087,9 +2124,13 @@ int main(int argc, char **argv) {
                 const unsigned panel_tenths = fps_elapsed > 0.0
                     ? static_cast<unsigned>(fps_panel_frames * 10.0 /
                                             fps_elapsed + 0.5) : 0U;
+                fps_cpu_usage.sample(fps_system_cpu_tenths,
+                                     fps_process_cpu_tenths);
+                const unsigned ram_tenths = system_memory_usage_tenths();
                 fps_region = draw_fps_counter(
                     screen, screen_width, screen_height,
-                    emulated_tenths, panel_tenths);
+                    emulated_tenths, panel_tenths,
+                    fps_system_cpu_tenths, ram_tenths);
                 framebuffer.draw_screen_region(screen, fps_region);
                 fps_header_pending = true;
                 fps_window_started = fps_now;
@@ -2125,6 +2166,9 @@ int main(int argc, char **argv) {
                 next_fps_update = last_emulation_time + 1.0;
                 fps_emulated_frames = 0U;
                 fps_panel_frames = 0U;
+                fps_cpu_usage = CpuUsageSampler();
+                fps_cpu_usage.sample(fps_system_cpu_tenths,
+                                     fps_process_cpu_tenths);
                 next_full_refresh = display_settings.full_refresh_seconds ?
                     last_emulation_time + display_settings.full_refresh_seconds :
                     0.0;
