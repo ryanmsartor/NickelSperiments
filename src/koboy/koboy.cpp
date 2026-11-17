@@ -1330,6 +1330,45 @@ void draw_loading_screen(std::vector<uint32_t> &screen, unsigned width,
                title.c_str(), 3, dark);
 }
 
+void draw_missing_fds_bios(std::vector<uint32_t> &screen, unsigned width,
+                           unsigned height) {
+    const uint32_t dark = 0xFF000000U;
+    const uint32_t light = 0xFFFFFFFFU;
+    screen.assign(static_cast<size_t>(width) * height, light);
+    draw_label(screen, width, height, width / 2, height * 18 / 100,
+               "FDS BIOS REQUIRED", 7, dark);
+    draw_label(screen, width, height, width / 2, height * 40 / 100,
+               "THIS GAME NEEDS DISKSYS.ROM", 4, dark);
+    draw_label(screen, width, height, width / 2, height * 52 / 100,
+               "PLACE IT IN KOBOY/BIOS/", 4, dark);
+    draw_label(screen, width, height, width / 2, height * 91 / 100,
+               "BACK", 5, dark);
+}
+
+bool requires_missing_fds_bios(const std::string &rom_path) {
+    std::string load_path;
+    try {
+        load_path = lowercase(loadable_rom_path(rom_path));
+    } catch (const std::exception &) {
+        return false;
+    }
+    const bool is_fds = load_path.size() >= 4U &&
+        load_path.compare(load_path.size() - 4U, 4U, ".fds") == 0;
+    const char *const names[] = {
+        "disksys.rom", "Disksys.rom", "DISKSYS.ROM"
+    };
+    bool bios_found = false;
+    for (unsigned index = 0; index < sizeof(names) / sizeof(names[0]); ++index) {
+        const std::string bios = std::string(kKoBoyBiosDirectory) + "/" +
+                                 names[index];
+        if (file_exists(bios.c_str())) {
+            bios_found = true;
+            break;
+        }
+    }
+    return is_fds && !bios_found;
+}
+
 std::string choose_game(koboy::FramebufferBackend &framebuffer,
                         koboy::TouchInput &input,
                         std::vector<uint32_t> &screen, uint32_t &marker,
@@ -1428,8 +1467,22 @@ std::string choose_game(koboy::FramebufferBackend &framebuffer,
                     const std::size_t row = static_cast<std::size_t>(
                         action - koboy::UI_GAME_0);
                     const std::size_t index = game_page * page_size + row;
-                    if (index < roms.size())
-                        return roms[index];
+                    if (index < roms.size()) {
+                        if (!requires_missing_fds_bios(roms[index]))
+                            return roms[index];
+                        draw_missing_fds_bios(
+                            screen, framebuffer.variable_info().xres,
+                            framebuffer.variable_info().yres);
+                        present_browser_screen();
+                        while (!interrupted) {
+                            if (input.take_ui_action(
+                                    koboy::UI_SCREEN_GAME_LIST) ==
+                                koboy::UI_LIST_CANCEL)
+                                break;
+                            usleep(20000);
+                        }
+                        break;
+                    }
                 }
                 usleep(20000);
             }
