@@ -5,7 +5,8 @@ ARMGBA_ADAPTER_CHECK_OBJECT := $(ARMGBA_OBJ_DIR)/koboy/armgba_core.o
 
 ARMGBA_CORE_SOURCES := \
 	src/bios-image.c src/bus.c src/cheats.c src/gba.c src/memory.c \
-	src/state.c src/timing.c src/audio/audio.c src/audio/psg.c \
+	src/state.c src/timing.c src/audio/audio.c src/audio/audio-thread.c \
+	src/audio/psg.c \
 	src/cart/actionreplay.c src/cart/fcd.c src/cart/cart.c \
 	src/cart/ereader.c src/cart/gpio.c src/cart/overrides.c \
 	src/cart/savedata.c src/cpu/arm.c src/cpu/decode.c src/cpu/step.c \
