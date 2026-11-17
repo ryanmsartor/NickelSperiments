@@ -37,6 +37,8 @@ make armgba-probe
 
 The armGBA checks also use NickelTC's C compiler through `scripts/nickeltc-tool`. Its machine core is compiled explicitly for ARMv7-A, NEON, and the hard-float ABI used by the Kobo firmware.
 
+All Ko Boy and armGBA C and C++ compilations generate `.d` files beside their object files. The top-level build includes these files automatically, so changing a header rebuilds every dependent object and prevents stale incremental links. The dependency files live under `build/obj/` and are removed by the existing clean targets.
+
 To rebuild every armGBA and Ko Boy object after changing toolchains, use:
 
 ```sh

@@ -56,7 +56,7 @@ Reset Game starts the emulated system from power-on without reading or writing e
 
 GBA games add L and R buttons above the A and B controls. The default 6× integer scale produces a 960-by-864 game viewport on the Clara BW; direct development launches may use `--scale 5` for a smaller viewport.
 
-Input is drained at game, menu, and Nickel boundaries so one touch cannot activate controls on both sides of a transition. Repeated Menu presses cannot queue multiple menu transitions.
+Input is drained at game, menu, and Nickel boundaries so one touch cannot activate controls on both sides of a transition. Repeated Menu presses cannot queue multiple menu transitions. The Clara BW's sequential multitouch reports are handled as independent contacts, allowing a direction and face button to remain held together. A single D-pad touch can select any of eight directions. On the face buttons, rolling one finger from A to B or B to A keeps the original button held, adds the second while the finger remains over it, and releases only the second when the finger rolls away.
 
 ## Sleep and wake
 
@@ -140,7 +140,7 @@ The `ArmGbaCore` adapter connects that interface to armGBA's libretro API, inclu
 
 The player and supervisor are separate processes. Nickel remains running while Ko Boy exclusively grabs the touchscreen, avoiding the watchdog resets observed when Nickel was stopped for extended periods. The NickelHook-based plugin provides the More-screen launcher and lifecycle signals.
 
-Local compilation and the ARM64-hosted NickelTC arrangement are documented in [Local Kobo toolchain](local-toolchain.md). Developers can open the browser from a shell with:
+Local compilation and the ARM64-hosted NickelTC arrangement are documented in [Local Kobo toolchain](local-toolchain.md). C and C++ builds generate and include header dependency files, so incremental builds automatically rebuild every affected object after a header changes. Developers can open the browser from a shell with:
 
 ```sh
 /mnt/onboard/.adds/koboy/koboy-supervisor
@@ -155,10 +155,11 @@ Testing on the Kobo Clara BW has established:
 - GB and Mega Duck gameplay, save-state, and save-RAM round trips.
 - GBA execution and Bluetooth audio, with broader compatibility and long-session stability still needing coverage.
 - Latest-frame presentation without accumulating stale display frames.
-- Multitouch direction and face-button combinations using the Clara BW coordinate transform.
+- Multitouch direction and face-button combinations, single-touch diagonals, and rolling A/B chords using the Clara BW's sequential touch reports and coordinate transform.
 - Framebuffer restoration after normal exit and forced player termination.
 - Cover and power-button sleep, wake redraw, and controller-panel restoration.
 - Package installation and reversible removal while preserving user content.
+- Bounded ordinary runtime logging, with oversized logs reset on the following launch.
 
 Stopping Nickel for approximately one watchdog interval can reboot the reader, so the current design deliberately keeps Nickel running.
 
@@ -179,7 +180,7 @@ Stopping Nickel for approximately one watchdog interval can reboot the reader, s
 - Verify archive ownership, permissions, paths, architecture, license contents, pinned sources, and published hashes in CI.
 - Repeat clean install, upgrade, reinstall, and uninstall testing from a release candidate.
 - Exercise representative GB, GBC, GBA, and Mega Duck games through SRAM, automatic state, manual state, reset, game switching, sleep/wake, and long sessions.
-- Confirm that diagnostics remain opt-in and ordinary logs cannot grow without bound.
+- Confirm that diagnostics remain opt-in and decide whether to bound their separate breadcrumb log.
 - Publish installation instructions, supported-device scope, source availability, and known limitations with the release.
 
 Ko Boy and armGBA are distributed under GPL version 2. The release bundle must include `LICENSES/KOBOY/KOBOY-LICENSES.md` and every license file it links. Corresponding source, build scripts, and exact pinned submodule revisions must remain available for each released binary. A formal legal review may still be appropriate before broad distribution.
