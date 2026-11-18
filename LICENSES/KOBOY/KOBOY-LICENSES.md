@@ -12,7 +12,7 @@ Ko Boy is free software: you may redistribute it and/or modify it under the term
 
 Ko Boy is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for details.
 
-A release containing this document must also contain the complete text of the GNU General Public License version 2 as [GPL-2.0.txt](GPL-2.0.txt). The exact corresponding source for each release, including build scripts and pinned submodule revisions, is available from the release tag in the [NickelSperiments source repository](https://github.com/ryanmsartor/NickelSperiments). The submodule revisions recorded by that tag identify the exact armGBA, armNES, and NickelHook sources used for its binaries.
+A release containing this document must also contain the complete text of the GNU General Public License version 2 as [GPL-2.0.txt](GPL-2.0.txt). The exact corresponding source for each release, including build scripts and pinned submodule revisions, is available from the release tag in the [NickelSperiments source repository](https://github.com/ryanmsartor/NickelSperiments). The submodule revisions recorded by that tag identify the exact armGBA, armNES, superwhizkid, and NickelHook sources used for its binaries.
 
 ## Included third-party software
 
@@ -34,6 +34,8 @@ Ko Boy is linked with or built from the following third-party components. Copyri
 | FCEUmm-derived boards and mapping code included by armNES | [GPLv2](GPL-2.0.txt) | `deps/armnes/src/fceu` and related board implementations |
 | MAME-derived VS. System and PlayChoice-10 chip-layout data included by armNES | [BSD 3-Clause](BSD-3-Clause.txt) | `deps/armnes/src/arcade-sets.inc` |
 | libretro-common and LZMA SDK support code included by armNES | [MIT](MIT.txt) and [public-domain notices](PUBLIC-DOMAIN-NOTICES.txt) | `deps/armnes/libretro/deps` |
+| superwhizkid Gamate core | [GPLv2 or later](GPL-2.0.txt) | `deps/superwhizkid` |
+| libretro API header included by superwhizkid | [MIT](MIT.txt) | `deps/superwhizkid/shared/libretro/libretro.h` |
 | NickelHook launcher/lifecycle integration | [MIT](MIT.txt) | `deps/NickelHook` |
 | NickelModManager More-screen integration pattern | [MIT](MIT.txt) | adapted in `src/koboy-lifecycle.cpp` |
 
@@ -46,6 +48,7 @@ The files named above live beside this document in `LICENSES/KOBOY/` and are int
 - `deps/armnes/LICENSE`
 - `deps/armnes/LICENSES/MIT.txt`
 - `deps/armnes/LICENSES/MIT-emu2413.txt`
+- `deps/superwhizkid/LICENSE`
 - the BSD 3-Clause notices on the MAME sources identified by `deps/armnes/src/arcade-sets.inc`
 - `deps/NickelHook/LICENSE`
 - the MIT notices embedded in libretro-common source and header files

@@ -44,7 +44,7 @@ koboy-display-test: $(KOBOY_DISPLAY_TEST_OUTPUT)
 
 koboy-framebuffer-isolation: $(KOBOY_FB_ISOLATION_OUTPUT)
 
-koboy-package: koboy koboy-supervisor armgba-core armnes-core
+koboy-package: koboy koboy-supervisor armgba-core armnes-core superwhizkid-core
 	$(MAKE) koboy-lifecycle
 	rm -rf $(KOBOY_PACKAGE_ROOT)
 	install -d $(KOBOY_PACKAGE_ROOT)/mnt/onboard/.adds/koboy/LICENSES
@@ -56,6 +56,7 @@ koboy-package: koboy koboy-supervisor armgba-core armnes-core
 	install -d "$(KOBOY_PACKAGE_ROOT)/mnt/onboard/KoBoy/Roms/Mega Duck"
 	install -d "$(KOBOY_PACKAGE_ROOT)/mnt/onboard/KoBoy/Roms/Nintendo Entertainment System"
 	install -d "$(KOBOY_PACKAGE_ROOT)/mnt/onboard/KoBoy/Roms/Famicom Disc System"
+	install -d "$(KOBOY_PACKAGE_ROOT)/mnt/onboard/KoBoy/Roms/Gamate"
 	install -d $(KOBOY_PACKAGE_ROOT)/usr/local/Kobo/imageformats
 	install -m755 $(KOBOY_OUTPUT) \
 		$(KOBOY_PACKAGE_ROOT)/mnt/onboard/.adds/koboy/koboy
@@ -65,6 +66,8 @@ koboy-package: koboy koboy-supervisor armgba-core armnes-core
 		$(KOBOY_PACKAGE_ROOT)/mnt/onboard/.adds/koboy/cores/armgba_libretro.so
 	install -m755 $(ARMNES_OUTPUT) \
 		$(KOBOY_PACKAGE_ROOT)/mnt/onboard/.adds/koboy/cores/armnes_libretro.so
+	install -m755 $(SUPERWHIZKID_OUTPUT) \
+		$(KOBOY_PACKAGE_ROOT)/mnt/onboard/.adds/koboy/cores/superwhizkid_libretro.so
 	install -m644 libkoboylifecycle.so \
 		$(KOBOY_PACKAGE_ROOT)/usr/local/Kobo/imageformats/libkoboylifecycle.so
 	install -m644 package/koboy/README.txt \
@@ -84,6 +87,8 @@ koboy-package: koboy koboy-supervisor armgba-core armnes-core
 	file $(KOBOY_PACKAGE_ROOT)/mnt/onboard/.adds/koboy/cores/armgba_libretro.so | \
 		grep -q 'ELF 32-bit.*shared object, ARM'
 	file $(KOBOY_PACKAGE_ROOT)/mnt/onboard/.adds/koboy/cores/armnes_libretro.so | \
+		grep -q 'ELF 32-bit.*shared object, ARM'
+	file $(KOBOY_PACKAGE_ROOT)/mnt/onboard/.adds/koboy/cores/superwhizkid_libretro.so | \
 		grep -q 'ELF 32-bit.*shared object, ARM'
 	file $(KOBOY_PACKAGE_ROOT)/usr/local/Kobo/imageformats/libkoboylifecycle.so | \
 		grep -q 'ELF 32-bit.*shared object, ARM'

@@ -1,6 +1,6 @@
 # Ko Boy
 
-Ko Boy is an e-ink-focused Game Boy, Game Boy Color, Game Boy Advance, Mega Duck, Nintendo Entertainment System, and Famicom Disk System player for Kobo e-readers, built around armGBA and armNES. It combines full-speed emulation with a display scheduler designed for e-ink, touchscreen controls, Bluetooth audio, an on-device game browser, persistent saves and states, suspend handling, and supervised return to Nickel.
+Ko Boy is an e-ink-focused Game Boy, Game Boy Color, Game Boy Advance, Mega Duck, Nintendo Entertainment System, Famicom Disk System, and Gamate player for Kobo e-readers, built around armGBA, armNES, and superwhizkid. It combines full-speed emulation with a display scheduler designed for e-ink, touchscreen controls, Bluetooth audio, an on-device game browser, persistent saves and states, suspend handling, and supervised return to Nickel.
 
 Ko Boy currently targets the MediaTek-based Kobo Clara BW. Other models may differ in framebuffer, touchscreen, lifecycle, and audio behavior and are not supported until tested explicitly. Turn-based games, puzzle games, and slower adventures are the best fit; action games remain constrained by e-ink latency and touchscreen controls even when emulation itself runs at full speed.
 
@@ -24,10 +24,13 @@ Put games in system folders directly below `/mnt/onboard/KoBoy/Roms/`. On first 
 - `Mega Duck`
 - `Nintendo Entertainment System`
 - `Famicom Disc System`
+- `Gamate`
 
 The system browser is dynamic. Adding, renaming, or removing a top-level system folder changes the systems shown; intentionally removed stock folders are not recreated. Games must live directly inside a system folder because nested ROM folders are not currently supported.
 
 Uncompressed ROMs and ZIP archives are supported. A ZIP appears as one game and loads the first supported ROM it contains.
+
+Gamate cartridge images use the `.gam` extension in Ko Boy. Although superwhizkid also accepts `.bin`, Ko Boy retains `.bin` for headerless Mega Duck cartridges because the two formats have no reliable content signature with which to distinguish them. Rename Gamate `.bin` dumps to `.gam`; the contents are unchanged.
 
 Saves and states mirror the ROM folder structure:
 
@@ -93,7 +96,7 @@ Internally, armGBA's 32,768 Hz stereo output passes through a bounded, non-block
 
 ## BIOS selection
 
-Ko Boy automatically uses recognized BIOS files placed directly in `/mnt/onboard/KoBoy/BIOS/`. If a suitable file is missing or unusable, armGBA's built-in open-source boot ROM is used instead. This behavior is deterministic and has no user setting.
+Ko Boy automatically uses recognized BIOS files placed directly in `/mnt/onboard/KoBoy/BIOS/`. armGBA falls back to its built-in open-source boot ROM when its corresponding file is absent. FDS and Gamate require user-supplied firmware; selecting a game without it presents an explanatory Back screen. BIOS selection is deterministic and has no user setting.
 
 Recognized filenames are:
 
@@ -102,6 +105,8 @@ Recognized filenames are:
 - `gbc_bios.bin` or `cgb_boot.bin` for Game Boy Color.
 - `cgb_agb_boot.bin`, `cgb_agb0_boot.bin`, or `agb_boot.bin` for Game Boy games running in the Game Boy Advance model.
 - `mgb_boot.bin` for Game Boy Pocket.
+- `disksys.rom` for Famicom Disk System.
+- `gamate_bios_umc.bin` or `gamate_bios_bit.bin` for Gamate; UMC is preferred when both are present.
 
 The install package creates the BIOS directory but does not distribute proprietary BIOS images.
 
@@ -153,7 +158,7 @@ ROM + SRAM + save states
  MediaTek framebuffer and HWTCON interface
 ```
 
-The frontend uses a core-neutral interface for ROM loading, video, input, reset, states, battery-backed save RAM, disk control, and curated core options. armGBA is pinned as `deps/armgba` and supplies GB, GBC, GBA, and Mega Duck; armNES is pinned as `deps/armnes` and supplies NES and FDS. Both cores are loaded as shared libretro libraries through the same frontend adapter. armGBA's GB/GBC implementation contains Gambatte-derived code, but Ko Boy has no separate Gambatte dependency or adapter.
+The frontend uses a core-neutral interface for ROM loading, video, input, reset, states, battery-backed save RAM, disk control, and curated core options. armGBA is pinned as `deps/armgba` and supplies GB, GBC, GBA, and Mega Duck; armNES is pinned as `deps/armnes` and supplies NES and FDS; superwhizkid is pinned as `deps/superwhizkid` and supplies Gamate. All three cores are loaded as shared libretro libraries through the same frontend adapter. armGBA's GB/GBC implementation contains Gambatte-derived code, but Ko Boy has no separate Gambatte dependency or adapter.
 
 The libretro adapter supports legacy, v1, and v2 core-option registration while keeping exposure under Ko Boy's control. It owns stable copies of advertised values, applies hidden policy overrides, tracks each core's dynamic visibility signals, persists approved selections, and reports changes through libretro's variable-update protocol. armGBA's optional CPU LCD effects require a compiler intrinsic unavailable in NickelTC, so Ko Boy supplies a no-effects compatibility layer and performs display processing in its own frontend.
 
@@ -173,6 +178,7 @@ Testing on the Kobo Clara BW has established:
 
 - GB and Mega Duck gameplay, save-state, and save-RAM round trips.
 - GBA execution and Bluetooth audio, with broader compatibility and long-session stability still needing coverage.
+- Gamate core loading, BIOS selection, input, audio, scaling, and save-state behavior require on-device qualification.
 - Latest-frame presentation without accumulating stale display frames.
 - Multitouch direction and face-button combinations, single-touch diagonals, and rolling A/B chords using the Clara BW's sequential touch reports and coordinate transform.
 - Framebuffer restoration after normal exit and forced player termination.
@@ -202,7 +208,7 @@ Stopping Nickel for approximately one watchdog interval can reboot the reader, s
 - Confirm that diagnostics remain opt-in and decide whether to bound their separate breadcrumb log.
 - Publish installation instructions, supported-device scope, source availability, and known limitations with the release.
 
-Ko Boy and its combined armGBA and armNES core distributions are distributed under GPL version 2. Individual bundled components retain the compatible MPL, MIT, BSD 3-Clause, Expat, and public-domain terms identified in `LICENSES/KOBOY/KOBOY-LICENSES.md`. The release bundle must include that manifest and every license file it links. Corresponding source, build scripts, and exact pinned submodule revisions must remain available from the matching release tag for each released binary. A formal legal review may still be appropriate before broad distribution.
+Ko Boy and its combined armGBA, armNES, and superwhizkid core distributions are distributed under GPL version 2. Individual bundled components retain the compatible MPL, MIT, BSD 3-Clause, Expat, and public-domain terms identified in `LICENSES/KOBOY/KOBOY-LICENSES.md`. The release bundle must include that manifest and every license file it links. Corresponding source, build scripts, and exact pinned submodule revisions must remain available from the matching release tag for each released binary. A formal legal review may still be appropriate before broad distribution.
 
 ## Deferred enhancements
 

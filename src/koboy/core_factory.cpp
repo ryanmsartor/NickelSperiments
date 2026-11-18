@@ -41,6 +41,10 @@ bool extension_in(const std::string &extension, const char *const *values,
 
 std::unique_ptr<EmulatorCore> create_core_for_rom(const std::string &path) {
     const std::string extension = extension_of(path);
+    if (extension == "gam") {
+        return std::unique_ptr<EmulatorCore>(new ArmGbaCore(
+            "/mnt/onboard/.adds/koboy/cores/superwhizkid_libretro.so"));
+    }
     static const char *const armnes_extensions[] = {
         "nes", "fds", "unf", "unif", "nsf"
     };

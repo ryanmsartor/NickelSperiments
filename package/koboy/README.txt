@@ -1,9 +1,9 @@
 Ko Boy
 ======
 
-Ko Boy is an e-ink-focused Game Boy, Game Boy Color, Game Boy Advance, and
-Mega Duck player built around armGBA. This release targets the Kobo Clara BW;
-other models are not yet supported.
+Ko Boy is an e-ink-focused Game Boy, Game Boy Color, Game Boy Advance,
+Mega Duck, NES, Famicom Disk System, and Gamate player. This release targets
+the Kobo Clara BW; other models are not yet supported.
 
 Place legally obtained ROM images in the matching directory below:
 
@@ -11,6 +11,9 @@ Place legally obtained ROM images in the matching directory below:
   /mnt/onboard/KoBoy/Roms/Game Boy Color/
   /mnt/onboard/KoBoy/Roms/Game Boy Advance/
   /mnt/onboard/KoBoy/Roms/Mega Duck/
+  /mnt/onboard/KoBoy/Roms/Nintendo Entertainment System/
+  /mnt/onboard/KoBoy/Roms/Famicom Disc System/
+  /mnt/onboard/KoBoy/Roms/Gamate/
 
 Ko Boy appears in Nickel's More screen after installation and reboot.
 
@@ -18,8 +21,10 @@ The on-device browser supports uncompressed ROMs and ZIP archives. Saves,
 automatic resume states, and manual states are stored under
 /mnt/onboard/KoBoy. Optional recognized BIOS files can be placed directly in
 /mnt/onboard/KoBoy/BIOS; otherwise Ko Boy uses armGBA's built-in open-source
-boot ROMs. Pair Bluetooth headphones in Nickel before launching a game if
-audio is desired.
+boot ROMs. Gamate requires gamate_bios_umc.bin or gamate_bios_bit.bin in that
+directory. Gamate cartridge dumps must use the .gam extension because .bin is
+reserved for Mega Duck compatibility. Pair Bluetooth headphones in Nickel
+before launching a game if audio is desired.
 
 Touch controls support simultaneous direction and face-button presses,
 single-touch diagonals, and rolling between A and B while retaining the first

@@ -500,7 +500,9 @@ ArmGbaCore::ArmGbaCore(const std::string &library_path)
     : impl_(new Impl(library_path.find("armgba") != std::string::npos
                          ? "armgba" :
                      library_path.find("armnes") != std::string::npos
-                         ? "armnes" : "unknown")),
+                         ? "armnes" :
+                     library_path.find("superwhizkid") != std::string::npos
+                         ? "superwhizkid" : "unknown")),
       api_(), library_(new LibretroLibrary), name_("libretro") {
     if (active_core) {
         delete impl_;
@@ -556,7 +558,7 @@ bool ArmGbaCore::load_rom(const std::string &path,
     retro_game_info game = {path.c_str(), rom.empty() ? 0 : &rom[0],
                             rom.size(), 0};
     if (rom.empty() || !api_.load_game(&game)) {
-        error = impl_->error.empty() ? "armGBA rejected the ROM image"
+        error = impl_->error.empty() ? name_ + " rejected the ROM image"
                                      : impl_->error;
         return false;
     }

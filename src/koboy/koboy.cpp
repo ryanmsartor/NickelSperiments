@@ -173,7 +173,7 @@ std::string loadable_rom_path(const std::string &path) {
     struct string_list *entries = file_archive_get_file_list(
         path.c_str(),
         "gb|gbc|gb2|gba|gba2|bin|duck|md0|md1|md2|md20s|md25s|"
-        "nes|fds|unf|unif|nsf");
+        "nes|fds|unf|unif|nsf|gam");
     if (!entries || entries->size == 0U) {
         string_list_free(entries);
         throw std::runtime_error("ZIP contains no supported ROM");
@@ -679,7 +679,7 @@ void initialize_system_folders() {
         return;
     const char *const names[] = {
         "Game Boy", "Game Boy Color", "Game Boy Advance", "Mega Duck",
-        "Nintendo Entertainment System", "Famicom Disc System"
+        "Nintendo Entertainment System", "Famicom Disc System", "Gamate"
     };
     for (unsigned i = 0; i < sizeof(names) / sizeof(names[0]); ++i) {
         const std::string path = std::string(kKoBoyRomDirectory) + "/" +
@@ -717,13 +717,15 @@ std::vector<SystemFolder> list_systems() {
                   const char *const stock[] = {
                       "game boy", "game boy color", "game boy advance",
                       "mega duck", "nintendo entertainment system",
-                      "famicom disc system"
+                      "famicom disc system", "gamate"
                   };
-                  unsigned left_rank = 6U;
-                  unsigned right_rank = 6U;
+                  const unsigned stock_count =
+                      sizeof(stock) / sizeof(stock[0]);
+                  unsigned left_rank = stock_count;
+                  unsigned right_rank = stock_count;
                   const std::string left_name = lowercase(left.name);
                   const std::string right_name = lowercase(right.name);
-                  for (unsigned i = 0; i < 6U; ++i) {
+                  for (unsigned i = 0; i < stock_count; ++i) {
                       if (left_name == stock[i]) left_rank = i;
                       if (right_name == stock[i]) right_rank = i;
                   }
@@ -739,7 +741,7 @@ bool is_supported_rom(const std::string &name) {
     const char *const extensions[] = {
         ".gb", ".gbc", ".gb2", ".gba", ".gba2", ".bin", ".duck",
         ".md0", ".md1", ".md2", ".md20s", ".md25s", ".nes",
-        ".fds", ".unf", ".unif", ".nsf", ".zip"
+        ".fds", ".unf", ".unif", ".nsf", ".gam", ".zip"
     };
     for (unsigned i = 0; i < sizeof(extensions) / sizeof(extensions[0]); ++i) {
         const std::string extension(extensions[i]);
@@ -1522,6 +1524,23 @@ void draw_missing_fds_bios(std::vector<uint32_t> &screen, unsigned width,
                "BACK", 5, dark);
 }
 
+void draw_missing_gamate_bios(std::vector<uint32_t> &screen, unsigned width,
+                              unsigned height) {
+    const uint32_t dark = 0xFF000000U;
+    const uint32_t light = 0xFFFFFFFFU;
+    screen.assign(static_cast<size_t>(width) * height, light);
+    draw_label(screen, width, height, width / 2, height * 18 / 100,
+               "GAMATE BIOS REQUIRED", 7, dark);
+    draw_label(screen, width, height, width / 2, height * 38 / 100,
+               "ADD GAMATE_BIOS_UMC.BIN", 4, dark);
+    draw_label(screen, width, height, width / 2, height * 48 / 100,
+               "OR GAMATE_BIOS_BIT.BIN", 4, dark);
+    draw_label(screen, width, height, width / 2, height * 60 / 100,
+               "TO KOBOY/BIOS/", 4, dark);
+    draw_label(screen, width, height, width / 2, height * 91 / 100,
+               "BACK", 5, dark);
+}
+
 bool requires_missing_fds_bios(const std::string &rom_path) {
     std::string load_path;
     try {
@@ -1544,6 +1563,29 @@ bool requires_missing_fds_bios(const std::string &rom_path) {
         }
     }
     return is_fds && !bios_found;
+}
+
+bool requires_missing_gamate_bios(const std::string &rom_path) {
+    std::string load_path;
+    try {
+        load_path = lowercase(loadable_rom_path(rom_path));
+    } catch (const std::exception &) {
+        return false;
+    }
+    const bool is_gamate = load_path.size() >= 4U &&
+        load_path.compare(load_path.size() - 4U, 4U, ".gam") == 0;
+    if (!is_gamate)
+        return false;
+    const char *const names[] = {
+        "gamate_bios_umc.bin", "gamate_bios_bit.bin"
+    };
+    for (unsigned index = 0; index < sizeof(names) / sizeof(names[0]); ++index) {
+        const std::string bios = std::string(kKoBoyBiosDirectory) + "/" +
+                                 names[index];
+        if (file_exists(bios.c_str()))
+            return false;
+    }
+    return true;
 }
 
 std::string choose_game(koboy::FramebufferBackend &framebuffer,
@@ -1645,11 +1687,20 @@ std::string choose_game(koboy::FramebufferBackend &framebuffer,
                         action - koboy::UI_GAME_0);
                     const std::size_t index = game_page * page_size + row;
                     if (index < roms.size()) {
-                        if (!requires_missing_fds_bios(roms[index]))
+                        const bool missing_fds =
+                            requires_missing_fds_bios(roms[index]);
+                        const bool missing_gamate =
+                            requires_missing_gamate_bios(roms[index]);
+                        if (!missing_fds && !missing_gamate)
                             return roms[index];
-                        draw_missing_fds_bios(
-                            screen, framebuffer.variable_info().xres,
-                            framebuffer.variable_info().yres);
+                        if (missing_gamate)
+                            draw_missing_gamate_bios(
+                                screen, framebuffer.variable_info().xres,
+                                framebuffer.variable_info().yres);
+                        else
+                            draw_missing_fds_bios(
+                                screen, framebuffer.variable_info().xres,
+                                framebuffer.variable_info().yres);
                         present_browser_screen();
                         while (!interrupted) {
                             if (input.take_ui_action(

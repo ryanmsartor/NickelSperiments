@@ -14,7 +14,7 @@ This Speriment currently targets the tested MediaTek-based Kobo Clara BW.
 
 ### Ko Boy
 
-Ko Boy is a Game Boy, Game Boy Color, Game Boy Advance, and Mega Duck player for Kobo e-readers, built around armGBA. It combines full-speed emulation with an e-ink-specific display scheduler, touchscreen controls, an on-device game browser, persistent saves and states, suspend handling, and supervised return to Nickel after normal or abnormal termination.
+Ko Boy is a Game Boy, Game Boy Color, Game Boy Advance, Mega Duck, NES, Famicom Disk System, and Gamate player for Kobo e-readers, built around armGBA, armNES, and superwhizkid. It combines full-speed emulation with an e-ink-specific display scheduler, touchscreen controls, an on-device game browser, persistent saves and states, suspend handling, and supervised return to Nickel after normal or abnormal termination.
 
 Ko Boy has been developed and tested primarily on the MediaTek-based Kobo Clara BW. The build produces an early user-installable KoboRoot archive; support outside the tested device remains unverified. No ROMs are included.
 

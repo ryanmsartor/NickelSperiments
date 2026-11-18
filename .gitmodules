@@ -7,3 +7,6 @@
 [submodule "deps/armnes"]
 	path = deps/armnes
 	url = https://github.com/MagnominusGit/armNES.git
+[submodule "deps/superwhizkid"]
+	path = deps/superwhizkid
+	url = https://github.com/ryanmsartor/superwhizkid.git

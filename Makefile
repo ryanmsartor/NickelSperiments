@@ -4,6 +4,7 @@ include mk/ewdb.mk
 include mk/kobo-toolchain.mk
 include mk/armgba.mk
 include mk/armnes.mk
+include mk/superwhizkid.mk
 include mk/koboy.mk
 
 .PHONY: help koboy-lifecycle koboy-lifecycle-package
@@ -19,6 +20,7 @@ help:
 	@echo "  armgba-probe           Build the headless armGBA Kobo probe"
 	@echo "  armnes-core            Build the pinned ARMv7 armNES libretro core"
 	@echo "  armnes-probe           Build the armNES shared-core loader probe"
+	@echo "  superwhizkid-core      Build the pinned ARMv7 Gamate libretro core"
 	@echo "  koboy                  Build the Ko Boy player"
 	@echo "  koboy-supervisor       Build the Ko Boy crash-recovery supervisor"
 	@echo "  koboy-package          Build build/Ko-Boy-KoboRoot.tgz"
