@@ -89,18 +89,18 @@ koboy-package: koboy koboy-supervisor armgba-core armnes-core superwhizkid-core
 		$(KOBOY_PACKAGE_ROOT)/mnt/onboard/.adds/koboy/LICENSES/
 	tar --owner=0 --group=0 --numeric-owner -C $(KOBOY_PACKAGE_ROOT) \
 		-czf $(KOBOY_PACKAGE) .
-	file $(KOBOY_PACKAGE_ROOT)/mnt/onboard/.adds/koboy/koboy | \
-		grep -q 'ELF 32-bit.*ARM'
-	file $(KOBOY_PACKAGE_ROOT)/mnt/onboard/.adds/koboy/koboy-supervisor | \
-		grep -q 'ELF 32-bit.*ARM'
-	file $(KOBOY_PACKAGE_ROOT)/mnt/onboard/.adds/koboy/cores/armgba_libretro.so | \
-		grep -q 'ELF 32-bit.*shared object, ARM'
-	file $(KOBOY_PACKAGE_ROOT)/mnt/onboard/.adds/koboy/cores/armnes_libretro.so | \
-		grep -q 'ELF 32-bit.*shared object, ARM'
-	file $(KOBOY_PACKAGE_ROOT)/mnt/onboard/.adds/koboy/cores/superwhizkid_libretro.so | \
-		grep -q 'ELF 32-bit.*shared object, ARM'
-	file $(KOBOY_PACKAGE_ROOT)/usr/local/Kobo/imageformats/libkoboylifecycle.so | \
-		grep -q 'ELF 32-bit.*shared object, ARM'
+	./scripts/verify-arm-elf executable \
+		$(KOBOY_PACKAGE_ROOT)/mnt/onboard/.adds/koboy/koboy
+	./scripts/verify-arm-elf executable \
+		$(KOBOY_PACKAGE_ROOT)/mnt/onboard/.adds/koboy/koboy-supervisor
+	./scripts/verify-arm-elf shared \
+		$(KOBOY_PACKAGE_ROOT)/mnt/onboard/.adds/koboy/cores/armgba_libretro.so
+	./scripts/verify-arm-elf shared \
+		$(KOBOY_PACKAGE_ROOT)/mnt/onboard/.adds/koboy/cores/armnes_libretro.so
+	./scripts/verify-arm-elf shared \
+		$(KOBOY_PACKAGE_ROOT)/mnt/onboard/.adds/koboy/cores/superwhizkid_libretro.so
+	./scripts/verify-arm-elf shared \
+		$(KOBOY_PACKAGE_ROOT)/usr/local/Kobo/imageformats/libkoboylifecycle.so
 	test "$$(tar -tzf $(KOBOY_PACKAGE) | grep -c '^./mnt/onboard/.adds/koboy/LICENSES/[^/][^/]*$$')" -eq 7
 	cd build && sha256sum $$(basename $(KOBOY_PACKAGE)) > \
 		$$(basename $(KOBOY_PACKAGE_CHECKSUM))
