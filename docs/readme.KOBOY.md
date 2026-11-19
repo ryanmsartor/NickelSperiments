@@ -26,7 +26,7 @@ Put games in system folders directly below `/mnt/onboard/KoBoy/Roms/`. On first 
 - `Famicom Disc System`
 - `Gamate`
 
-The system browser is dynamic. Adding, renaming, or removing a top-level system folder changes the systems shown; intentionally removed stock folders are not recreated. Games must live directly inside a system folder because nested ROM folders are not currently supported.
+The system browser is dynamic. Ko Boy ensures that its stock folders exist, and additional top-level folders are supported. A folder appears in System Select only when it contains at least one supported game. Games must live directly inside a system folder because nested ROM folders are not currently supported.
 
 Uncompressed ROMs and ZIP archives are supported. A ZIP appears as one game and loads the first supported ROM it contains.
 
@@ -45,7 +45,7 @@ The `state0` file is Ko Boy's automatic resume state. The `state1` file is contr
 
 ## Playing games
 
-Launching Ko Boy opens the system browser, followed by the selected system's alphabetically sorted games. An empty system reports that no games were found and retains a Back button. The browser shows up to seven systems or games per page.
+Launching Ko Boy opens the system browser, followed by the selected system's alphabetically sorted games. Empty system folders are hidden. If no folder contains a supported game, Ko Boy explains where to add games and provides a Back button to exit. The browser shows up to seven systems or games per page.
 
 The in-game Menu button pauses emulation and opens these controls:
 

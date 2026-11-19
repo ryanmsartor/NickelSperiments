@@ -667,6 +667,8 @@ struct SystemFolder {
     std::string path;
 };
 
+bool is_supported_rom(const std::string &name);
+
 bool is_directory(const std::string &path) {
     struct stat information;
     return stat(path.c_str(), &information) == 0 &&
@@ -705,6 +707,23 @@ std::vector<SystemFolder> list_systems() {
             continue;
         const std::string path = std::string(kKoBoyRomDirectory) + "/" + name;
         if (is_directory(path)) {
+            bool has_rom = false;
+            DIR *system_directory = opendir(path.c_str());
+            if (system_directory) {
+                for (dirent *rom = readdir(system_directory); rom;
+                     rom = readdir(system_directory)) {
+                    const std::string rom_name(rom->d_name);
+                    if (!rom_name.empty() && rom_name[0] != '.' &&
+                        is_supported_rom(rom_name) &&
+                        !is_directory(path + "/" + rom_name)) {
+                        has_rom = true;
+                        break;
+                    }
+                }
+                closedir(system_directory);
+            }
+            if (!has_rom)
+                continue;
             SystemFolder system;
             system.name = name;
             system.path = path;
@@ -1469,8 +1488,14 @@ void draw_system_list(std::vector<uint32_t> &screen, unsigned width,
     const int row_height = height * 9 / 100;
     const std::size_t first = page * page_size;
     if (systems.empty()) {
-        draw_label(screen, width, height, width / 2, height * 48 / 100,
-                   "NO SYSTEM FOLDERS FOUND", 5, dark);
+        draw_label(screen, width, height, width / 2, height * 30 / 100,
+                   "NO GAMES FOUND", 7, dark);
+        draw_label(screen, width, height, width / 2, height * 43 / 100,
+                   "CONNECT YOUR KOBO BY USB", 4, dark);
+        draw_label(screen, width, height, width / 2, height * 53 / 100,
+                   "AND ADD GAMES UNDER", 4, dark);
+        draw_label(screen, width, height, width / 2, height * 63 / 100,
+                   "KOBOY/ROMS/SYSTEM NAME/", 4, dark);
     } else {
         for (std::size_t row = 0;
              row < page_size && first + row < systems.size(); ++row) {
@@ -1486,12 +1511,17 @@ void draw_system_list(std::vector<uint32_t> &screen, unsigned width,
         }
     }
     const int footer_y = height * 91 / 100;
-    draw_label(screen, width, height, width / 6, footer_y,
-               "PREVIOUS", 4, dark);
-    draw_label(screen, width, height, width / 2, footer_y,
-               allow_cancel ? "BACK" : "EXIT", 4, dark);
-    draw_label(screen, width, height, width * 5 / 6, footer_y,
-               "NEXT", 4, dark);
+    if (systems.empty()) {
+        draw_label(screen, width, height, width / 2, footer_y,
+                   "BACK", 4, dark);
+    } else {
+        draw_label(screen, width, height, width / 6, footer_y,
+                   "PREVIOUS", 4, dark);
+        draw_label(screen, width, height, width / 2, footer_y,
+                   allow_cancel ? "BACK" : "EXIT", 4, dark);
+        draw_label(screen, width, height, width * 5 / 6, footer_y,
+                   "NEXT", 4, dark);
+    }
 }
 
 void draw_loading_screen(std::vector<uint32_t> &screen, unsigned width,
