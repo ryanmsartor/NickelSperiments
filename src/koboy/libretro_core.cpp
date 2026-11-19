@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: GPL-2.0-only
  */
 
-#include "armgba_core.h"
+#include "libretro_core.h"
 #include "core_options.h"
 #include "libretro_library.h"
 
@@ -27,7 +27,7 @@
 namespace koboy {
 namespace {
 
-ArmGbaCore *active_core;
+LibretroCore *active_core;
 
 bool bluetooth_audio_connected() {
     FILE *query = popen(
@@ -297,7 +297,7 @@ void core_log(enum retro_log_level, const char *format, ...) {
 
 } // namespace
 
-struct ArmGbaCore::Impl {
+struct LibretroCore::Impl {
     enum retro_pixel_format pixel_format;
     unsigned width;
     unsigned height;
@@ -323,7 +323,7 @@ struct ArmGbaCore::Impl {
 static bool environment_callback(unsigned command, void *data) {
     if (!active_core)
         return false;
-    ArmGbaCore::Impl &impl = *active_core->impl_;
+    LibretroCore::Impl &impl = *active_core->impl_;
     static const char *const system_directory = "/mnt/onboard/KoBoy/BIOS";
     static const char *const save_directory = "/mnt/onboard/KoBoy/Saves";
     switch (command) {
@@ -445,7 +445,7 @@ static void video_callback(const void *data, unsigned width,
                            unsigned height, size_t pitch) {
     if (!active_core || !data)
         return;
-    ArmGbaCore::Impl &impl = *active_core->impl_;
+    LibretroCore::Impl &impl = *active_core->impl_;
     impl.width = width;
     impl.height = height;
     if (!impl.capture_video)
@@ -496,7 +496,7 @@ static int16_t input_state_callback(unsigned port, unsigned device,
     }
 }
 
-ArmGbaCore::ArmGbaCore(const std::string &library_path)
+LibretroCore::LibretroCore(const std::string &library_path)
     : impl_(new Impl(library_path.find("armgba") != std::string::npos
                          ? "armgba" :
                      library_path.find("armnes") != std::string::npos
@@ -531,7 +531,7 @@ ArmGbaCore::ArmGbaCore(const std::string &library_path)
     api_.init();
 }
 
-ArmGbaCore::~ArmGbaCore() {
+LibretroCore::~LibretroCore() {
     if (impl_->loaded)
         api_.unload_game();
     api_.deinit();
@@ -540,12 +540,12 @@ ArmGbaCore::~ArmGbaCore() {
     delete impl_;
 }
 
-const char *ArmGbaCore::name() const { return name_.c_str(); }
-unsigned ArmGbaCore::video_width() const { return impl_->width; }
-unsigned ArmGbaCore::video_height() const { return impl_->height; }
-double ArmGbaCore::frame_rate() const { return impl_->fps; }
+const char *LibretroCore::name() const { return name_.c_str(); }
+unsigned LibretroCore::video_width() const { return impl_->width; }
+unsigned LibretroCore::video_height() const { return impl_->height; }
+double LibretroCore::frame_rate() const { return impl_->fps; }
 
-bool ArmGbaCore::load_rom(const std::string &path,
+bool LibretroCore::load_rom(const std::string &path,
                           const std::vector<unsigned char> &rom,
                           std::string &error) {
     if (impl_->loaded) {
@@ -583,9 +583,9 @@ bool ArmGbaCore::load_rom(const std::string &path,
     return true;
 }
 
-void ArmGbaCore::reset() { api_.reset(); }
+void LibretroCore::reset() { api_.reset(); }
 
-void ArmGbaCore::run_frame(unsigned buttons, std::vector<uint32_t> &video,
+void LibretroCore::run_frame(unsigned buttons, std::vector<uint32_t> &video,
                            bool capture_video) {
     impl_->buttons = buttons;
     impl_->capture_video = capture_video;
@@ -594,11 +594,11 @@ void ArmGbaCore::run_frame(unsigned buttons, std::vector<uint32_t> &video,
         video = impl_->frame;
 }
 
-void ArmGbaCore::set_audio_paused(bool paused) {
+void LibretroCore::set_audio_paused(bool paused) {
     impl_->audio.set_paused(paused);
 }
 
-void ArmGbaCore::set_audio_volume(unsigned volume) {
+void LibretroCore::set_audio_volume(unsigned volume) {
     impl_->audio.set_volume(volume);
     if (volume == 0U) {
         impl_->audio.stop();
@@ -607,31 +607,31 @@ void ArmGbaCore::set_audio_volume(unsigned volume) {
     }
 }
 
-bool ArmGbaCore::audio_enabled() const {
+bool LibretroCore::audio_enabled() const {
     return impl_->audio_enabled;
 }
 
-uint64_t ArmGbaCore::audio_frames_queued() const {
+uint64_t LibretroCore::audio_frames_queued() const {
     return impl_->audio.queued_frames();
 }
 
-uint64_t ArmGbaCore::audio_frames_dropped() const {
+uint64_t LibretroCore::audio_frames_dropped() const {
     return impl_->audio.dropped_frames();
 }
 
-unsigned ArmGbaCore::disk_count() const {
+unsigned LibretroCore::disk_count() const {
     return impl_->has_disk_control ? impl_->disk.get_num_images() : 0U;
 }
 
-unsigned ArmGbaCore::disk_index() const {
+unsigned LibretroCore::disk_index() const {
     return impl_->has_disk_control ? impl_->disk.get_image_index() : 0U;
 }
 
-bool ArmGbaCore::disk_ejected() const {
+bool LibretroCore::disk_ejected() const {
     return impl_->has_disk_control && impl_->disk.get_eject_state();
 }
 
-bool ArmGbaCore::toggle_disk() {
+bool LibretroCore::toggle_disk() {
     const unsigned count = disk_count();
     if (!count)
         return false;
@@ -642,39 +642,39 @@ bool ArmGbaCore::toggle_disk() {
            impl_->disk.set_eject_state(false);
 }
 
-unsigned ArmGbaCore::core_option_count(bool developer) const {
+unsigned LibretroCore::core_option_count(bool developer) const {
     return impl_->options.curated_count(developer);
 }
 
-const char *ArmGbaCore::core_option_label(unsigned index,
+const char *LibretroCore::core_option_label(unsigned index,
                                           bool developer) const {
     return impl_->options.curated_label(index, developer);
 }
 
-const char *ArmGbaCore::core_option_value(unsigned index,
+const char *LibretroCore::core_option_value(unsigned index,
                                           bool developer) const {
     return impl_->options.curated_value_label(index, developer);
 }
 
-bool ArmGbaCore::cycle_core_option(unsigned index, bool developer) {
+bool LibretroCore::cycle_core_option(unsigned index, bool developer) {
     return impl_->options.cycle_curated(index, developer);
 }
 
-std::size_t ArmGbaCore::state_size() const { return api_.serialize_size(); }
+std::size_t LibretroCore::state_size() const { return api_.serialize_size(); }
 
-bool ArmGbaCore::save_state(void *data, std::size_t size) {
+bool LibretroCore::save_state(void *data, std::size_t size) {
     return api_.serialize(data, size);
 }
 
-bool ArmGbaCore::load_state(const void *data, std::size_t size) {
+bool LibretroCore::load_state(const void *data, std::size_t size) {
     return api_.unserialize(data, size);
 }
 
-void *ArmGbaCore::save_ram_data() {
+void *LibretroCore::save_ram_data() {
     return api_.get_memory_data(RETRO_MEMORY_SAVE_RAM);
 }
 
-std::size_t ArmGbaCore::save_ram_size() const {
+std::size_t LibretroCore::save_ram_size() const {
     return api_.get_memory_size(RETRO_MEMORY_SAVE_RAM);
 }
 

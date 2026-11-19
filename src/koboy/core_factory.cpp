@@ -4,7 +4,7 @@
  */
 
 #include "core_factory.h"
-#include "armgba_core.h"
+#include "libretro_core.h"
 
 #include <algorithm>
 #include <cctype>
@@ -53,7 +53,7 @@ std::unique_ptr<EmulatorCore> create_core_for_rom(
     const std::string extension = extension_of(path);
     if (extension == "gam" ||
         (extension == "bin" && is_gamate_rom(rom))) {
-        return std::unique_ptr<EmulatorCore>(new ArmGbaCore(
+        return std::unique_ptr<EmulatorCore>(new LibretroCore(
             "/mnt/onboard/.adds/koboy/cores/superwhizkid_libretro.so"));
     }
     static const char *const armnes_extensions[] = {
@@ -61,7 +61,7 @@ std::unique_ptr<EmulatorCore> create_core_for_rom(
     };
     if (extension_in(extension, armnes_extensions,
                      sizeof(armnes_extensions) / sizeof(armnes_extensions[0]))) {
-        return std::unique_ptr<EmulatorCore>(new ArmGbaCore(
+        return std::unique_ptr<EmulatorCore>(new LibretroCore(
             "/mnt/onboard/.adds/koboy/cores/armnes_libretro.so"));
     }
     static const char *const armgba_extensions[] = {
@@ -71,7 +71,7 @@ std::unique_ptr<EmulatorCore> create_core_for_rom(
     if (!extension_in(extension, armgba_extensions,
                       sizeof(armgba_extensions) / sizeof(armgba_extensions[0])))
         throw std::runtime_error("no emulator core supports this ROM extension");
-    return std::unique_ptr<EmulatorCore>(new ArmGbaCore(
+    return std::unique_ptr<EmulatorCore>(new LibretroCore(
         "/mnt/onboard/.adds/koboy/cores/armgba_libretro.so"));
 }
 

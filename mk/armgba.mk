@@ -1,7 +1,6 @@
 ARMGBA_ROOT := deps/armgba
 ARMGBA_OBJ_DIR := build/obj/armgba
 ARMGBA_OUTPUT := build/armgba_libretro.so
-ARMGBA_ADAPTER_CHECK_OBJECT := $(ARMGBA_OBJ_DIR)/koboy/armgba_core.o
 
 ARMGBA_CORE_SOURCES := \
 	src/bios-image.c src/bus.c src/cheats.c src/gba.c src/memory.c \
@@ -53,7 +52,6 @@ ARMGBA_CORE_LIBRARY_OBJECTS := \
 	$(ARMGBA_LCD_COMPAT_OBJECT) $(ARMGBA_GB_ADAPTER_OBJECT) \
 	$(ARMGBA_GAMBATTE_OBJECTS) $(ARMGBA_ARCHIVE_OBJECTS)
 ARMGBA_DEPENDENCIES := $(ARMGBA_CORE_LIBRARY_OBJECTS:.o=.d) \
-	$(ARMGBA_ADAPTER_CHECK_OBJECT:.o=.d) \
 	$(ARMGBA_PROBE_OBJECT:.o=.d)
 
 -include $(ARMGBA_DEPENDENCIES)
@@ -81,7 +79,7 @@ ARMGBA_ARCHIVE_CPPFLAGS := \
 	-I$(ARMGBA_ROOT)/libretro/deps/libretro-common/include \
 	-DHAVE_ZLIB -DHAVE_7ZIP
 
-.PHONY: armgba-core armgba-core-check armgba-libretro-check armgba-adapter-check armgba-probe armgba-clean
+.PHONY: armgba-core armgba-core-check armgba-libretro-check armgba-probe armgba-clean
 
 armgba-core: $(ARMGBA_OUTPUT)
 
@@ -96,16 +94,10 @@ armgba-libretro-check: $(ARMGBA_LIBRETRO_C_OBJECTS)
 
 armgba-probe: $(ARMGBA_PROBE_OUTPUT)
 
-$(ARMGBA_PROBE_OUTPUT): $(ARMGBA_ADAPTER_CHECK_OBJECT) $(ARMGBA_PROBE_OBJECT) \
+$(ARMGBA_PROBE_OUTPUT): build/obj/koboy/libretro_core.o $(ARMGBA_PROBE_OBJECT) \
 	build/obj/koboy/libretro_library.o build/obj/koboy/core_options.o
 	@mkdir -p $(@D)
 	$(KOBO_LINK) $(KOBO_LDFLAGS) -o $@ $^ -lpthread -lz -ldl
-
-armgba-adapter-check: $(ARMGBA_ADAPTER_CHECK_OBJECT)
-
-$(ARMGBA_ADAPTER_CHECK_OBJECT): src/koboy/armgba_core.cpp
-	@mkdir -p $(@D)
-	$(KOBO_CXX) $(ARMGBA_CPPFLAGS) $(KOBO_CXXFLAGS) -c -o $@ $<
 
 $(ARMGBA_PROBE_OBJECT): src/koboy/armgba_probe.cpp
 	@mkdir -p $(@D)

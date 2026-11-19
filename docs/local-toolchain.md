@@ -21,7 +21,7 @@ The kernel on this workstation does not permit the PRoot-based alternative. For 
 
 ## Building
 
-`mk/kobo-toolchain.mk` detects the workspace compiler automatically. `mk/armgba.mk` owns the emulator backend and its checks, while `mk/koboy.mk` owns the application and its diagnostics. Normal targets need no environment setup:
+`mk/kobo-toolchain.mk` detects the workspace compiler automatically. Each core makefile owns that core and its checks, while `mk/koboy.mk` owns the application, the shared libretro frontend, and generic diagnostics. Normal targets need no environment setup:
 
 ```sh
 make koboy-display-test
@@ -29,10 +29,11 @@ make koboy-framebuffer-isolation
 make koboy
 make koboy-supervisor
 make koboy-lifecycle
-make armgba-adapter-check
+make koboy-libretro-check
 make armgba-core-check
 make armgba-libretro-check
 make armgba-probe
+make libretro-probe
 ```
 
 The armGBA checks also use NickelTC's C compiler through `scripts/nickeltc-tool`. Its machine core is compiled explicitly for ARMv7-A, NEON, and the hard-float ABI used by the Kobo firmware.

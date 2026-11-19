@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 
-#ifndef NICKELSPERIMENTS_ARMGBA_CORE_H
-#define NICKELSPERIMENTS_ARMGBA_CORE_H
+#ifndef NICKELSPERIMENTS_LIBRETRO_CORE_H
+#define NICKELSPERIMENTS_LIBRETRO_CORE_H
 
 #include "emulator_core.h"
 #include "libretro_api.h"
@@ -13,10 +13,10 @@ namespace koboy {
 struct LibretroApi;
 class LibretroLibrary;
 
-class ArmGbaCore : public EmulatorCore {
+class LibretroCore : public EmulatorCore {
 public:
-    explicit ArmGbaCore(const std::string &library_path);
-    virtual ~ArmGbaCore();
+    explicit LibretroCore(const std::string &library_path);
+    virtual ~LibretroCore();
 
     virtual const char *name() const;
     virtual unsigned video_width() const;
@@ -49,13 +49,13 @@ public:
     virtual void *save_ram_data();
     virtual std::size_t save_ram_size() const;
 
-    /* Used only by the C callback bridge in armgba_core.cpp. */
+    /* Used only by the C callback bridge in libretro_core.cpp. */
     struct Impl;
     Impl *impl_;
 
 private:
-    ArmGbaCore(const ArmGbaCore &);
-    ArmGbaCore &operator=(const ArmGbaCore &);
+    LibretroCore(const LibretroCore &);
+    LibretroCore &operator=(const LibretroCore &);
 
     LibretroApi api_;
     LibretroLibrary *library_;
