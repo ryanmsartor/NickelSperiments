@@ -30,6 +30,17 @@ CoreOptions::CoreOptions(const std::string &core_id)
                                    false));
         curated_.push_back(Curated("armnes_sprite_limit", "SPRITE LIMIT",
                                    false));
+    } else if (core_id == "superwhizkid") {
+        policy_["superwhizkid_palette"] = "greyscale";
+        policy_["superwhizkid_tap_latch"] = "on";
+        policy_["superwhizkid_lcd_ghosting"] = "off";
+        policy_["superwhizkid_bios"] = "umc";
+        policy_["superwhizkid_skip_intro"] = "off";
+        defaults_["superwhizkid_flicker_reduction"] = "1";
+        curated_.push_back(Curated("superwhizkid_audio_output",
+                                   "AUDIO OUTPUT", false));
+        curated_.push_back(Curated("superwhizkid_flicker_reduction",
+                                   "FLICKER REDUCTION", true));
     }
 }
 
@@ -45,8 +56,12 @@ void CoreOptions::register_option(const char *key, const char *default_value,
         policy_.find(key);
     const std::map<std::string, std::string>::const_iterator configured =
         configured_.find(key);
+    const std::map<std::string, std::string>::const_iterator overridden_default =
+        defaults_.find(key);
     const std::string wanted = policy != policy_.end() ? policy->second :
-        configured != configured_.end() ? configured->second : default_value;
+        configured != configured_.end() ? configured->second :
+        overridden_default != defaults_.end() ? overridden_default->second :
+        default_value;
     option.value = default_value;
     for (std::size_t i = 0; i < option.values.size(); ++i)
         if (option.values[i] == wanted) {

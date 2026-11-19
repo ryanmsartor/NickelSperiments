@@ -571,6 +571,9 @@ bool ArmGbaCore::load_rom(const std::string &path,
     impl_->audio.set_sample_rate(static_cast<unsigned>(
         information.timing.sample_rate + 0.5));
     impl_->audio_enabled = bluetooth_audio_connected();
+    if (name_ == "superwhizkid")
+        impl_->options.set_visible("superwhizkid_audio_output",
+                                   impl_->audio_enabled);
     if (impl_->audio.volume() != 0U && impl_->audio_enabled) {
         impl_->audio.start();
         std::fputs("Ko Boy: Bluetooth audio connected\n", stderr);

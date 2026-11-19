@@ -64,6 +64,7 @@ private:
 
     std::map<std::string, Option> options_;
     std::map<std::string, std::string> policy_;
+    std::map<std::string, std::string> defaults_;
     std::map<std::string, std::string> configured_;
     std::vector<Curated> curated_;
     retro_core_options_update_display_callback_t update_display_callback_;

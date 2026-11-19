@@ -30,7 +30,17 @@ The system browser is dynamic. Ko Boy ensures that its stock folders exist, and 
 
 Uncompressed ROMs and ZIP archives are supported. A ZIP appears as one game and loads the first supported ROM it contains.
 
-Gamate cartridge images use the `.gam` extension in Ko Boy. Although superwhizkid also accepts `.bin`, Ko Boy retains `.bin` for headerless Mega Duck cartridges because the two formats have no reliable content signature with which to distinguish them. Rename Gamate `.bin` dumps to `.gam`; the contents are unchanged.
+| System | Supported file extensions |
+|---|---|
+| Game Boy | `.gb`, `.gb2` |
+| Game Boy Color | `.gbc`, `.gb2` |
+| Game Boy Advance | `.gba`, `.gba2` |
+| Mega Duck | `.bin`, `.duck`, `.md0`, `.md1`, `.md2`, `.md20s`, `.md25s` |
+| Nintendo Entertainment System | `.nes`, `.unf`, `.unif`, `.nsf` |
+| Famicom Disk System | `.fds` |
+| Gamate | `.gam`, `.bin` |
+
+Ko Boy distinguishes `.bin` images by inspecting their contents: Gamate cartridges carrying the Bit Corporation signature use superwhizkid, while other `.bin` images use armGBA's Mega Duck support.
 
 Saves and states mirror the ROM folder structure:
 
@@ -77,6 +87,8 @@ The current armNES options are:
 - **PPU Accuracy:** shown only when `/mnt/onboard/KoBoy/developer` exists. Fast is the default; Balanced and Exact are intended for compatibility investigation. A changed PPU mode takes effect when the game is next loaded.
 
 For armGBA, **Solar Level** is shown only when the core detects a cartridge with light-sensor hardware. Tilt input is fixed to the touchscreen D-pad but is consulted only by games with applicable tilt hardware, so it does not replace ordinary D-pad controls in other games.
+
+For superwhizkid, **Audio Output** is shown only when Bluetooth audio was connected as the Gamate game started. **Flicker Reduction** is shown only when `/mnt/onboard/KoBoy/developer` exists and defaults to one frame. Ko Boy fixes the core palette to greyscale, enables quick-tap latching, disables the core's simulated LCD ghosting, prefers the UMC BIOS, and leaves BIOS intro skipping disabled.
 
 BIOS choice, scaling, e-ink processing, save placement, unsupported controller mappings, link features, and core-provided LCD effects remain frontend policy rather than player preferences. Cartridge-clock and audio-character controls are intentionally deferred until their behavior and presentation can be designed without exposing the cores' full configuration surface.
 
