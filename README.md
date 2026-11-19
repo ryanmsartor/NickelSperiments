@@ -14,9 +14,9 @@ This Speriment currently targets the tested MediaTek-based Kobo Clara BW.
 
 ### Ko Boy
 
-Ko Boy is a Game Boy, Game Boy Color, Game Boy Advance, Mega Duck, NES, Famicom Disk System, and Gamate player for Kobo e-readers, built around [armGBA](https://github.com/MagnominusGit/armGBA), [armNES](https://github.com/MagnominusGit/armNES), and [superwhizkid](https://github.com/ryanmsartor/superwhizkid). It combines full-speed emulation with an e-ink-specific display scheduler, touchscreen and Bluetooth controller input, optional Bluetooth audio, an on-device game browser, persistent saves and states, suspend handling, and supervised return to Nickel after normal or abnormal termination.
+Ko Boy is a Game Boy, Game Boy Color, Game Boy Advance, Mega Duck, NES, Famicom Disk System, and Gamate player for Kobo e-readers, built around [armGBA](https://github.com/MagnominusGit/armGBA), [armNES](https://github.com/MagnominusGit/armNES), and [superwhizkid](https://github.com/ryanmsartor/superwhizkid). It combines full-speed emulation with an e-ink-specific display scheduler, touchscreen and (WIP) Bluetooth controller input, optional Bluetooth audio, an on-device game browser, persistent saves and states, suspend handling, and supervised return to Nickel after normal or abnormal termination.
 
-Ko Boy has been developed and tested primarily on the MediaTek-based Kobo Clara BW. The build produces an early user-installable KoboRoot archive; support outside the tested device remains unverified. No ROMs or BIOS files are included.
+Ko Boy has been developed and tested primarily on the MediaTek-based Kobo Clara BW. The build produces a user-installable KoboRoot archive; support outside the tested device remains unverified. No ROMs or BIOS files are included.
 
 - [Ko Boy guide, technical details, and release status](docs/readme.KOBOY.md)
 
