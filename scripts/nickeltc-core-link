@@ -2,10 +2,7 @@
 set -eu
 
 workspace=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
-target="$workspace/.toolchains/nickeltc-root/tc/arm-nickel-linux-gnueabihf"
-gcc="$target/lib/gcc/arm-nickel-linux-gnueabihf/4.9.4"
-sysroot="$target/arm-nickel-linux-gnueabihf/sysroot"
-tools="$target/arm-nickel-linux-gnueabihf/bin"
+local_target="$workspace/.toolchains/nickeltc-root/tc/arm-nickel-linux-gnueabihf"
 output=libretro.so
 version_script=
 objects=
@@ -40,6 +37,29 @@ version_option=
 if [ -n "$version_script" ]; then
     version_option="--version-script=$version_script"
 fi
+
+if [ ! -d "$local_target" ]; then
+    compiler=arm-nickel-linux-gnueabihf-g++
+    if ! command -v "$compiler" >/dev/null 2>&1; then
+        echo "nickeltc-core-link: $compiler is not available" >&2
+        exit 127
+    fi
+    soname=${output##*/}
+    compiler_version_option=
+    if [ -n "$version_script" ]; then
+        compiler_version_option="-Wl,--version-script=$version_script"
+    fi
+    # Word splitting is intentional; repository object paths contain no spaces.
+    # shellcheck disable=SC2086
+    exec "$compiler" -shared -Wl,--no-undefined -Wl,-soname,"$soname" \
+        $compiler_version_option -o "$output" $objects $libraries \
+        -static-libgcc -static-libstdc++ -lz -lm
+fi
+
+target="$local_target"
+gcc="$target/lib/gcc/arm-nickel-linux-gnueabihf/4.9.4"
+sysroot="$target/arm-nickel-linux-gnueabihf/sysroot"
+tools="$target/arm-nickel-linux-gnueabihf/bin"
 
 # Word splitting is intentional; repository object paths contain no spaces.
 # shellcheck disable=SC2086
