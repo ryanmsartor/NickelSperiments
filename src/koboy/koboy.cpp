@@ -1568,12 +1568,23 @@ bool requires_missing_fds_bios(const std::string &rom_path) {
 bool requires_missing_gamate_bios(const std::string &rom_path) {
     std::string load_path;
     try {
-        load_path = lowercase(loadable_rom_path(rom_path));
+        load_path = loadable_rom_path(rom_path);
     } catch (const std::exception &) {
         return false;
     }
-    const bool is_gamate = load_path.size() >= 4U &&
-        load_path.compare(load_path.size() - 4U, 4U, ".gam") == 0;
+    const std::string lower_path = lowercase(load_path);
+    const bool is_gam = lower_path.size() >= 4U &&
+        lower_path.compare(lower_path.size() - 4U, 4U, ".gam") == 0;
+    const bool is_bin = lower_path.size() >= 4U &&
+        lower_path.compare(lower_path.size() - 4U, 4U, ".bin") == 0;
+    bool is_gamate = is_gam;
+    if (is_bin) {
+        try {
+            is_gamate = koboy::is_gamate_rom(read_file(load_path.c_str()));
+        } catch (const std::exception &) {
+            return false;
+        }
+    }
     if (!is_gamate)
         return false;
     const char *const names[] = {
@@ -1843,7 +1854,7 @@ int main(int argc, char **argv) {
         const std::string load_path = loadable_rom_path(rom_path);
         std::vector<unsigned char> rom = read_file(load_path.c_str());
         std::unique_ptr<koboy::EmulatorCore> core =
-            koboy::create_core_for_rom(load_path);
+            koboy::create_core_for_rom(load_path, rom);
         core->set_audio_volume(audio_volume);
         std::string core_error;
         if (!core->load_rom(load_path, rom, core_error))
@@ -2118,7 +2129,8 @@ int main(int argc, char **argv) {
                                 read_file(selected_load_path.c_str());
                             core.reset();
                             std::unique_ptr<koboy::EmulatorCore> selected_core =
-                                koboy::create_core_for_rom(selected_load_path);
+                                koboy::create_core_for_rom(selected_load_path,
+                                                           selected_rom);
                             selected_core->set_audio_volume(audio_volume);
                             if (!selected_core->load_rom(selected_load_path,
                                                         selected_rom,

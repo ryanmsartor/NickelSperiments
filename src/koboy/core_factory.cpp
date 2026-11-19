@@ -39,9 +39,20 @@ bool extension_in(const std::string &extension, const char *const *values,
 
 } // namespace
 
-std::unique_ptr<EmulatorCore> create_core_for_rom(const std::string &path) {
+bool is_gamate_rom(const std::vector<unsigned char> &rom) {
+    static const unsigned char signature[] =
+        "COPYRIGHT BIT CORPORATION";
+    const std::size_t offset = 5U;
+    const std::size_t length = sizeof(signature) - 1U;
+    return rom.size() >= offset + length &&
+        std::equal(signature, signature + length, rom.begin() + offset);
+}
+
+std::unique_ptr<EmulatorCore> create_core_for_rom(
+        const std::string &path, const std::vector<unsigned char> &rom) {
     const std::string extension = extension_of(path);
-    if (extension == "gam") {
+    if (extension == "gam" ||
+        (extension == "bin" && is_gamate_rom(rom))) {
         return std::unique_ptr<EmulatorCore>(new ArmGbaCore(
             "/mnt/onboard/.adds/koboy/cores/superwhizkid_libretro.so"));
     }

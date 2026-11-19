@@ -6,10 +6,13 @@
 #include "emulator_core.h"
 
 #include <memory>
+#include <vector>
 
 namespace koboy {
 
-std::unique_ptr<EmulatorCore> create_core_for_rom(const std::string &path);
+bool is_gamate_rom(const std::vector<unsigned char> &rom);
+std::unique_ptr<EmulatorCore> create_core_for_rom(
+    const std::string &path, const std::vector<unsigned char> &rom);
 
 } // namespace koboy
 
