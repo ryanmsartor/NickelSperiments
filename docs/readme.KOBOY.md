@@ -1,6 +1,6 @@
 # Ko Boy
 
-Ko Boy is an e-ink-focused Game Boy, Game Boy Color, Game Boy Advance, Mega Duck, Nintendo Entertainment System, Famicom Disk System, and Gamate player for Kobo e-readers, built around armGBA, armNES, and superwhizkid. It combines full-speed emulation with a display scheduler designed for e-ink, touchscreen controls, Bluetooth audio, an on-device game browser, persistent saves and states, suspend handling, and supervised return to Nickel.
+Ko Boy is an e-ink-focused Game Boy, Game Boy Color, Game Boy Advance, Mega Duck, Nintendo Entertainment System, Famicom Disk System, and Gamate player for Kobo e-readers, built around armGBA, armNES, and superwhizkid. It combines full-speed emulation with a display scheduler designed for e-ink, touchscreen and (WIP) Bluetooth controller input, optional Bluetooth audio, an on-device game browser, persistent saves and states, suspend handling, and supervised return to Nickel.
 
 Ko Boy currently targets the MediaTek-based Kobo Clara BW. Other models may differ in framebuffer, touchscreen, lifecycle, and audio behavior and are not supported until tested explicitly. Turn-based games, puzzle games, and slower adventures are the best fit; action games remain constrained by e-ink latency and touchscreen controls even when emulation itself runs at full speed.
 
@@ -74,6 +74,8 @@ GBA games add L and R buttons above the A and B controls. The default 6× intege
 
 Input is drained at game, menu, and Nickel boundaries so one touch cannot activate controls on both sides of a transition. Repeated Menu presses cannot queue multiple menu transitions. The Clara BW's sequential multitouch reports are handled as independent contacts, allowing a direction and face button to remain held together. A single D-pad touch can select any of eight directions. On the face buttons, rolling one finger from A to B or B to A keeps the original button held, adds the second while the finger remains over it, and releases only the second when the finger rolls away.
 
+Ko Boy also scans Linux input devices for a connected gamepad and combines its state with touchscreen input. The currently qualified controller is an 8BitDo Micro 2 in Switch mode. Its Nintendo-labelled A/B and X/Y positions are translated to Ko Boy's logical layout; Plus and Minus provide Start and Select, while the shoulder buttons provide L and R. Controller input is drained at the same game, menu, sleep, and Nickel boundaries as touch input so held buttons cannot cross a UI transition. There is currently no user-facing controller remapping.
+
 ## Game and core settings
 
 Ko Boy deliberately does not expose every option advertised by its libretro cores. Core options fall into three groups: fixed frontend policy, a small set of useful player preferences, and developer-only compatibility controls. Ko Boy supplies deterministic values for hidden options, translates the approved options into its own concise Game Settings menu, and ignores the rest of each core's menu surface. Adding or updating a core therefore cannot silently add new user-facing settings.
@@ -90,7 +92,7 @@ For armGBA, **Solar Level** is shown only when the core detects a cartridge with
 
 For superwhizkid, **Audio Output** is shown only when Bluetooth audio was connected as the Gamate game started. **Flicker Reduction** is shown only when `/mnt/onboard/KoBoy/developer` exists and defaults to one frame. Ko Boy fixes the core palette to greyscale, enables quick-tap latching, disables the core's simulated LCD ghosting, prefers the UMC BIOS, and leaves BIOS intro skipping disabled.
 
-BIOS choice, scaling, e-ink processing, save placement, unsupported controller mappings, link features, and core-provided LCD effects remain frontend policy rather than player preferences. Cartridge-clock and audio-character controls are intentionally deferred until their behavior and presentation can be designed without exposing the cores' full configuration surface.
+BIOS choice, scaling, e-ink processing, save placement, controller mappings, link features, and core-provided LCD effects remain frontend policy rather than player preferences. Cartridge-clock and audio-character controls are intentionally deferred until their behavior and presentation can be designed without exposing the cores' full configuration surface.
 
 ## Sleep and wake
 
@@ -129,11 +131,12 @@ Gameplay uses steady full-viewport A2 updates at 10 Hz by default, dithered bich
 The normal Display Settings menu exposes:
 
 - **Full Refresh Frequency:** Off, 5, 15, 30, 60, or 90 seconds.
-- **Grid Effect:** an optional one-pixel white divider between logical emulated pixels.
+- **Screen Effect:** Off, Grid, Scanlines, or CRT. Grid and Scanlines use 50% dithered one-pixel separators between logical pixels; CRT adds a shallow white curved aperture around the game image without geometrically warping it.
 
 Creating `/mnt/onboard/KoBoy/developer` additionally exposes:
 
 - **Target Refresh Rate:** 8 through 12 Hz in quarter-Hz increments. The default is 10 Hz.
+- **FPS Counter:** a once-per-second overlay showing emulated and panel frame rates, full-system CPU and RAM use, and the available panel-temperature reading.
 
 Ko Boy always uses a stable 4-by-4 ordered pattern of physical panel pixels to represent intermediate shades without temporal noise. Menus use a black-and-white palette and waited full-screen updates: GC16 when entering or leaving the menu and DU between menu screens. Returning from the menu first clears the panel through a waited white-screen GC16, then presents the restored game and controls through a second waited GC16. Loading, wake, and exit also use full-screen GC16 where a clean visual boundary matters more than uninterrupted animation.
 
@@ -158,7 +161,8 @@ The supervisor holds a complete framebuffer backup and restores Nickel after nor
 ROM + SRAM + save states
           |
           v
-  armGBA/libretro backend
+armGBA, armNES, or superwhizkid
+    shared libretro core
           |
           v
  latest completed video frame
@@ -190,9 +194,11 @@ Testing on the Kobo Clara BW has established:
 
 - GB and Mega Duck gameplay, save-state, and save-RAM round trips.
 - GBA execution and Bluetooth audio, with broader compatibility and long-session stability still needing coverage.
-- Gamate core loading, BIOS selection, input, audio, scaling, and save-state behavior require on-device qualification.
+- NES and FDS game loading, gameplay, FDS BIOS error handling, and manual disk-side switching.
+- Gamate core loading and frontend integration have been exercised on-device; broader game compatibility and save-state/save-RAM coverage still need qualification.
 - Latest-frame presentation without accumulating stale display frames.
 - Multitouch direction and face-button combinations, single-touch diagonals, and rolling A/B chords using the Clara BW's sequential touch reports and coordinate transform.
+- 8BitDo Micro 2 directional, face, shoulder, Start, and Select input in Switch mode, including clean return to Nickel.
 - Framebuffer restoration after normal exit and forced player termination.
 - Cover and power-button sleep, wake redraw, and controller-panel restoration.
 - Package installation and reversible removal while preserving user content.
@@ -208,15 +214,15 @@ Stopping Nickel for approximately one watchdog interval can reboot the reader, s
 - ZIP archives load only the first supported ROM they contain.
 - Nested ROM folders are not supported.
 - Display settings are global rather than per game.
-- There is no Bluetooth or other physical-controller support.
+- Physical-controller support is currently qualified only with an 8BitDo Micro 2 in Switch mode, and mappings are fixed rather than user-configurable.
 - E-ink latency limits fast action games regardless of emulation speed.
 
 ## Release qualification remaining
 
-- Validate the dedicated Ko Boy workflow and aggregate release upload.
+- Restore green dedicated and aggregate Ko Boy workflows, then validate the release-upload path.
 - Verify archive ownership, permissions, paths, architecture, license contents, pinned sources, and published hashes in CI.
 - Repeat clean install, upgrade, reinstall, and uninstall testing from a release candidate.
-- Exercise representative GB, GBC, GBA, and Mega Duck games through SRAM, automatic state, manual state, reset, game switching, sleep/wake, and long sessions.
+- Exercise representative games from every supported system through applicable SRAM, automatic state, manual state, reset, game switching or disk switching, sleep/wake, and long sessions.
 - Confirm that diagnostics remain opt-in and decide whether to bound their separate breadcrumb log.
 - Publish installation instructions, supported-device scope, source availability, and known limitations with the release.
 
@@ -230,5 +236,5 @@ Ko Boy and its combined armGBA, armNES, and superwhizkid core distributions are 
 - armGBA audio-character controls such as speaker/headphone response and low-pass filtering; keep the current core defaults for now.
 - Per-game display profiles.
 - Additional cartridge-sensor mappings beyond the automatic solar-level and D-pad tilt support.
-- Physical controller support.
+- Broader physical-controller compatibility and user-configurable mappings.
 - Additional libretro-compatible systems suited to the hardware and display.

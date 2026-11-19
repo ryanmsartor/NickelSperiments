@@ -22,14 +22,16 @@ automatic resume states, and manual states are stored under
 /mnt/onboard/KoBoy. Optional recognized BIOS files can be placed directly in
 /mnt/onboard/KoBoy/BIOS; otherwise Ko Boy uses armGBA's built-in open-source
 boot ROMs. Gamate requires gamate_bios_umc.bin or gamate_bios_bit.bin in that
-directory. Gamate cartridge dumps must use the .gam extension because .bin is
-reserved for Mega Duck compatibility. Pair Bluetooth headphones in Nickel
-before launching a game if audio is desired.
+directory. Gamate cartridge dumps may use .gam or .bin; Ko Boy distinguishes
+Gamate and Mega Duck .bin images from their contents. Pair Bluetooth headphones
+in Nickel before launching a game if audio is desired.
 
 Touch controls support simultaneous direction and face-button presses,
 single-touch diagonals, and rolling between A and B while retaining the first
-button. The in-game menu provides save/load state, volume, display settings,
-reset, game switching, and return to Nickel.
+button. Bluetooth gamepads are detected automatically; the tested controller is
+an 8BitDo Micro 2 in Switch mode. The in-game menu provides save/load state,
+volume, display and curated game settings, reset, game switching, FDS disk
+control when applicable, and return to Nickel.
 
 To uninstall Ko Boy while preserving all ROMs, saves, states, and settings,
 create an empty file at:
