@@ -78,7 +78,9 @@ Ko Boy also scans Linux input devices for a connected gamepad and combines its s
 
 ## Game and core settings
 
-Ko Boy deliberately does not expose every option advertised by its libretro cores. Core options fall into three groups: fixed frontend policy, a small set of useful player preferences, and developer-only compatibility controls. Ko Boy supplies deterministic values for hidden options, translates the approved options into its own concise Game Settings menu, and ignores the rest of each core's menu surface. Adding or updating a core therefore cannot silently add new user-facing settings.
+Ko Boy deliberately does not expose every option advertised by its libretro cores. Core options fall into three groups: fixed frontend policy, a small set of useful player preferences, and developer-only compatibility controls. Ko Boy fixes hidden options where frontend policy requires it, otherwise retains the core default, and translates approved options into its own concise Game Settings menu. Adding or updating a core therefore cannot silently add new user-facing settings.
+
+The complete option inventory and the decision status of every current core option are recorded in [core-options.KOBOY.md](core-options.KOBOY.md).
 
 Game settings persist in `/mnt/onboard/KoBoy/core-options.conf`. They are currently system-wide rather than per game. The menu is assembled from the active core and loaded cartridge, so an option appears only when both Ko Boy has approved it and the core reports that it applies.
 
