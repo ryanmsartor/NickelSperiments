@@ -25,3 +25,12 @@ Ko Boy has been developed and tested primarily on the MediaTek-based Kobo Clara 
 The top-level Makefile exposes separate targets for each Speriment. Run `make help` for the current build and packaging commands. GitHub Actions also builds each package through its own project-specific workflow.
 
 Release packages use project-specific filenames so their contents are clear. Kobo installation archives must be renamed to `KoboRoot.tgz` before being placed in the device's `.kobo` directory.
+
+
+## Support the author
+
+The NickelSperiments project is, and will remain indefinitely, free and open source. 
+
+That said, if you like my work and would like to support me, donations are welcome. 
+
+[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/H2H7BO8ZE)
