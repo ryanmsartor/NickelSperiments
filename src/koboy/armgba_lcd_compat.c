@@ -50,6 +50,8 @@ bool libretroLcdKeep(struct LibretroLcdKeep *keep) {
     return false;
 }
 
+bool libretroAnySize;
+
 void libretroLcdFitSize(unsigned width, unsigned height,
                         unsigned *out_width, unsigned *out_height) {
     *out_width = width;
