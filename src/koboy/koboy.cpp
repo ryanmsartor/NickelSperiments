@@ -2097,7 +2097,7 @@ int main(int argc, char **argv) {
                             previous_rgb.clear();
                             force_first_frame_gc16 = true;
                         }
-                        menu_action = koboy::UI_RESUME_GAME;
+                        continue;
                     }
                     if (menu_action == koboy::UI_GAME_SETTINGS) {
                         koboy::UiAction settings_action = koboy::UI_NONE;
@@ -2139,7 +2139,7 @@ int main(int argc, char **argv) {
                                 settings_action = koboy::UI_NONE;
                             }
                         }
-                        menu_action = koboy::UI_RESUME_GAME;
+                        continue;
                     }
                     if (menu_action == koboy::UI_EXIT_TO_NICKEL) {
                         exit_to_nickel = true;
