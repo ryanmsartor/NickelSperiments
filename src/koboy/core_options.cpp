@@ -24,12 +24,31 @@ CoreOptions::CoreOptions(const std::string &core_id)
         policy_["armgba_gb_tilt"] = "d-pad";
         curated_.push_back(Curated("armgba_solar_sensor", "SOLAR LEVEL",
                                    false));
+        curated_.push_back(Curated("armgba_layer_selection",
+                                   "LAYER SELECTION", true));
+        curated_.push_back(Curated("armgba_layer_bg0", "BACKGROUND 0", true));
+        curated_.push_back(Curated("armgba_layer_bg1", "BACKGROUND 1", true));
+        curated_.push_back(Curated("armgba_layer_bg2", "BACKGROUND 2", true));
+        curated_.push_back(Curated("armgba_layer_bg3", "BACKGROUND 3", true));
+        curated_.push_back(Curated("armgba_layer_gb_background",
+                                   "GB BACKGROUND", true));
+        curated_.push_back(Curated("armgba_layer_gb_window", "GB WINDOW",
+                                   true));
+        curated_.push_back(Curated("armgba_layer_sprites", "SPRITES", true));
     } else if (core_id == "armnes") {
         curated_.push_back(Curated("armnes_ppu", "PPU ACCURACY", true));
         curated_.push_back(Curated("armnes_fds_fast", "FAST DISK LOADING",
                                    false));
         curated_.push_back(Curated("armnes_sprite_limit", "SPRITE LIMIT",
                                    false));
+        curated_.push_back(Curated("armnes_layer_selection",
+                                   "LAYER SELECTION", true));
+        curated_.push_back(Curated("armnes_layer_background",
+                                   "BACKGROUND", true));
+        curated_.push_back(Curated("armnes_layer_sprites_front",
+                                   "SPRITES FRONT", true));
+        curated_.push_back(Curated("armnes_layer_sprites_behind",
+                                   "SPRITES BEHIND", true));
     } else if (core_id == "superwhizkid") {
         policy_["superwhizkid_palette"] = "greyscale";
         policy_["superwhizkid_tap_latch"] = "on";
@@ -41,6 +60,8 @@ CoreOptions::CoreOptions(const std::string &core_id)
                                    "AUDIO OUTPUT", false));
         curated_.push_back(Curated("superwhizkid_flicker_reduction",
                                    "FLICKER REDUCTION", true));
+        curated_.push_back(Curated("superwhizkid_contrast", "CONTRAST",
+                                   true));
     }
 }
 

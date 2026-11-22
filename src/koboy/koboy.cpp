@@ -1329,13 +1329,16 @@ void draw_menu(std::vector<uint32_t> &screen, unsigned width,
 
 void draw_core_settings(std::vector<uint32_t> &screen, unsigned width,
                         unsigned height, const koboy::EmulatorCore &core,
-                        bool developer) {
+                        bool developer, unsigned page) {
     const uint32_t dark = 0xFF000000U;
     const uint32_t light = 0xFFFFFFFFU;
     screen.assign(static_cast<size_t>(width) * height, light);
     draw_label(screen, width, height, width / 2, height * 10 / 100,
                "GAME SETTINGS", 6, dark);
-    const unsigned count = std::min(core.core_option_count(developer), 4U);
+    const unsigned total = core.core_option_count(developer);
+    const unsigned page_start = page * 4U;
+    const unsigned count =
+        std::min(total - std::min(page_start, total), 4U);
     const int left = width * 8 / 100;
     const int right = width * 92 / 100;
     const int row_top = height * 18 / 100;
@@ -1346,15 +1349,23 @@ void draw_core_settings(std::vector<uint32_t> &screen, unsigned width,
                            row_height / 2;
         fill_rectangle(screen, width, height, left, center - half_height,
                        right, center + half_height, dark);
-        const char *name = core.core_option_label(index, developer);
-        const char *value = core.core_option_value(index, developer);
+        const char *name = core.core_option_label(page_start + index,
+                                                  developer);
+        const char *value = core.core_option_value(page_start + index,
+                                                   developer);
         const std::string label = std::string(name ? name : "OPTION") +
                                   "  " + (value ? value : "");
         draw_label(screen, width, height, width / 2, center,
                    label.c_str(), 4, light);
     }
+    if (page > 0U)
+        draw_label(screen, width, height, width / 6, height * 91 / 100,
+                   "PREVIOUS", 4, dark);
     draw_label(screen, width, height, width / 2, height * 91 / 100,
                "BACK", 5, dark);
+    if ((page + 1U) * 4U < total)
+        draw_label(screen, width, height, width * 5 / 6,
+                   height * 91 / 100, "NEXT", 4, dark);
 }
 
 std::string full_refresh_frequency_name(unsigned seconds) {
@@ -2090,11 +2101,12 @@ int main(int argc, char **argv) {
                     }
                     if (menu_action == koboy::UI_GAME_SETTINGS) {
                         koboy::UiAction settings_action = koboy::UI_NONE;
+                        unsigned core_settings_page = 0U;
                         while (!interrupted &&
                                settings_action != koboy::UI_LIST_CANCEL) {
                             draw_core_settings(screen, screen_width,
                                                screen_height, *core,
-                                               developer);
+                                               developer, core_settings_page);
                             framebuffer.draw_screen(screen);
                             refresh_menu_screen(framebuffer, input, marker++,
                                                 diagnostics, false);
@@ -2109,8 +2121,21 @@ int main(int argc, char **argv) {
                             if (settings_action >= koboy::UI_GAME_0 &&
                                 settings_action <= koboy::UI_GAME_3) {
                                 core->cycle_core_option(
+                                    core_settings_page * 4U +
                                     static_cast<unsigned>(settings_action -
                                         koboy::UI_GAME_0), developer);
+                                settings_action = koboy::UI_NONE;
+                            } else if (settings_action ==
+                                       koboy::UI_LIST_PREVIOUS) {
+                                if (core_settings_page > 0U)
+                                    --core_settings_page;
+                                settings_action = koboy::UI_NONE;
+                            } else if (settings_action ==
+                                       koboy::UI_LIST_NEXT) {
+                                const unsigned total =
+                                    core->core_option_count(developer);
+                                if ((core_settings_page + 1U) * 4U < total)
+                                    ++core_settings_page;
                                 settings_action = koboy::UI_NONE;
                             }
                         }

@@ -326,8 +326,13 @@ UiAction TouchInput::ui_hit_test(int raw_x, int raw_y,
             y < row_top + 4 * row_height)
             return static_cast<UiAction>(UI_GAME_0 +
                                          (y - row_top) / row_height);
-        if (y >= static_cast<int>(screen_height_ * 86U / 100U))
+        if (y >= static_cast<int>(screen_height_ * 86U / 100U)) {
+            if (x < static_cast<int>(screen_width_ / 3U))
+                return UI_LIST_PREVIOUS;
+            if (x < static_cast<int>(screen_width_ * 2U / 3U))
             return UI_LIST_CANCEL;
+            return UI_LIST_NEXT;
+        }
         return UI_NONE;
     }
 
