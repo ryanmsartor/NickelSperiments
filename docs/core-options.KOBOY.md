@@ -88,7 +88,7 @@ Pinned commit: `1016126f9b01ddac93b7f57d1af7739cedc092c6`.
 | Palette (`superwhizkid_palette`) | Original, Gamate LCD, Greyscale, RGB; **Original** | Fixed to Greyscale. | Explicit |
 | Contrast (`superwhizkid_contrast`) | 1–16; **8** | Developer-only. | Explicit |
 | Audio Output (`superwhizkid_audio_output`) | Stereo, Mono, Built-in Speaker; **Stereo** | User-facing only when Bluetooth audio was connected at game launch. | Explicit |
-| Catch quick taps (`superwhizkid_tap_latch`) | Off, On; **Off** | Fixed to On. | Explicit |
+| Catch quick taps (`superwhizkid_tap_latch`) | Off, On; **Off** | User-facing. | Explicit |
 | LCD Ghosting (`superwhizkid_lcd_ghosting`) | Off, 1–5; **Off** | Fixed to Off. | Explicit |
 | Redraw Flicker Reduction (`superwhizkid_flicker_reduction`) | Off, 1–3 frames; **Off** | Developer-only; Ko Boy default is 1 frame. | Explicit |
 | BIOS Priority (`superwhizkid_bios`) | UMC, Bit; **UMC** | Fixed to UMC, with the other BIOS used if the preferred file is absent. | Explicit |

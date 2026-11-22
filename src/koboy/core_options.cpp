@@ -51,11 +51,12 @@ CoreOptions::CoreOptions(const std::string &core_id)
                                    "SPRITES BEHIND", true));
     } else if (core_id == "superwhizkid") {
         policy_["superwhizkid_palette"] = "greyscale";
-        policy_["superwhizkid_tap_latch"] = "on";
         policy_["superwhizkid_lcd_ghosting"] = "off";
         policy_["superwhizkid_bios"] = "umc";
         policy_["superwhizkid_skip_intro"] = "off";
         defaults_["superwhizkid_flicker_reduction"] = "1";
+        curated_.push_back(Curated("superwhizkid_tap_latch",
+                                   "CATCH QUICK TAPS", false));
         curated_.push_back(Curated("superwhizkid_audio_output",
                                    "AUDIO OUTPUT", false));
         curated_.push_back(Curated("superwhizkid_flicker_reduction",

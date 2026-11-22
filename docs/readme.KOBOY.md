@@ -92,7 +92,7 @@ The current armNES options are:
 
 For armGBA, **Solar Level** is shown only when the core detects a cartridge with light-sensor hardware. Tilt input is fixed to the touchscreen D-pad but is consulted only by games with applicable tilt hardware, so it does not replace ordinary D-pad controls in other games.
 
-For superwhizkid, **Audio Output** is shown only when Bluetooth audio was connected as the Gamate game started. **Flicker Reduction** is shown only when `/mnt/onboard/KoBoy/developer` exists and defaults to one frame. Ko Boy fixes the core palette to greyscale, enables quick-tap latching, disables the core's simulated LCD ghosting, prefers the UMC BIOS, and leaves BIOS intro skipping disabled.
+For superwhizkid, **Audio Output** is shown only when Bluetooth audio was connected as the Gamate game started. **Flicker Reduction** is shown only when `/mnt/onboard/KoBoy/developer` exists and defaults to one frame. **Catch Quick Taps** is available to all users and defaults to off. Ko Boy fixes the core palette to greyscale, disables the core's simulated LCD ghosting, prefers the UMC BIOS, and leaves BIOS intro skipping disabled.
 
 BIOS choice, scaling, e-ink processing, save placement, controller mappings, link features, and core-provided LCD effects remain frontend policy rather than player preferences. Cartridge-clock and audio-character controls are intentionally deferred until their behavior and presentation can be designed without exposing the cores' full configuration surface.
 
