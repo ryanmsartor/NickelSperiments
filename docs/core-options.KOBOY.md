@@ -6,7 +6,7 @@ The discussion column distinguishes an explicit decision from a blanket decision
 
 ## armGBA
 
-Pinned commit: `df6b2631291f249d54a00dd14f49bc893e438feb`.
+Pinned commit: `42d2b35a23c08c99df6dd06b57db9f2b4490b9e2`.
 
 | Core option(s) | Available values; core default | Ko Boy policy | Discussion status |
 | --- | --- | --- | --- |
@@ -23,13 +23,16 @@ Pinned commit: `df6b2631291f249d54a00dd14f49bc893e438feb`.
 | Cheat button mode, switch, and mapping (`armgba_action_replay_press_mode`, `armgba_action_replay_switch`, `armgba_action_replay_button`) | Toggle/Hold; **Toggle**. On/Off; **On**. R3/L3/Off; **R3** | Hidden; core defaults. | Blanket decision |
 | Threaded Video, Threaded Audio, Video Threads (`armgba_threaded_video`, `armgba_threaded_audio`, `armgba_video_threads`) | Off/On/One Frame Late; **Off**. Off/On; **Off**. 1/2; **1** | Hidden; core defaults. | Blanket decision |
 | GBA/GBC color correction, GB screen and contrast (`armgba_color_correction`, `armgba_gb_color_correction`, `armgba_gb_screen`, `armgba_gb_contrast`) | Corrections Off/On; **Off**. GB palette: grayscale/measured/Pocket/Light; **grayscale**. Contrast 0%–100%; **50%** | Hidden; Ko Boy's e-ink display pipeline owns presentation. | Blanket decision |
+| HD Affine Backgrounds (`armgba_hd_affine`) | Off/2×–8×; **Off** | Hidden; core default. | **Not discussed** |
 | GB-on-GBA border and panel (`armgba_gb_advance_border`, `armgba_gb_advance_panel`) | Cropped/Shown; **Cropped**. GBA/GBC panel; **GBA** | Hidden; core defaults. | Blanket decision |
 | Frame Skip and Fast-Forward Skip (`armgba_frame_skip`, `armgba_fast_forward_skip`) | Off/Auto/1/2/3; **Off**. Off/On; **On** | Hidden; core defaults. | Blanket decision |
+| Layer Selection and visibility toggles (`armgba_layer_selection`, `armgba_layer_bg0`, `armgba_layer_bg1`, `armgba_layer_bg2`, `armgba_layer_bg3`, `armgba_layer_gb_background`, `armgba_layer_gb_window`, `armgba_layer_sprites`) | Off/On; **Off**. Individual layers Shown/Hidden; **Shown** | Hidden; core defaults. | **Not discussed** |
 | LCD Effects and LCD Ghosting (`armgba_lcd_effects`, `armgba_lcd_ghosting`) | Effects Off/On; **Off**. Ghosting Off/25/50/75/100%; **Off** | Hidden; Ko Boy owns e-ink processing. | Blanket decision |
 | Interlaced Rows, LCD Scale, Screen Size (`armgba_lcd_interleave`, `armgba_lcd_grid`, `armgba_lcd_screen`) | Off/On; **Off**. Off/Fit/2×–8×; **Off**. Auto and listed resolutions/custom; **Auto** | Hidden; Ko Boy owns scaling and presentation. | Blanket decision |
 | Custom LCD width/height digits (`armgba_lcd_width_hundreds`, `armgba_lcd_width_tens`, `armgba_lcd_width_ones`, `armgba_lcd_height_hundreds`, `armgba_lcd_height_tens`, `armgba_lcd_height_ones`) | Numeric components; defaults form **1280×720** | Hidden; inactive while LCD Scale is Off. | Blanket decision |
 | Pixel Gaps, LCD Subpixels, GB Pixel Shadow and distance, LCD Effect Threads (`armgba_lcd_gaps`, `armgba_lcd_subpixels`, `armgba_lcd_shadow`, `armgba_lcd_shadow_distance`, `armgba_lcd_threads`) | Gaps Off/On; **Off**. Subpixels Off–100%; **Off**. Shadow Off/eight directions; **Off**. 0.5–2.5; **1.5**. Threads Auto/1–4; **Auto** | Hidden; Ko Boy owns presentation. | Blanket decision |
 | GBA Audio Output, GB Audio Filter, Low-Pass Filter (`armgba_gba_audio_output`, `armgba_gb_audio_filter`, `armgba_low_pass_filter`) | Speaker/Headphones/Off; **Speaker**. Accurate/offset-only/Off; **Accurate**. Off/20/40/60/80%; **Off** | Hidden at core defaults; audio-character controls are explicitly deferred. | Explicit deferment |
+| Channel Selection and channel switches (`armgba_channel_selection`, `armgba_channel_pulse1`, `armgba_channel_pulse2`, `armgba_channel_wave`, `armgba_channel_noise`, `armgba_channel_direct_a`, `armgba_channel_direct_b`) | Off/On; **Off**. Individual channels On/Off; **On** | Hidden; core defaults. | **Not discussed** |
 | Left Stick as D-Pad (`armgba_left_stick_dpad`) | Off, On; **Off** | Hidden; core default. | Blanket decision |
 | Turbo Button Period (`armgba_turbo_period`) | Dynamically generated frame periods; **4** | Hidden; core default. | Blanket decision |
 | L2/R2 and L3 behavior (`armgba_l2_r2`, `armgba_l3_button`) | Fast-forward/toggle/turbo; **Fast-forward**. Fast-forward toggle/soft reset/Off; **Fast-forward toggle** | Hidden; core defaults. | Blanket decision |
@@ -48,7 +51,7 @@ Pinned commit: `df6b2631291f249d54a00dd14f49bc893e438feb`.
 
 ## armNES
 
-Pinned commit: `c67e719ccb32a229755e1b2b72cff43f7c81370f`.
+Pinned commit: `a0670acc505ac3bc494172757e70ddbc6ec9d590`.
 
 | Core option(s) | Available values; core default | Ko Boy policy | Discussion status |
 | --- | --- | --- | --- |
@@ -64,9 +67,9 @@ Pinned commit: `c67e719ccb32a229755e1b2b72cff43f7c81370f`.
 | Aspect Ratio and crops (`armnes_aspect`, `armnes_crop_vertical`, `armnes_crop_horizontal`) | 4:3/8:7/square; **4:3**. 0/4/8/12/16; vertical **8**, horizontal **0** | Hidden; Ko Boy currently applies its own NES viewport policy. | Blanket decision |
 | Main-channel volume and pan (`armnes_volume_pulse1`, `armnes_pan_pulse1`, `armnes_volume_pulse2`, `armnes_pan_pulse2`, `armnes_volume_triangle`, `armnes_pan_triangle`, `armnes_volume_noise`, `armnes_pan_noise`, `armnes_volume_dmc`, `armnes_pan_dmc`, `armnes_volume_cart`, `armnes_pan_cart`) | Volume 0%–100%; **100%**. Pan Left–Right; **Center** | Hidden; core defaults. | Blanket decision |
 | Expansion-voice volume and pan (`armnes_volume_*`, `armnes_pan_*` for VRC6, VRC7, Sunsoft 5B, Namco 163, and MMC5 voices) | Volume 0%–100%; **100%**. Pan Left–Right; **Center** | Hidden; shown by the core only for the applicable chip. | Blanket decision |
-| Layer Toggles; background/front/behind sprite visibility (`armnes_layers`, `armnes_layer_background`, `armnes_layer_sprites_front`, `armnes_layer_sprites_behind`) | Toggles Off/On; **Off**. Layers Shown/Hidden; **Shown** | Hidden; core defaults. | **Not discussed** |
-| Main-channel mute switches (`armnes_mute_pulse1`, `armnes_mute_pulse2`, `armnes_mute_triangle`, `armnes_mute_noise`, `armnes_mute_dmc`, `armnes_mute_cart`) | On, Muted; **On** | Hidden; core defaults. | **Not discussed** |
-| Expansion-voice mute switches (`armnes_mute_*` for VRC6, VRC7, Sunsoft 5B, Namco 163, and MMC5 voices) | On, Muted; **On** | Hidden; shown by the core only for the applicable chip. | **Not discussed** |
+| Layer Selection; background/front/behind sprite visibility (`armnes_layer_selection`, `armnes_layer_background`, `armnes_layer_sprites_front`, `armnes_layer_sprites_behind`) | Selection Off/On; **Off**. Layers Shown/Hidden; **Shown** | Hidden; core defaults. | **Not discussed** |
+| Main-channel switches (`armnes_channel_selection`, `armnes_channel_pulse1`, `armnes_channel_pulse2`, `armnes_channel_triangle`, `armnes_channel_noise`, `armnes_channel_dmc`, `armnes_channel_cart`) | Selection Off/On; **Off**. Individual channels On/Off; **On** | Hidden; core defaults. | **Not discussed** |
+| Expansion-voice switches (`armnes_channel_*` for VRC6, VRC7, Sunsoft 5B, Namco 163, and MMC5 voices) | On/Off; **On** | Hidden; shown by the core only for the applicable chip. | **Not discussed** |
 | Turbo Button Period (`armnes_turbo_period`) | Dynamically generated frame periods; **4** | Hidden; core default. | **Not discussed** |
 | Allow Opposing Directions; Left Stick as D-Pad (`armnes_opposing`, `armnes_left_stick_dpad`) | Off/On; **Off**. Off/On; **On** | Hidden; core defaults. | Blanket decision |
 | Four Players; Famicom Expansion Port (`armnes_four_players`, `armnes_expansion`) | Auto/Off/Four Score/Famicom; **Auto**. Auto/None/Paddle/Power Pad/Keyboard; **Auto** | Hidden; core/header defaults. | Blanket decision |
@@ -78,11 +81,11 @@ Pinned commit: `c67e719ccb32a229755e1b2b72cff43f7c81370f`.
 
 ## superwhizkid
 
-Pinned commit: `8a518ad994c8eb3856b9a4454afab0ee192dcca5`.
+Pinned commit: `1016126f9b01ddac93b7f57d1af7739cedc092c6`.
 
 | Core option | Available values; core default | Ko Boy policy | Discussion status |
 | --- | --- | --- | --- |
-| Palette (`superwhizkid_palette`) | Original, Gamate LCD, Greyscale; **Original** | Fixed to Greyscale. | Explicit |
+| Palette (`superwhizkid_palette`) | Original, Gamate LCD, Greyscale, RGB; **Original** | Fixed to Greyscale. | Explicit |
 | Contrast (`superwhizkid_contrast`) | 1–16; **8** | Hidden; core default. | **Not discussed** |
 | Audio Output (`superwhizkid_audio_output`) | Stereo, Mono, Built-in Speaker; **Stereo** | User-facing only when Bluetooth audio was connected at game launch. | Explicit |
 | Catch quick taps (`superwhizkid_tap_latch`) | Off, On; **Off** | Fixed to On. | Explicit |
