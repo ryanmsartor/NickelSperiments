@@ -25,6 +25,7 @@ Put games in system folders directly below `/mnt/onboard/KoBoy/Roms/`. On first 
 - `Nintendo Entertainment System`
 - `Famicom Disc System`
 - `Gamate`
+- `Supervision`
 
 The system browser is dynamic. Ko Boy ensures that its stock folders exist, and additional top-level folders are supported. A folder appears in System Select only when it contains at least one supported game. Games must live directly inside a system folder because nested ROM folders are not currently supported.
 
@@ -39,8 +40,9 @@ Uncompressed ROMs and ZIP archives are supported. A ZIP appears as one game and 
 | Nintendo Entertainment System | `.nes`, `.unf`, `.unif`, `.nsf` |
 | Famicom Disk System | `.fds` |
 | Gamate | `.gam`, `.bin` |
+| Supervision | `.sv`, `.ws` |
 
-Ko Boy distinguishes `.bin` images by inspecting their contents: Gamate cartridges carrying the Bit Corporation signature use superwhizkid, while other `.bin` images use armGBA's Mega Duck support.
+Ko Boy distinguishes `.bin` images by inspecting their contents: Gamate cartridges carrying the Bit Corporation signature use superwhizkid, while other `.bin` images use armGBA's Mega Duck support. Supervision cartridges are recognized by the `.sv` and `.ws` extensions only, so Supervision dumps named `.bin` are not routed. Because `.ws` is also the WonderSwan extension, a `.ws` file is always sent to Supervision; WonderSwan is not supported.
 
 Saves and states mirror the ROM folder structure:
 

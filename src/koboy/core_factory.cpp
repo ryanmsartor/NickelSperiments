@@ -57,7 +57,7 @@ std::unique_ptr<EmulatorCore> create_core_for_rom(
             "/mnt/onboard/.adds/koboy/cores/superwhizkid_libretro.so"));
     }
     static const char *const armnes_extensions[] = {
-        "nes", "fds", "unf", "unif", "nsf"
+        "nes", "fds", "unf", "unif", "nsf", "sv", "ws"
     };
     if (extension_in(extension, armnes_extensions,
                      sizeof(armnes_extensions) / sizeof(armnes_extensions[0]))) {

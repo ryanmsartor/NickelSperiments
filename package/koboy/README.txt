@@ -2,8 +2,8 @@ Ko Boy
 ======
 
 Ko Boy is an e-ink-focused Game Boy, Game Boy Color, Game Boy Advance,
-Mega Duck, NES, Famicom Disk System, and Gamate player. This release targets
-the Kobo Clara BW; other models are not yet supported.
+Mega Duck, NES, Famicom Disk System, Gamate, and Watara Supervision player.
+This release targets the Kobo Clara BW; other models are not yet supported.
 
 Place legally obtained ROM images in the matching directory below:
 
@@ -14,6 +14,7 @@ Place legally obtained ROM images in the matching directory below:
   /mnt/onboard/KoBoy/Roms/Nintendo Entertainment System/
   /mnt/onboard/KoBoy/Roms/Famicom Disc System/
   /mnt/onboard/KoBoy/Roms/Gamate/
+  /mnt/onboard/KoBoy/Roms/Supervision/
 
 Ko Boy appears in Nickel's More screen after installation and reboot.
 

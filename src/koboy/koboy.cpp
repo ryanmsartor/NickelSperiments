@@ -173,7 +173,7 @@ std::string loadable_rom_path(const std::string &path) {
     struct string_list *entries = file_archive_get_file_list(
         path.c_str(),
         "gb|gbc|gb2|gba|gba2|bin|duck|md0|md1|md2|md20s|md25s|"
-        "nes|fds|unf|unif|nsf|gam");
+        "nes|fds|unf|unif|nsf|sv|ws|gam");
     if (!entries || entries->size == 0U) {
         string_list_free(entries);
         throw std::runtime_error("ZIP contains no supported ROM");
@@ -681,7 +681,8 @@ void initialize_system_folders() {
         return;
     const char *const names[] = {
         "Game Boy", "Game Boy Color", "Game Boy Advance", "Mega Duck",
-        "Nintendo Entertainment System", "Famicom Disc System", "Gamate"
+        "Nintendo Entertainment System", "Famicom Disc System", "Gamate",
+        "Supervision"
     };
     for (unsigned i = 0; i < sizeof(names) / sizeof(names[0]); ++i) {
         const std::string path = std::string(kKoBoyRomDirectory) + "/" +
@@ -736,7 +737,7 @@ std::vector<SystemFolder> list_systems() {
                   const char *const stock[] = {
                       "game boy", "game boy color", "game boy advance",
                       "mega duck", "nintendo entertainment system",
-                      "famicom disc system", "gamate"
+                      "famicom disc system", "gamate", "supervision"
                   };
                   const unsigned stock_count =
                       sizeof(stock) / sizeof(stock[0]);
@@ -760,7 +761,7 @@ bool is_supported_rom(const std::string &name) {
     const char *const extensions[] = {
         ".gb", ".gbc", ".gb2", ".gba", ".gba2", ".bin", ".duck",
         ".md0", ".md1", ".md2", ".md20s", ".md25s", ".nes",
-        ".fds", ".unf", ".unif", ".nsf", ".gam", ".zip"
+        ".fds", ".unf", ".unif", ".nsf", ".sv", ".ws", ".gam", ".zip"
     };
     for (unsigned i = 0; i < sizeof(extensions) / sizeof(extensions[0]); ++i) {
         const std::string extension(extensions[i]);
