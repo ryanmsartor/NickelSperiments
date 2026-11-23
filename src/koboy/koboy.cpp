@@ -1629,7 +1629,7 @@ bool requires_missing_gamate_bios(const std::string &rom_path) {
     if (!is_gamate)
         return false;
     const char *const names[] = {
-        "gamate_bios_umc.bin", "gamate_bios_bit.bin"
+        "gamate_bios_umc.bin", "gamate_bios_bit.bin", "gamate_bios_swk.bin"
     };
     for (unsigned index = 0; index < sizeof(names) / sizeof(names[0]); ++index) {
         const std::string bios = std::string(kKoBoyBiosDirectory) + "/" +

@@ -122,7 +122,8 @@ Recognized filenames are:
 - `cgb_agb_boot.bin`, `cgb_agb0_boot.bin`, or `agb_boot.bin` for Game Boy games running in the Game Boy Advance model.
 - `mgb_boot.bin` for Game Boy Pocket.
 - `disksys.rom` for Famicom Disk System.
-- `gamate_bios_umc.bin` or `gamate_bios_bit.bin` for Gamate; UMC is preferred when both are present.
+- `gamate_bios_umc.bin` or `gamate_bios_bit.bin` for Gamate; UMC is preferred, then Bit.
+- `gamate_bios_swk.bin` for Gamate, used only when neither UMC nor Bit is present. This is the independently authored SuperWhizKid replacement, which is experimental and targets standalone Cube Up; it is not an authentic BIOS.
 
 The install package creates the BIOS directory but does not distribute proprietary BIOS images.
 

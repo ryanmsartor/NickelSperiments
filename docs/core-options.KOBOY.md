@@ -96,5 +96,5 @@ Pinned commit: `9d0dee3f8364660212c23faa72308d2743fae542`.
 | Catch quick taps (`superwhizkid_tap_latch`) | Off, On; **Off** | User-facing. | Explicit |
 | LCD Ghosting (`superwhizkid_lcd_ghosting`) | Off, 1–5; **Off** | Fixed to Off. | Explicit |
 | Redraw Flicker Reduction (`superwhizkid_flicker_reduction`) | Off, 1–3 frames; **Off** | Developer-only; Ko Boy default is 1 frame. | Explicit |
-| BIOS Priority (`superwhizkid_bios`) | UMC, Bit, SWK; **UMC** | Fixed to UMC. Upstream falls back UMC and Bit to each other, then SWK; SWK falls back to UMC, then Bit. Ko Boy requires UMC or Bit, so an SWK-only setup is not accepted. | Explicit; SWK value **Not discussed** |
+| BIOS Priority (`superwhizkid_bios`) | UMC, Bit, SWK; **UMC** | Fixed to UMC. Upstream falls back UMC and Bit to each other, then SWK; SWK falls back to UMC, then Bit. Ko Boy accepts an SWK-only setup through that fallback, so `gamate_bios_swk.bin` loads when UMC and Bit are absent. The SWK replacement is experimental. | Explicit; SWK fallback accepted |
 | Skip BIOS intro (`superwhizkid_skip_intro`) | Off, On; **Off** | Fixed to Off. | Explicit |
