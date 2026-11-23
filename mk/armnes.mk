@@ -9,6 +9,8 @@ ARMNES_CORE_SOURCES := \
 	src/boards/mmc5.c src/boards/multicart.c src/boards/nsf.c \
 	src/boards/rare.c src/boards/sachen.c src/sound/emu2413.c \
 	src/bus.c src/cart.c src/cheat.c src/cpu.c src/input.c src/nes.c \
+	src/supervision/supervision.c src/supervision/w65c02.c \
+	src/gamate/gamate.c \
 	src/par.c src/genie.c src/ppu.c src/ppu-fast.c src/state.c src/arcade.c \
 	src/fceu/bridge.c shared/libretro/options.c libretro/libretro.c \
 	libretro/composite.c

@@ -9,6 +9,9 @@
  * core remains buildable with Kobo's GCC 4.9 toolchain.
  */
 
+#include <stdlib.h>
+#include <string.h>
+
 #include "core.h"
 #include "lcd.h"
 
@@ -66,4 +69,29 @@ void sendPicture(const void *picture, unsigned width, unsigned height,
 void showPicture(const void *picture, unsigned width, unsigned height,
                  size_t pitch) {
     sendPicture(picture, width, height, pitch);
+}
+
+/* Same retire list as armGBA's libretro/lcd.c: the frontend may still hold
+ * the last picture, so buffers are freed on unload or when the list is full. */
+enum { RETIRED_MOST = 16 };
+static void *retired[RETIRED_MOST];
+static int retiredCount;
+
+void pictureRetire(void *buffer) {
+    if (!buffer) {
+        return;
+    }
+    if (retiredCount == RETIRED_MOST) {
+        free(retired[0]);
+        memmove(retired, retired + 1, (RETIRED_MOST - 1) * sizeof(*retired));
+        --retiredCount;
+    }
+    retired[retiredCount++] = buffer;
+}
+
+void pictureRetiredFree(void) {
+    for (int i = 0; i < retiredCount; ++i) {
+        free(retired[i]);
+    }
+    retiredCount = 0;
 }

@@ -6,7 +6,7 @@ The discussion column distinguishes an explicit decision from a blanket decision
 
 ## armGBA
 
-Pinned commit: `42d2b35a23c08c99df6dd06b57db9f2b4490b9e2`.
+Pinned commit: `d06b9989a0245f53f32e18e95a4ba59f07a38e9c`.
 
 | Core option(s) | Available values; core default | Ko Boy policy | Discussion status |
 | --- | --- | --- | --- |
@@ -21,7 +21,8 @@ Pinned commit: `42d2b35a23c08c99df6dd06b57db9f2b4490b9e2`.
 | Cheat-cartridge game and Game Genie codes 1–3 (`armgba_action_replay_game`, `armgba_game_genie_code_1`, `armgba_game_genie_code_2`, `armgba_game_genie_code_3`) | Dynamic game/code lists; **None** | Hidden; core defaults. | Blanket decision |
 | Import Cheats, Cheat Cartridge Reset, Open Menu, Hold Button (`armgba_cheat_import`, `armgba_cheat_restore`, `armgba_action_replay_press`, `armgba_action_replay_hold`) | Action choices returning to Off; **Off** | Hidden; core defaults. | Blanket decision |
 | Cheat button mode, switch, and mapping (`armgba_action_replay_press_mode`, `armgba_action_replay_switch`, `armgba_action_replay_button`) | Toggle/Hold; **Toggle**. On/Off; **On**. R3/L3/Off; **R3** | Hidden; core defaults. | Blanket decision |
-| Threaded Video, Threaded Audio, Video Threads (`armgba_threaded_video`, `armgba_threaded_audio`, `armgba_video_threads`) | Off/On/One Frame Late; **Off**. Off/On; **Off**. 1/2; **1** | Hidden; core defaults. | Blanket decision |
+| Threaded Video, Threaded Audio, Video Threads (`armgba_threaded_video`, `armgba_threaded_audio`, `armgba_video_threads`) | Off/Auto/On/One Frame Late; **Off**. Off/On; **Off**. 1/2; **1** | Hidden; core defaults. | Blanket decision |
+| CPU Emulation (`armgba_cpu_core`) | Recompiler/Interpreter; **Recompiler** | Hidden; core default. | **Not discussed** |
 | GBA/GBC color correction, GB screen and contrast (`armgba_color_correction`, `armgba_gb_color_correction`, `armgba_gb_screen`, `armgba_gb_contrast`) | Corrections Off/On; **Off**. GB palette: grayscale/measured/Pocket/Light; **grayscale**. Contrast 0%–100%; **50%** | Hidden; Ko Boy's e-ink display pipeline owns presentation. | Blanket decision |
 | HD Affine Backgrounds (`armgba_hd_affine`) | Off/2×–8×; **Off** | Hidden; core default. | **Not discussed** |
 | GB-on-GBA border and panel (`armgba_gb_advance_border`, `armgba_gb_advance_panel`) | Cropped/Shown; **Cropped**. GBA/GBC panel; **GBA** | Hidden; core defaults. | Blanket decision |
@@ -51,7 +52,7 @@ Pinned commit: `42d2b35a23c08c99df6dd06b57db9f2b4490b9e2`.
 
 ## armNES
 
-Pinned commit: `a0670acc505ac3bc494172757e70ddbc6ec9d590`.
+Pinned commit: `12655bb17b115ec66fd08e10e02c6fbb53c85370`.
 
 | Core option(s) | Available values; core default | Ko Boy policy | Discussion status |
 | --- | --- | --- | --- |
@@ -70,6 +71,10 @@ Pinned commit: `a0670acc505ac3bc494172757e70ddbc6ec9d590`.
 | Layer Selection; background/front/behind sprite visibility (`armnes_layer_selection`, `armnes_layer_background`, `armnes_layer_sprites_front`, `armnes_layer_sprites_behind`) | Selection Off/On; **Off**. Layers Shown/Hidden; **Shown** | Developer-only. | Explicit |
 | Main-channel switches (`armnes_channel_selection`, `armnes_channel_pulse1`, `armnes_channel_pulse2`, `armnes_channel_triangle`, `armnes_channel_noise`, `armnes_channel_dmc`, `armnes_channel_cart`) | Selection Off/On; **Off**. Individual channels On/Off; **On** | Hidden; core defaults. | **Not discussed** |
 | Expansion-voice switches (`armnes_channel_*` for VRC6, VRC7, Sunsoft 5B, Namco 163, and MMC5 voices) | On/Off; **On** | Hidden; shown by the core only for the applicable chip. | **Not discussed** |
+| Supervision channel switches (`armnes_channel_sv_square1`, `armnes_channel_sv_square2`, `armnes_channel_sv_noise`, `armnes_channel_sv_samples`) | On/Off; **On** | Hidden; shown by the core only for Supervision games with Channel Selection On. Ko Boy does not route Supervision games. | **Not discussed** |
+| Gamate channel switches (`armnes_channel_gm_a`, `armnes_channel_gm_b`, `armnes_channel_gm_c`) | On/Off; **On** | Hidden; shown by the core only for Gamate games with Channel Selection On. Ko Boy does not route Gamate games through armNES. | **Not discussed** |
+| Supervision multicart and LCD (`armnes_sv_game`, `armnes_sv_palette`, `armnes_sv_ghosting`) | Games 1–8; **Game 1**. Grey, Game Boy, Game Boy Pocket, Game Boy Light, Amber, Gamate; **Grey**. Off/25%/50%/75%/100%; **Off** | Hidden; core defaults. Game selection is shown by the core only for multicart Supervision games. | **Not discussed** |
+| Gamate link cable (`armnes_gm_link`, `armnes_gm_link_timing`, `armnes_gm_link_screen`, `armnes_gm_link_l2`, `armnes_gm_r2_follows`, `armnes_gm_switch_controller`, `armnes_gm_player_numbers`) | Link Mode Off/Together/Separate; **Off**. Timing Standard/Exact; **Standard**. Screen layouts; **Side by Side**. L2 Fast-Forward/Previous Layout; **Fast-Forward**. Follow Auto/1/2; **Auto**. Combos/Off; **Start+L2+R2**. Numbers Off/On; **On** | Hidden at core defaults, so no link cable is attached. Link features are outside the current Ko Boy UI. | **Not discussed** |
 | Turbo Button Period (`armnes_turbo_period`) | Dynamically generated frame periods; **4** | Hidden; core default. | **Not discussed** |
 | Allow Opposing Directions; Left Stick as D-Pad (`armnes_opposing`, `armnes_left_stick_dpad`) | Off/On; **Off**. Off/On; **On** | Hidden; core defaults. | Blanket decision |
 | Four Players; Famicom Expansion Port (`armnes_four_players`, `armnes_expansion`) | Auto/Off/Four Score/Famicom; **Auto**. Auto/None/Paddle/Power Pad/Keyboard; **Auto** | Hidden; core/header defaults. | Blanket decision |
@@ -81,7 +86,7 @@ Pinned commit: `a0670acc505ac3bc494172757e70ddbc6ec9d590`.
 
 ## superwhizkid
 
-Pinned commit: `1016126f9b01ddac93b7f57d1af7739cedc092c6`.
+Pinned commit: `9d0dee3f8364660212c23faa72308d2743fae542`.
 
 | Core option | Available values; core default | Ko Boy policy | Discussion status |
 | --- | --- | --- | --- |
@@ -91,5 +96,5 @@ Pinned commit: `1016126f9b01ddac93b7f57d1af7739cedc092c6`.
 | Catch quick taps (`superwhizkid_tap_latch`) | Off, On; **Off** | User-facing. | Explicit |
 | LCD Ghosting (`superwhizkid_lcd_ghosting`) | Off, 1–5; **Off** | Fixed to Off. | Explicit |
 | Redraw Flicker Reduction (`superwhizkid_flicker_reduction`) | Off, 1–3 frames; **Off** | Developer-only; Ko Boy default is 1 frame. | Explicit |
-| BIOS Priority (`superwhizkid_bios`) | UMC, Bit; **UMC** | Fixed to UMC, with the other BIOS used if the preferred file is absent. | Explicit |
+| BIOS Priority (`superwhizkid_bios`) | UMC, Bit, SWK; **UMC** | Fixed to UMC. Upstream falls back UMC and Bit to each other, then SWK; SWK falls back to UMC, then Bit. Ko Boy requires UMC or Bit, so an SWK-only setup is not accepted. | Explicit; SWK value **Not discussed** |
 | Skip BIOS intro (`superwhizkid_skip_intro`) | Off, On; **Off** | Fixed to Off. | Explicit |

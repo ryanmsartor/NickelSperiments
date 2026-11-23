@@ -11,7 +11,7 @@ ARMGBA_CORE_SOURCES := \
 	src/cart/savedata.c src/cpu/arm.c src/cpu/decode.c src/cpu/step.c \
 	src/io/dma.c src/io/io.c src/io/rfu.c src/io/sio.c src/io/timer.c \
 	src/video/render-thread.c src/video/render.c src/video/render-neon.c \
-	src/video/video.c src/cpu/jit.c src/cpu/a32/backend.c
+	src/video/video.c src/cpu/jit.c src/cpu/lean.c src/cpu/a32/backend.c
 ARMGBA_CORE_OBJECTS := $(patsubst %.c,$(ARMGBA_OBJ_DIR)/%.o,$(ARMGBA_CORE_SOURCES))
 ARMGBA_LIBRETRO_C_SOURCES := \
 	libretro/libretro.c libretro/clock.c \
